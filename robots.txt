@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /
+
+# මෙම repository එක පුද්ගලික භාවිතය සඳහා පමණයි - කරුණාකර index නොකරන්න
+# This repository is for personal use only - please do not index
