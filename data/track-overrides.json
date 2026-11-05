@@ -1,0 +1,4 @@
+{
+  "_comment": "Manual mappings (MANUAL method). Key = Spotify track ID, spotify:track: URI, or ISRC. Value = YouTube video ID or URL. These bypass all search.",
+  "overrides": {}
+}

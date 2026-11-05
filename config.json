@@ -1,0 +1,21 @@
+{
+  "spotify_source_playlists": [],
+  "spotify_target_playlist": "",
+  "youtube_target_playlist": "",
+  "max_tracks_per_run": 0,
+  "max_minutes_per_run": 25,
+  "max_searches_per_run": 80,
+  "youtube_daily_quota_units": 9500,
+  "search_cache_ttl_days": 14,
+  "search_results_per_query": 10,
+  "duration_tolerance_seconds": 7,
+  "exact_duration_tolerance_seconds": 3,
+  "retry_unmatched_after_days": 7,
+  "telegram_per_track": true,
+  "dry_run": false,
+  "require_youtube_match_for_spotify": false,
+  "youtube_region_code": "US",
+  "state_path": "data/sync-state.json",
+  "overrides_path": "data/track-overrides.json",
+  "cache_path": ".cache/yt-cache.json"
+}

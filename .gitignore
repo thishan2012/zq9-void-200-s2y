@@ -1,0 +1,26 @@
+# Secrets — never commit these
+.env
+client_secret*.json
+token*.json
+*.secret
+
+# Local cache (persisted via GitHub Actions cache instead)
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Temp state writes
+*.tmp
