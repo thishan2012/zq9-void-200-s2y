@@ -53,7 +53,7 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 3. Run it once manually: **Actions → Phonk Sync → Run workflow**.
    - First run: tick `dry_run` to preview matches without writing anything. Dry runs read only the first 200 source tracks (`dry_run_track_limit` in `config.json`).
    - Then run it live. Live syncs read the full source playlists.
-4. After that it runs automatically every 12 hours (`.github/workflows/sync.yml`, cron `0 */12 * * *`).
+4. Automatic scheduled runs are currently **paused**. The workflow only runs when you manually trigger it (`.github/workflows/sync.yml`). To re-enable automatic runs, add a `schedule:` cron trigger back to that workflow.
 
 Each live run commits `data/sync-state.json` back to the repo — that is the database that prevents duplicate adds.
 

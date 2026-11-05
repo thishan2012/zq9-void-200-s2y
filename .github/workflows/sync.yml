@@ -1,10 +1,8 @@
 name: Phonk Sync
 
+# PAUSED: automatic scheduled runs have been removed.
+# This workflow now runs only when manually triggered from the Actions tab.
 on:
-  schedule:
-    # Every 12 hours. Spotify-only by default; no custom syncer runtime cap.
-    # Adjust the cron if you want more/less frequent syncs.
-    - cron: "0 */12 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
