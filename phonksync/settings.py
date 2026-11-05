@@ -150,11 +150,26 @@ class Secrets:
 
     @classmethod
     def from_env(cls) -> "Secrets":
+        # Support common aliases so users don't have to rename secrets.
+        # YT_TOKEN_JSON <- YOUTUBE_OAUTH_TOKEN_JSON / YOUTUBE_TOKEN_JSON / YT_OAUTH_TOKEN_JSON
+        def _first(*keys: str) -> str:
+            for k in keys:
+                v = os.environ.get(k, "")
+                if v:
+                    return v
+            return ""
+
         return cls(
             spotify_cookie=os.environ.get("SPOTIFY_COOKIE", ""),
-            youtube_client_json=os.environ.get("YT_CLIENT_JSON", ""),
-            youtube_refresh_token=os.environ.get("YT_REFRESH_TOKEN", ""),
-            youtube_token_json=os.environ.get("YT_TOKEN_JSON", ""),
+            youtube_client_json=_first("YT_CLIENT_JSON", "YOUTUBE_CLIENT_JSON", "YOUTUBE_OAUTH_CLIENT_JSON"),
+            youtube_refresh_token=_first("YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN"),
+            youtube_token_json=_first(
+                "YT_TOKEN_JSON",
+                "YT_OAUTH_TOKEN_JSON",
+                "YOUTUBE_OAUTH_TOKEN_JSON",
+                "YOUTUBE_TOKEN_JSON",
+                "YOUTUBE_OAUTH_TOKEN",
+            ),
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
         )
