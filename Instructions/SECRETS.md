@@ -50,17 +50,53 @@ You do **not** need to pick out individual values. Paste the entire cookie heade
    - Add yourself as a **Test user** (your Google account's email).
    - Publishing status can stay "Testing" — refresh tokens for test users expire after 7 days, so either keep it in testing and re-auth weekly, or **Publish app** (no verification needed for personal use of the `youtube` scope; you'll see an "unverified app" warning you can click through).
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
-   - Application type: **Desktop app**.
+   - If you will use the **browser-only Playground method** (§3 Option A), choose **Web application** and add this Authorized redirect URI: `https://developers.google.com/oauthplayground`.
+   - If you will use the **local terminal helper** (§3 Option B), choose **Desktop app**.
    - Create, then **Download JSON**.
-5. Open the downloaded file. It looks like:
+5. Open the downloaded file. A Desktop client looks like:
    ```json
    {"installed":{"client_id":"....apps.googleusercontent.com","project_id":"...","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","client_secret":"...","redirect_uris":["http://localhost"]}}
    ```
+   A Web application client has the same fields under a `"web"` key instead of `"installed"`; both are accepted.
 6. Create the secret `YT_CLIENT_JSON` and paste the **entire file contents** (the whole JSON, one line or pretty-printed — both work).
 
 ## 3. `YT_REFRESH_TOKEN` — one-time authorization 🔑
 
-On your own computer (needs a browser):
+You only need to do this once. There are two ways:
+
+### Option A — Browser only, no terminal ✅ recommended
+
+Use Google's **OAuth 2.0 Playground** with a **Web application** OAuth client.
+
+1. Go to **Google Cloud Console → APIs & Services → Credentials**.
+2. Click **Create credentials → OAuth client ID**.
+3. Application type: **Web application**.
+4. Under **Authorized redirect URIs**, add exactly:
+   ```text
+   https://developers.google.com/oauthplayground
+   ```
+5. Click **Create**. Copy the **Client ID** and **Client secret**, and download the JSON file.
+6. Update the GitHub secret `YT_CLIENT_JSON` with the **entire contents of this web client JSON**.
+   > Important: the refresh token must belong to the same OAuth client as `YT_CLIENT_JSON`. If you previously used a Desktop client JSON, replace it with this Web client JSON.
+7. Open **https://developers.google.com/oauthplayground**.
+8. Click the **gear icon** (OAuth 2.0 configuration) → check **Use your own OAuth credentials** → paste the Client ID and Client secret → close the settings.
+9. In **Step 1**, scroll to **Input your own scopes** and enter:
+   ```text
+   https://www.googleapis.com/auth/youtube
+   ```
+   Then click **Authorize APIs**.
+10. Sign in with the Google account that owns your YouTube target playlist. If you see an "unverified app" warning, click **Advanced → Go to app** and allow access.
+11. Back in the Playground, in **Step 2**, click **Exchange authorization code for tokens**.
+12. Copy the **Refresh token** value and create the GitHub secret `YT_REFRESH_TOKEN`.
+
+Notes:
+- The scope is `https://www.googleapis.com/auth/youtube` (read + write playlists).
+- Your OAuth consent screen must include your Google account as a **Test user**, or the app must be published. Otherwise authorization can fail.
+- If no refresh token appears, revoke the app grant at https://myaccount.google.com/permissions and repeat the Playground authorization.
+
+### Option B — Local helper (needs a terminal)
+
+On your own computer:
 
 ```bash
 git clone <your-repo> && cd <repo>
@@ -74,7 +110,6 @@ python -m phonksync youtube-auth --client-json client_secret.json
 3. The terminal prints `✅ Success!` and the refresh token.
 4. Create the secret `YT_REFRESH_TOKEN` with that value.
 
-The scope requested is `https://www.googleapis.com/auth/youtube` (read + write playlists).
 If Google doesn't return a refresh token: revoke the grant at https://myaccount.google.com/permissions and run the command again (it forces `prompt=consent`).
 
 > Alternative: if you already have a token JSON containing `refresh_token`, `client_id`, and `client_secret`, you can store it as a single secret `YT_TOKEN_JSON` instead of the two secrets above.

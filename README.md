@@ -25,11 +25,13 @@ Reads every track from your source Spotify playlists (20, 30, any number), finds
 Full setup guide: **[Instructions/README.md](Instructions/README.md)**
 Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRETS.md)**
 
-1. Create a Google Cloud OAuth client (YouTube Data API v3) and run the one-time auth:
-   ```bash
-   pip install -r requirements.txt
-   python -m phonksync youtube-auth --client-json client_secret.json
-   ```
+1. Create a Google Cloud OAuth client (YouTube Data API v3) and do the one-time authorization to get a refresh token.
+   - **No terminal?** Use the browser-only OAuth Playground method in [Instructions/SECRETS.md §3 Option A](Instructions/SECRETS.md).
+   - Or use the local helper:
+     ```bash
+     pip install -r requirements.txt
+     python -m phonksync youtube-auth --client-json client_secret.json
+     ```
 2. Add the repository secrets (see [Instructions/SECRETS.md](Instructions/SECRETS.md)):
    `SPOTIFY_COOKIE`, `YT_CLIENT_JSON`, `YT_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
    `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`, `YOUTUBE_TARGET_PLAYLIST`.

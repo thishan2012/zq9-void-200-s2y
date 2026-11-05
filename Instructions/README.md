@@ -36,7 +36,7 @@ Secrets override `config.json`.
 Follow **[SECRETS.md](SECRETS.md)** exactly. It covers:
 
 - copying the **full Spotify Cookie header** (the `sp_dc` value is extracted automatically),
-- creating the Google OAuth client and getting a **refresh token** with the built-in helper,
+- creating the Google OAuth client and getting a **refresh token** (browser-only OAuth Playground method, or the built-in terminal helper),
 - creating the Telegram bot and finding your chat ID.
 
 ## 4. Add GitHub Secrets

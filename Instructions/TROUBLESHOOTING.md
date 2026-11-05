@@ -18,6 +18,14 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
+## `check` fails: "spotify_target_playlist is not configured"
+You have not told the syncer which Spotify playlist to add songs into.
+Fix: create a playlist you own on Spotify, copy its link, and add the GitHub secret `SPOTIFY_TARGET_PLAYLIST` (or set `spotify_target_playlist` in `config.json`). It must not also be one of the source playlists.
+
+## `check` fails: "Missing required secrets: YT_REFRESH_TOKEN (or YT_TOKEN_JSON)"
+The YouTube OAuth client JSON is present, but the one-time authorization has not been done.
+Fix: follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground) to get a refresh token, then add the GitHub secret `YT_REFRESH_TOKEN`. Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
+
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.
 Fix: log into open.spotify.com again, copy the full Cookie header fresh, update `SPOTIFY_COOKIE`. Avoid logging out of that browser profile.
