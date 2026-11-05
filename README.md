@@ -40,6 +40,7 @@ python -m phonksync check --live      # config + cookie check
 python -m phonksync sync --dry-run    # preview only, පළමු 200 tracks
 python -m phonksync sync --max-tracks 5
 python -m phonksync stats             # stats බලන්න
+python -m phonksync cookie-fix --show # cookie එකෙන් sp_dc එක විතරක් ගන්න
 ```
 
 Local එකේ `.env` file එකෙන් secrets දාන්න පුළුවන් (git-ignored).

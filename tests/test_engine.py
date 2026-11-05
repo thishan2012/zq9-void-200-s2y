@@ -1,6 +1,4 @@
 """End-to-end engine tests with fake Spotify/YouTube/Telegram (no network)."""
-import json
-
 import pytest
 from conftest import FakeYouTube, make_candidate, make_track
 

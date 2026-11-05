@@ -78,6 +78,11 @@ def cmd_check(args: argparse.Namespace) -> int:
             print(f"✅ Spotify cookie parses (sp_dc length {len(tok)}, starts with {tok[:6]}...)")
         except Exception as exc:
             problems.append(f"Spotify cookie: {exc}")
+            problems.append(
+                "Tip: only the single sp_dc value is needed — run "
+                "`python -m phonksync cookie-fix --show` locally and paste that value "
+                "as SPOTIFY_COOKIE."
+            )
     if secrets.telegram_bot_token and secrets.telegram_chat_id:
         print("✅ Telegram secrets present")
     else:
@@ -143,6 +148,39 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cookie_fix(args: argparse.Namespace) -> int:
+    """Extract sp_dc from a pasted cookie dump (prints it masked by default)."""
+    from .spotify import extract_sp_dc
+
+    raw = args.raw or ""
+    if not raw:
+        import os
+
+        raw = os.environ.get("SPOTIFY_COOKIE", "")
+    if not raw and not sys.stdin.isatty():
+        raw = sys.stdin.read()
+    if not raw.strip():
+        print("❌ Nothing to parse. Pass the cookie text as an argument or via stdin.", file=sys.stderr)
+        return 2
+    try:
+        token = extract_sp_dc(raw)
+    except PhonkSyncError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 3
+    masked = f"{token[:4]}…{token[-4:]}"
+    print(f"✅ sp_dc parsed ({len(token)} chars): {masked}")
+    if args.out:
+        from pathlib import Path
+
+        Path(args.out).write_text(token, encoding="utf-8")
+        print(f"✅ Written to {args.out} (git-ignored). Use this single value as SPOTIFY_COOKIE.")
+    if args.show:
+        print(token)
+    elif not args.out:
+        print("ℹ️  Add --show to print it, or --out FILE to save it.")
+    return 0
+
+
 def cmd_youtube_auth(args: argparse.Namespace) -> int:
     from .oauth_setup import run_oauth_flow
 
@@ -171,6 +209,15 @@ def main(argv: list[str] | None = None) -> int:
     p_stats = sub.add_parser("stats", help="Show sync state statistics")
     p_stats.add_argument("--json", action="store_true", help="Dump full state JSON")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_fix = sub.add_parser(
+        "cookie-fix",
+        help="Extract just the sp_dc value from a pasted Spotify cookie dump",
+    )
+    p_fix.add_argument("raw", nargs="?", default="", help="Cookie text (or pipe it on stdin)")
+    p_fix.add_argument("--show", action="store_true", help="Print the sp_dc value")
+    p_fix.add_argument("--out", default="", help="Write the sp_dc value to this file")
+    p_fix.set_defaults(func=cmd_cookie_fix)
 
     p_auth = sub.add_parser("youtube-auth", help="One-time YouTube OAuth setup (get refresh token)")
     p_auth.add_argument("--client-json", default="client_secret.json", help="OAuth client JSON file")

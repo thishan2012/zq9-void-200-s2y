@@ -39,6 +39,17 @@ You do **not** need to pick out individual values. Paste the entire cookie heade
    ```
 6. Create the secret `SPOTIFY_COOKIE` and paste that whole string as the value.
 
+**If parsing fails (`Could not find sp_dc in SPOTIFY_COOKIE`)**
+The syncer accepts the whole Cookie header, a `name=value;`-per-line dump, a
+WebView/Netscape export (TAB separated), a JSON cookie export, a bare `sp_dc=...`
+pair, or just the value. It also lists the cookie **names** it found so you can
+see what was pasted. Quickest fix is to send only the one value:
+
+```bash
+python -m phonksync cookie-fix --show     # paste the dump when asked
+```
+Copy the printed `AQ...` string and put **only that** in `SPOTIFY_COOKIE`.
+
 **Notes**
 - The only value that matters is `sp_dc`; everything else is ignored, so pasting the full header is safe and easiest.
 - If you prefer, a bare `sp_dc=...` pair or just the `sp_dc` value also works.
