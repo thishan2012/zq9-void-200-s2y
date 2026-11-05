@@ -63,7 +63,7 @@ class Config:
     youtube_target_playlist: str = ""
 
     max_tracks_per_run: int = 0  # 0 = unlimited
-    max_minutes_per_run: int = 25  # hard wall-clock cap per run (0 = unlimited)
+    dry_run_track_limit: int = 200  # dry-run only: max source tracks to read (0 = unlimited)
     max_searches_per_run: int = 80
     youtube_daily_quota_units: int = 9500
     search_cache_ttl_days: int = 14
@@ -129,6 +129,8 @@ class Config:
             raise ConfigError("youtube_target_playlist is not configured")
         if self.spotify_target_playlist in self.spotify_source_playlists:
             raise ConfigError("Target Spotify playlist must not also be a source playlist")
+        if self.dry_run_track_limit < 0:
+            raise ConfigError("dry_run_track_limit must be 0 (unlimited) or a positive integer")
 
 
 @dataclass

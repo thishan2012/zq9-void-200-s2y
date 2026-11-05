@@ -3,7 +3,7 @@
   "spotify_target_playlist": "",
   "youtube_target_playlist": "",
   "max_tracks_per_run": 0,
-  "max_minutes_per_run": 25,
+  "dry_run_track_limit": 200,
   "max_searches_per_run": 80,
   "youtube_daily_quota_units": 9500,
   "search_cache_ttl_days": 14,

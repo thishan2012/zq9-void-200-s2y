@@ -13,13 +13,17 @@ class FakeSpotify:
         self.sources = sources  # playlist_id -> [Track]
         self.target_ids = set(target_ids or [])
         self.added = []
+        self.read_calls = []
 
-    def playlist_tracks(self, playlist_id):
+    def playlist_tracks(self, playlist_id, max_tracks=None):
+        self.read_calls.append((playlist_id, max_tracks))
         if playlist_id == "target":
             from conftest import make_track as mt
 
-            return [mt(id=t) for t in sorted(self.target_ids)]
-        return self.sources.get(playlist_id, [])
+            tracks = [mt(id=t) for t in sorted(self.target_ids)]
+        else:
+            tracks = self.sources.get(playlist_id, [])
+        return tracks if max_tracks is None else tracks[:max_tracks]
 
     def playlist_track_ids(self, playlist_id):
         return set(self.target_ids)
@@ -174,3 +178,50 @@ def test_duplicate_isrc_skipped(monkeypatch, cfg):
     report = eng.run()
     assert report.added == 1
     assert report.duplicates == 1
+
+
+def _many_tracks(count):
+    return [
+        make_track(id=f"track{i:017d}", name=f"Song {i}", artists=["Solo"], isrc="")
+        for i in range(count)
+    ]
+
+
+def test_dry_run_reads_only_first_200_source_tracks(monkeypatch, cfg):
+    cfg.dry_run = True
+    source_id = cfg.spotify_source_playlists[0]
+    spotify = FakeSpotify({source_id: _many_tracks(2689)})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.source_read_limit == 200
+    assert report.unique_tracks == 200
+    assert spotify.read_calls == [(source_id, 200)]
+    assert spotify.added == []
+    assert youtube.inserted == []
+
+
+def test_dry_run_stops_before_later_playlists(monkeypatch, cfg):
+    cfg.dry_run = True
+    first = cfg.spotify_source_playlists[0]
+    second = "src222222222222222222222"
+    cfg.spotify_source_playlists = [first, second]
+    spotify = FakeSpotify({first: _many_tracks(250), second: _many_tracks(10)})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.unique_tracks == 200
+    assert report.sources_read == 1
+    assert spotify.read_calls == [(first, 200)]
+
+
+def test_live_sync_does_not_apply_dry_run_read_limit(monkeypatch, cfg):
+    cfg.dry_run = False
+    source_id = cfg.spotify_source_playlists[0]
+    spotify = FakeSpotify({source_id: _many_tracks(205)})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.source_read_limit == 0
+    assert report.unique_tracks == 205
+    assert spotify.read_calls == [(source_id, None)]

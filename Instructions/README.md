@@ -48,9 +48,9 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 1. Push this repository to GitHub (public is fine — no secrets are in the code).
 2. **Actions** tab → enable workflows if prompted.
 3. Run it once manually: **Actions → Phonk Sync → Run workflow**.
-   - First run: tick `dry_run` to preview matches without writing anything.
-   - Then run it live.
-4. After that it runs automatically every 6 hours (`.github/workflows/sync.yml`, cron `0 */6 * * *`).
+   - First run: tick `dry_run` to preview matches without writing anything. Dry runs read only the first 200 source tracks (`dry_run_track_limit` in `config.json`).
+   - Then run it live. Live syncs read the full source playlists.
+4. After that it runs automatically every 12 hours (`.github/workflows/sync.yml`, cron `0 */12 * * *`).
 
 Each live run commits `data/sync-state.json` back to the repo — that is the database that prevents duplicate adds.
 
@@ -64,8 +64,8 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 
 | Key | Default | Meaning |
 |---|---|---|
-| `max_tracks_per_run` | `0` | 0 = unlimited; otherwise cap per run |
-| `max_minutes_per_run` | `25` | hard wall-clock cap per run (0 = unlimited) |
+| `max_tracks_per_run` | `0` | 0 = unlimited; otherwise cap processed tracks per run |
+| `dry_run_track_limit` | `200` | dry-run only: max source tracks to read (0 = unlimited) |
 | `max_searches_per_run` | `80` | hard cap on YouTube searches per run |
 | `youtube_daily_quota_units` | `9500` | local budget (Google's default daily quota is 10000) |
 | `search_results_per_query` | `10` | results fetched per search |

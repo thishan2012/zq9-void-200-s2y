@@ -8,7 +8,6 @@ never added twice.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -41,8 +40,8 @@ class RunReport:
     errors: list[str] = field(default_factory=list)
     method_wins: dict[str, int] = field(default_factory=dict)
     quota_stopped: bool = False
-    time_stopped: bool = False
     dry_run: bool = False
+    source_read_limit: int = 0
 
     def summary_text(self) -> str:
         lines = [
@@ -60,10 +59,13 @@ class RunReport:
             lines.append(f"🏆 Methods: {wins}")
         if self.quota_stopped:
             lines.append("⚠️ Stopped early: YouTube quota budget reached")
-        if self.time_stopped:
-            lines.append("⏱ Stopped early: per-run time budget reached")
         if self.dry_run:
-            lines.append("🧪 DRY RUN — nothing was written")
+            if self.source_read_limit:
+                lines.append(
+                    f"🧪 DRY RUN — source reads limited to {self.source_read_limit} tracks; nothing was written"
+                )
+            else:
+                lines.append("🧪 DRY RUN — nothing was written")
         if self.errors:
             lines.append(f"🛑 Errors: {len(self.errors)}")
             lines.extend(escape(e)[:200] for e in self.errors[:5])
@@ -114,12 +116,13 @@ class SyncEngine:
             started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             dry_run=cfg.dry_run,
         )
-        run_start = time.monotonic()
-        time_budget_s = cfg.max_minutes_per_run * 60 if cfg.max_minutes_per_run else 0
+        mode = "DRY RUN" if cfg.dry_run else "live"
+        if cfg.dry_run and cfg.dry_run_track_limit:
+            mode += f" (first {cfg.dry_run_track_limit} source tracks)"
         self.telegram.info(
             f"🎧 <b>Phonk sync started</b>\n"
             f"Sources: {len(cfg.spotify_source_playlists)} playlists\n"
-            f"Mode: {'DRY RUN' if cfg.dry_run else 'live'}"
+            f"Mode: {mode}"
         )
 
         try:
@@ -141,13 +144,6 @@ class SyncEngine:
 
         for track in tracks:
             if cfg.max_tracks_per_run and processed >= cfg.max_tracks_per_run:
-                break
-            if time_budget_s and (time.monotonic() - run_start) >= time_budget_s:
-                report.time_stopped = True
-                self.telegram.warn(
-                    f"Per-run time budget ({cfg.max_minutes_per_run} min) reached; "
-                    "continuing on the next scheduled run."
-                )
                 break
 
             entry = self.state.get_synced(track.id) or {}
@@ -199,16 +195,27 @@ class SyncEngine:
     # -------------------------------------------------------------- helpers
 
     def _collect_source_tracks(self, report: RunReport) -> list[Track]:
+        cfg = self.config
+        read_limit = cfg.dry_run_track_limit if cfg.dry_run else 0
+        if read_limit and cfg.max_tracks_per_run:
+            read_limit = min(read_limit, cfg.max_tracks_per_run)
+        report.source_read_limit = read_limit
+
         seen: dict[str, Track] = {}
-        for playlist_id in self.config.spotify_source_playlists:
+        for playlist_id in cfg.spotify_source_playlists:
+            if read_limit and len(seen) >= read_limit:
+                break
+            remaining = read_limit - len(seen) if read_limit else None
             try:
-                tracks = self.spotify.playlist_tracks(playlist_id)
+                tracks = self.spotify.playlist_tracks(playlist_id, max_tracks=remaining)
             except Exception as exc:
                 report.errors.append(f"Source {playlist_id}: {exc}")
                 self.telegram.warn(f"Could not read source <code>{playlist_id}</code>: {escape(str(exc))}")
                 continue
             report.sources_read += 1
             for track in tracks:
+                if read_limit and len(seen) >= read_limit:
+                    break
                 if track.id in seen:
                     seen[track.id].sources.append(playlist_id)
                 else:

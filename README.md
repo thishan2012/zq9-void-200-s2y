@@ -33,14 +33,14 @@ Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRE
 2. Add the repository secrets (see [Instructions/SECRETS.md](Instructions/SECRETS.md)):
    `SPOTIFY_COOKIE`, `YT_CLIENT_JSON`, `YT_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
    `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`, `YOUTUBE_TARGET_PLAYLIST`.
-3. Push to GitHub. The **Phonk Sync** workflow runs every 6 hours (and on demand via *Actions → Phonk Sync → Run workflow*).
+3. Push to GitHub. The **Phonk Sync** workflow runs every 12 hours (and on demand via *Actions → Phonk Sync → Run workflow*). A manual `dry_run` previews only the first 200 source tracks.
 4. Watch Telegram. ✅
 
 ## 🧪 Local usage
 
 ```bash
 python -m phonksync check --live      # validate config + credentials
-python -m phonksync sync --dry-run    # match only, write nothing
+python -m phonksync sync --dry-run    # match only, write nothing, first 200 source tracks
 python -m phonksync sync --max-tracks 5
 python -m phonksync stats             # method win statistics
 ```
