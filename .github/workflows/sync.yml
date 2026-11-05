@@ -1,0 +1,90 @@
+name: Phonk Sync
+
+on:
+  schedule:
+    # Every 12 hours. Each run is bounded by max_minutes_per_run (config.json)
+    # and the YouTube daily quota, so monthly Actions minutes stay low even on
+    # a private repo. Adjust the cron if you want more/less frequent syncs.
+    - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (match only, write nothing)"
+        type: boolean
+        default: false
+      max_tracks:
+        description: "Max tracks to process this run (0 = unlimited)"
+        type: string
+        default: "0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phonk-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore search cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: yt-search-cache-${{ github.run_id }}
+          restore-keys: |
+            yt-search-cache-
+
+      - name: Validate config and secrets
+        env:
+          SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
+          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+          SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
+          YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
+        run: python -m phonksync check
+
+      - name: Run sync
+        env:
+          SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
+          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+          SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
+          YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
+        run: python -m phonksync sync
+
+      - name: Commit sync state
+        if: ${{ always() && inputs.dry_run != true }}
+        run: |
+          git config user.name "phonk-sync-bot"
+          git config user.email "actions@github.com"
+          if [ -f data/sync-state.json ]; then
+            git add data/sync-state.json
+            if git diff --cached --quiet; then
+              echo "No state changes to commit."
+            else
+              git commit -m "chore: update sync state [skip ci]"
+              git push
+            fi
+          else
+            echo "No state file yet — nothing to commit."
+          fi
