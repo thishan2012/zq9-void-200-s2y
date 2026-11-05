@@ -1,4 +1,6 @@
-# 🔎 Matching Pipeline
+# 🔎 Matching Pipeline (optional YouTube mode)
+
+> This pipeline is only used when YouTube sync is enabled (`youtube_enabled: true`). The default Spotify-only mode copies exact Spotify track IDs and does not search YouTube.
 
 Accuracy is the top priority: a wrong song is worse than no song. The pipeline
 tries methods in a fixed order and **stops at the first verified win**.

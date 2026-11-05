@@ -2,9 +2,11 @@
 
 Step-by-step setup for the Phonk Playlist Syncer. Follow the pages in order:
 
-1. **[SECRETS.md](SECRETS.md)** — create every credential and add it to GitHub Secrets ⭐ (required)
-2. **[MATCHING.md](MATCHING.md)** — how the 31 search methods and 3 safety checks work
-3. **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — quota, expired cookies, wrong matches
+1. **[SECRETS.md](SECRETS.md)** — create the credentials and add them to GitHub Secrets ⭐ (required)
+2. **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — expired cookies, duplicates, common errors
+3. **[MATCHING.md](MATCHING.md)** — optional YouTube matching (disabled by default)
+
+> Default mode is **Spotify-only**: source Spotify playlists → one target Spotify playlist. YouTube sync is disabled unless you set `youtube_enabled: true`.
 
 ---
 
@@ -13,31 +15,32 @@ Step-by-step setup for the Phonk Playlist Syncer. Follow the pages in order:
 | Thing | Where it comes from |
 |---|---|
 | Spotify account with the source playlists + a target playlist you own | open.spotify.com |
-| Google Cloud project with **YouTube Data API v3** enabled + OAuth client JSON | console.cloud.google.com |
-| A YouTube playlist you own (target) | youtube.com |
-| Telegram bot + your chat ID | @BotFather |
+| Telegram bot + your chat ID (optional, for logs) | @BotFather |
+| Google Cloud OAuth client + YouTube playlist (only if you enable YouTube sync) | console.cloud.google.com / youtube.com |
 
 ## 2. Prepare the playlists
 
 1. **Sources:** collect the Spotify playlist URLs you want to read from (any count — 20 is fine). You can use playlists you don't own, as long as they're public or followed by your account.
 2. **Spotify target:** create a playlist **on the account whose cookie you will copy** (e.g. "Phonk Sync"). The syncer adds the exact Spotify tracks here.
-3. **YouTube target:** create a playlist on the YouTube channel you authorize (e.g. "Phonk Sync"). The syncer adds matched videos here.
+3. **YouTube target (optional):** only needed if you enable YouTube sync. Create a playlist on the YouTube channel you authorize.
 
 Playlist IDs can go into `config.json` (public values) **or** into secrets (recommended if you don't want playlist IDs in a public repo):
 
 - `SPOTIFY_SOURCE_PLAYLISTS` — comma- or newline-separated IDs/URLs
 - `SPOTIFY_TARGET_PLAYLIST` — one ID/URL
-- `YOUTUBE_TARGET_PLAYLIST` — one ID/URL (`PL...`)
+- `YOUTUBE_TARGET_PLAYLIST` — one ID/URL (`PL...`), only if YouTube sync is enabled
 
 Secrets override `config.json`.
 
 ## 3. Create the credentials
 
-Follow **[SECRETS.md](SECRETS.md)** exactly. It covers:
+Follow **[SECRETS.md](SECRETS.md)**. For the default Spotify-only mode you only need:
 
 - copying the **full Spotify Cookie header** (the `sp_dc` value is extracted automatically),
-- creating the Google OAuth client and getting a **refresh token** (browser-only OAuth Playground method, or the built-in terminal helper),
-- creating the Telegram bot and finding your chat ID.
+- the source and target Spotify playlist IDs/URLs,
+- optionally, the Telegram bot token and your chat ID.
+
+The Google OAuth / YouTube refresh-token steps are only needed if you enable YouTube sync.
 
 ## 4. Add GitHub Secrets
 
@@ -64,21 +67,22 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 
 | Key | Default | Meaning |
 |---|---|---|
+| `youtube_enabled` | `false` | YouTube sync is disabled by default (Spotify-only) |
 | `max_tracks_per_run` | `0` | 0 = unlimited; otherwise cap processed tracks per run |
 | `dry_run_track_limit` | `200` | dry-run only: max source tracks to read (0 = unlimited) |
-| `max_searches_per_run` | `80` | hard cap on YouTube searches per run |
-| `youtube_daily_quota_units` | `9500` | local budget (Google's default daily quota is 10000) |
-| `search_results_per_query` | `10` | results fetched per search |
-| `duration_tolerance_seconds` | `7` | DURATION/TITLEONLY tolerance |
-| `exact_duration_tolerance_seconds` | `3` | DURVER tolerance |
-| `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track |
 | `telegram_per_track` | `true` | per-track Telegram messages |
-| `require_youtube_match_for_spotify` | `false` | if true, a track is only added to Spotify when a YouTube match exists |
-| `youtube_region_code` | `US` | search region bias |
+| `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track (YouTube mode) |
+| `max_searches_per_run` | `80` | YouTube only: cap on searches per run |
+| `youtube_daily_quota_units` | `9500` | YouTube only: local quota budget |
+| `search_results_per_query` | `10` | YouTube only: results fetched per search |
+| `duration_tolerance_seconds` | `7` | YouTube only: DURATION/TITLEONLY tolerance |
+| `exact_duration_tolerance_seconds` | `3` | YouTube only: DURVER tolerance |
+| `require_youtube_match_for_spotify` | `false` | YouTube only: require a YouTube match before adding to Spotify |
+| `youtube_region_code` | `US` | YouTube only: search region bias |
 
-## 8. Fixing a wrong or missing match
+## 8. Fixing a wrong or missing YouTube match (optional YouTube mode only)
 
-Add a manual mapping to `data/track-overrides.json` and commit:
+If you enable YouTube sync and a track matches the wrong video, add a manual mapping to `data/track-overrides.json` and commit:
 
 ```json
 {

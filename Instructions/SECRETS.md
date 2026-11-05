@@ -3,20 +3,22 @@
 Every credential lives in **GitHub → your repo → Settings → Secrets and variables → Actions → New repository secret**.
 Nothing secret is ever committed to the repo. This page shows exactly how to obtain each value.
 
+> **Default mode is Spotify-only.** You do NOT need any YouTube / Google secrets unless you explicitly enable YouTube sync (`youtube_enabled: true`).
+
 ## Summary table
 
 | Secret | Required | What it is |
 |---|---|---|
 | `SPOTIFY_COOKIE` | ✅ | Full `Cookie` header from a logged-in open.spotify.com request |
-| `YT_CLIENT_JSON` | ✅ | Entire Google OAuth client JSON file contents |
-| `YT_REFRESH_TOKEN` | ✅ | Long-lived YouTube OAuth refresh token |
-| `TELEGRAM_BOT_TOKEN` | ✅ for logs | Bot token from @BotFather |
-| `TELEGRAM_CHAT_ID` | ✅ for logs | Your Telegram chat ID |
-| `SPOTIFY_SOURCE_PLAYLISTS` | recommended | Comma/newline-separated source playlist IDs or URLs |
-| `SPOTIFY_TARGET_PLAYLIST` | recommended | Your Spotify target playlist ID or URL |
-| `YOUTUBE_TARGET_PLAYLIST` | recommended | Your YouTube target playlist ID (`PL...`) |
+| `SPOTIFY_SOURCE_PLAYLISTS` | ✅ | Comma/newline-separated source playlist IDs or URLs |
+| `SPOTIFY_TARGET_PLAYLIST` | ✅ | Your Spotify target playlist ID or URL |
+| `TELEGRAM_BOT_TOKEN` | optional | Bot token from @BotFather (for logs) |
+| `TELEGRAM_CHAT_ID` | optional | Your Telegram chat ID (for logs) |
+| `YT_CLIENT_JSON` | only if YouTube enabled | Entire Google OAuth client JSON file contents |
+| `YT_REFRESH_TOKEN` | only if YouTube enabled | Long-lived YouTube OAuth refresh token |
+| `YOUTUBE_TARGET_PLAYLIST` | only if YouTube enabled | Your YouTube target playlist ID (`PL...`) |
 
-> The three playlist secrets are optional only if you put the IDs in `config.json` instead. Secrets override `config.json`. For a public repo, secrets are the cleaner choice.
+> Playlist secrets are optional only if you put the IDs in `config.json` instead. Secrets override `config.json`. For a public repo, secrets are the cleaner choice.
 
 ---
 
@@ -40,7 +42,9 @@ You do **not** need to pick out individual values. Paste the entire cookie heade
 - The cookie expires eventually (weeks/months). If runs start failing with an auth error, repeat these steps and update the secret. Logging out of Spotify in that browser can invalidate it — use a browser profile you stay logged into.
 - ⚠️ This cookie grants access to your Spotify account. Never share it, never commit it, never paste it into issues or chats.
 
-## 2. `YT_CLIENT_JSON` — Google OAuth client 📄
+## 2. `YT_CLIENT_JSON` — Google OAuth client 📄 (only if YouTube sync is enabled)
+
+> Skip this section for the default Spotify-only mode.
 
 1. Go to **https://console.cloud.google.com** and create a project (e.g. `phonk-sync`).
 2. **APIs & Services → Library** → search **YouTube Data API v3** → **Enable**.
@@ -60,7 +64,9 @@ You do **not** need to pick out individual values. Paste the entire cookie heade
    A Web application client has the same fields under a `"web"` key instead of `"installed"`; both are accepted.
 6. Create the secret `YT_CLIENT_JSON` and paste the **entire file contents** (the whole JSON, one line or pretty-printed — both work).
 
-## 3. `YT_REFRESH_TOKEN` — one-time authorization 🔑
+## 3. `YT_REFRESH_TOKEN` — one-time authorization 🔑 (only if YouTube sync is enabled)
+
+> Skip this section for the default Spotify-only mode.
 
 You only need to do this once. There are two ways:
 
@@ -139,7 +145,7 @@ If Google doesn't return a refresh token: revoke the grant at https://myaccount.
 |---|---|
 | `SPOTIFY_SOURCE_PLAYLISTS` | `37i9dQZF1DXcBWIGoYBM5M, 37i9dQZF1DX0XUsuxWHRQd, https://open.spotify.com/playlist/...` |
 | `SPOTIFY_TARGET_PLAYLIST` | `https://open.spotify.com/playlist/...` (a playlist **you own**) |
-| `YOUTUBE_TARGET_PLAYLIST` | `PLxxxxxxxxxxxxxxxx` (from the playlist URL's `list=` parameter) |
+| `YOUTUBE_TARGET_PLAYLIST` | `PLxxxxxxxxxxxxxxxx` (only if YouTube sync is enabled) |
 
 Separate multiple sources with commas or newlines. Spotify URLs, `spotify:playlist:` URIs, and bare IDs are all accepted.
 

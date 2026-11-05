@@ -29,7 +29,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
         cfg.max_tracks_per_run = args.max_tracks
     cfg.validate()
     secrets = Secrets.from_env()
-    secrets.validate()
+    secrets.validate(require_youtube=cfg.youtube_enabled)
     engine = SyncEngine(cfg, secrets)
     report = engine.run()
     return 1 if report.errors and not report.added else 0
@@ -42,10 +42,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     try:
         cfg.validate()
         print(f"✅ Config OK — {len(cfg.spotify_source_playlists)} source playlists")
+        if not cfg.youtube_enabled:
+            print("ℹ️  YouTube sync disabled — Spotify-only mode")
     except ConfigError as exc:
         problems.append(f"Config: {exc}")
     try:
-        secrets.validate()
+        secrets.validate(require_youtube=cfg.youtube_enabled)
         print("✅ Required secrets present")
     except ConfigError as exc:
         problems.append(str(exc))
@@ -64,16 +66,17 @@ def cmd_check(args: argparse.Namespace) -> int:
             print(f"✅ Spotify cookie valid (user: {user})")
         except Exception as exc:
             problems.append(f"Spotify live check: {exc}")
-        try:
-            yt = YouTubeClient(
-                client_json=secrets.youtube_client_json,
-                refresh_token=secrets.youtube_refresh_token,
-                token_json=secrets.youtube_token_json,
-            )
-            yt.playlist_video_ids(cfg.youtube_target_playlist)
-            print("✅ YouTube OAuth valid, target playlist readable")
-        except Exception as exc:
-            problems.append(f"YouTube live check: {exc}")
+        if cfg.youtube_enabled:
+            try:
+                yt = YouTubeClient(
+                    client_json=secrets.youtube_client_json,
+                    refresh_token=secrets.youtube_refresh_token,
+                    token_json=secrets.youtube_token_json,
+                )
+                yt.playlist_video_ids(cfg.youtube_target_playlist)
+                print("✅ YouTube OAuth valid, target playlist readable")
+            except Exception as exc:
+                problems.append(f"YouTube live check: {exc}")
 
     for p in problems:
         print(f"❌ {p}")

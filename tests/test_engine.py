@@ -80,6 +80,7 @@ def cfg(tmp_path):
     c = Config()
     c.spotify_source_playlists = ["src111111111111111111111"]
     c.spotify_target_playlist = "target"
+    c.youtube_enabled = True
     c.youtube_target_playlist = "PLtarget0000000000000000000000"
     c.state_path = str(tmp_path / "state.json")
     c.overrides_path = str(tmp_path / "overrides.json")
@@ -225,3 +226,51 @@ def test_live_sync_does_not_apply_dry_run_read_limit(monkeypatch, cfg):
     assert report.source_read_limit == 0
     assert report.unique_tracks == 205
     assert spotify.read_calls == [(source_id, None)]
+
+
+def test_spotify_only_adds_without_youtube(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.added == 1
+    assert spotify.added == [track.uri]
+    assert youtube.inserted == []
+    assert eng.youtube is None
+    assert eng.state.is_synced(track.id)
+    entry = eng.state.get_synced(track.id)
+    assert entry["spotify_added"] is True
+    assert entry["youtube_added"] is False
+
+
+def test_spotify_only_second_run_does_not_readd(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    eng.run()
+    eng2 = build_engine(monkeypatch, cfg, spotify, youtube)
+    report2 = eng2.run()
+    assert report2.added == 0
+    assert report2.already_synced == 1
+    assert len(spotify.added) == 1
+
+
+def test_spotify_only_dry_run_writes_nothing(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    cfg.dry_run = True
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.added == 1
+    assert spotify.added == []
+    assert youtube.inserted == []
+    assert not eng.state.is_synced(track.id)

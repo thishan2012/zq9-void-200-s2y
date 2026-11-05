@@ -1,7 +1,9 @@
 """Sync orchestrator.
 
-Reads every source Spotify playlist, finds the exact same recording on
-YouTube through the 31-method pipeline, and adds it to both target playlists.
+Default mode is Spotify-only: read every source Spotify playlist and copy the
+exact tracks into one target Spotify playlist. YouTube sync is optional and
+disabled by default; when enabled, it also finds the exact same recording on
+YouTube through the 31-method pipeline and adds it to a YouTube playlist.
 The JSON state DB (committed back to the repo by CI) guarantees a track is
 never added twice.
 """
@@ -87,26 +89,33 @@ class SyncEngine:
             secrets.telegram_bot_token, secrets.telegram_chat_id
         )
         self.state = StateDB(config.state_path)
-        self.overrides = Overrides(config.overrides_path)
-        self.cache = SearchCache(config.cache_path, ttl_days=config.search_cache_ttl_days)
         self.spotify = SpotifyClient(secrets.spotify_cookie)
-        self.youtube = YouTubeClient(
-            client_json=secrets.youtube_client_json,
-            refresh_token=secrets.youtube_refresh_token,
-            token_json=secrets.youtube_token_json,
-            daily_quota_units=config.youtube_daily_quota_units,
-            max_searches_per_run=config.max_searches_per_run,
-            quota_state=self.state.quota,
-            region_code=config.youtube_region_code,
-        )
-        self.matcher = Matcher(
-            self.youtube,
-            self.cache,
-            self.overrides,
-            results_per_query=config.search_results_per_query,
-            duration_tolerance=config.duration_tolerance_seconds,
-            exact_duration_tolerance=config.exact_duration_tolerance_seconds,
-        )
+
+        # YouTube sync is optional and disabled by default (Spotify-only mode).
+        self.youtube = None
+        self.matcher = None
+        self.cache = None
+        self.overrides = None
+        if config.youtube_enabled:
+            self.overrides = Overrides(config.overrides_path)
+            self.cache = SearchCache(config.cache_path, ttl_days=config.search_cache_ttl_days)
+            self.youtube = YouTubeClient(
+                client_json=secrets.youtube_client_json,
+                refresh_token=secrets.youtube_refresh_token,
+                token_json=secrets.youtube_token_json,
+                daily_quota_units=config.youtube_daily_quota_units,
+                max_searches_per_run=config.max_searches_per_run,
+                quota_state=self.state.quota,
+                region_code=config.youtube_region_code,
+            )
+            self.matcher = Matcher(
+                self.youtube,
+                self.cache,
+                self.overrides,
+                results_per_query=config.search_results_per_query,
+                duration_tolerance=config.duration_tolerance_seconds,
+                exact_duration_tolerance=config.exact_duration_tolerance_seconds,
+            )
 
     # ------------------------------------------------------------------ run
 
@@ -119,16 +128,22 @@ class SyncEngine:
         mode = "DRY RUN" if cfg.dry_run else "live"
         if cfg.dry_run and cfg.dry_run_track_limit:
             mode += f" (first {cfg.dry_run_track_limit} source tracks)"
+        targets = "Spotify + YouTube" if cfg.youtube_enabled else "Spotify only"
         self.telegram.info(
             f"🎧 <b>Phonk sync started</b>\n"
             f"Sources: {len(cfg.spotify_source_playlists)} playlists\n"
+            f"Targets: {targets}\n"
             f"Mode: {mode}"
         )
 
         try:
             tracks = self._collect_source_tracks(report)
             target_spotify_ids = self.spotify.playlist_track_ids(cfg.spotify_target_playlist)
-            target_youtube_ids = self.youtube.playlist_video_ids(cfg.youtube_target_playlist)
+            target_youtube_ids = (
+                self.youtube.playlist_video_ids(cfg.youtube_target_playlist)
+                if cfg.youtube_enabled
+                else set()
+            )
         except (AuthError, ConfigError) as exc:
             report.errors.append(str(exc))
             self.telegram.error(f"Setup failed: {escape(str(exc))}")
@@ -148,7 +163,7 @@ class SyncEngine:
 
             entry = self.state.get_synced(track.id) or {}
             spotify_done = bool(entry.get("spotify_added")) or track.id in target_spotify_ids
-            youtube_done = bool(entry.get("youtube_added"))
+            youtube_done = bool(entry.get("youtube_added")) or not cfg.youtube_enabled
 
             if spotify_done and youtube_done:
                 report.already_synced += 1
@@ -180,12 +195,14 @@ class SyncEngine:
 
         # Record method statistics for every method that was exercised.
         self.state.record_run()
-        self.state.save_quota(self.youtube.quota)
+        if cfg.youtube_enabled:
+            self.state.save_quota(self.youtube.quota)
         report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         if not cfg.dry_run:
             self.state.save()
-        self.cache.save()
+        if self.cache is not None:
+            self.cache.save()
 
         self.telegram.flush_tracks()
         self.telegram.send(report.summary_text())
@@ -246,6 +263,12 @@ class SyncEngine:
         report: RunReport,
     ) -> None:
         cfg = self.config
+        if not cfg.youtube_enabled:
+            self._process_track_spotify_only(
+                track, spotify_done, target_spotify_ids, synced_isrcs, report
+            )
+            return
+
         video_id = entry.get("youtube_video_id", "")
         method = entry.get("method", "")
 
@@ -299,3 +322,33 @@ class SyncEngine:
                 track.display(), method or "cached",
                 f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
             )
+
+    def _process_track_spotify_only(
+        self,
+        track: Track,
+        spotify_done: bool,
+        target_spotify_ids: set[str],
+        synced_isrcs: set[str],
+        report: RunReport,
+    ) -> None:
+        """Spotify-only mode: copy the exact track ID into the target playlist.
+
+        No YouTube search, matching, or API calls are made.
+        """
+        cfg = self.config
+        if spotify_done:
+            return
+
+        if cfg.dry_run:
+            report.added += 1
+            self.telegram.info(f"🧪 Would add to Spotify: {escape(track.display())}")
+            return
+
+        self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
+        target_spotify_ids.add(track.id)
+        self.state.mark_synced(track, "", "", True, False)
+        if track.isrc:
+            synced_isrcs.add(track.isrc.upper())
+        report.added += 1
+        if cfg.telegram_per_track:
+            self.telegram.track_added(track.display(), "SPOTIFY", "")

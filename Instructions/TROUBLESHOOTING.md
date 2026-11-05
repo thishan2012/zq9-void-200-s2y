@@ -4,7 +4,7 @@
 
 - **Public repo** → standard GitHub-hosted Actions runs do not consume the private-repo monthly minute allowance. The code and committed files *can* still be indexed by Google; there is no reliable per-repo `noindex` on GitHub.
 - **No custom syncer time cap** is applied. GitHub's own platform/job limits still exist, but the syncer itself does not stop after a fixed number of minutes.
-- **YouTube API quota is separate from Actions minutes.** The official YouTube Data API still has a daily quota (default 10,000 units; one search costs 100). The quota budget stops YouTube searching cleanly and resumes on the next run.
+- **Default mode is Spotify-only**, so no YouTube API quota is used. If you enable YouTube sync, the official YouTube Data API daily quota (default 10,000 units; one search costs 100) applies and the quota budget stops YouTube searching cleanly, resuming on the next run.
 - **Dry runs are sampled:** by default they read only the first 200 source tracks (`dry_run_track_limit` in `config.json`) and write nothing. Live syncs read the full source playlists.
 
 **Keep personal data out of a public repo**
@@ -23,8 +23,8 @@ You have not told the syncer which Spotify playlist to add songs into.
 Fix: create a playlist you own on Spotify, copy its link, and add the GitHub secret `SPOTIFY_TARGET_PLAYLIST` (or set `spotify_target_playlist` in `config.json`). It must not also be one of the source playlists.
 
 ## `check` fails: "Missing required secrets: YT_REFRESH_TOKEN (or YT_TOKEN_JSON)"
-The YouTube OAuth client JSON is present, but the one-time authorization has not been done.
-Fix: follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground) to get a refresh token, then add the GitHub secret `YT_REFRESH_TOKEN`. Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
+This only happens if YouTube sync is enabled (`youtube_enabled: true`). The default Spotify-only mode does not need YouTube secrets.
+Fix: either disable YouTube sync (`youtube_enabled: false`), or follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground) to get a refresh token and add the GitHub secret `YT_REFRESH_TOKEN`. Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
 
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.

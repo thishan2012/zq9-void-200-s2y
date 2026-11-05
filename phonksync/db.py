@@ -90,7 +90,8 @@ class StateDB:
         }
         if youtube_added:
             self.data["unmatched"].pop(track.id, None)
-        if youtube_added and not (prev and prev.get("youtube_added")):
+        already_counted = bool(prev and (prev.get("spotify_added") or prev.get("youtube_added")))
+        if (spotify_added or youtube_added) and not already_counted:
             self.data["stats"]["total_added"] = self.data["stats"].get("total_added", 0) + 1
 
     # ------------------------------------------------------------- unmatched
