@@ -22,9 +22,19 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 You have not told the syncer which Spotify playlist to add songs into.
 Fix: create a playlist you own on Spotify, copy its link, and add the GitHub secret `SPOTIFY_TARGET_PLAYLIST` (or set `spotify_target_playlist` in `config.json`). It must not also be one of the source playlists.
 
-## `check` fails: "Missing required secrets: YT_REFRESH_TOKEN (or YT_TOKEN_JSON)"
+## YouTube: search works but nothing is added to the playlist
+An **API key cannot write**. `search.list` / `videos.list` accept `YOUTUBE_API_KEY`, but `playlistItems.insert` requires OAuth. The Telegram report shows *"YouTube playlist writes disabled (API key only)"* in this case.
+Fix: add `YT_CLIENT_JSON` + `YT_REFRESH_TOKEN` (SECRETS.md §2–§3) **in addition to** `YOUTUBE_API_KEY`. The key stays the fast read path; OAuth is used only for inserts.
+
+## `check` fails: "Missing required secrets: YOUTUBE_API_KEY ..."
 This only happens if YouTube sync is enabled (`youtube_enabled: true`). The default Spotify-only mode does not need YouTube secrets.
-Fix: either disable YouTube sync (`youtube_enabled: false`), or follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground) to get a refresh token and add the GitHub secret `YT_REFRESH_TOKEN`. Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
+Fix: either disable YouTube sync (`youtube_enabled: false`), or add `YOUTUBE_API_KEY` (read-only search). For actual playlist writes also add `YT_CLIENT_JSON` + `YT_REFRESH_TOKEN` — follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground). Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
+
+## "YouTube API key invalid" / `keyInvalid`
+- Re-copy the `AIza...` value into the `YOUTUBE_API_KEY` secret (no spaces/quotes).
+- The key's project must have **YouTube Data API v3 enabled** (Console → APIs & Services → Library).
+- If the key has API restrictions, YouTube Data API v3 must be on the allow-list.
+- `python -m phonksync check --live` prints the exact error.
 
 ## "Could not find sp_dc in SPOTIFY_COOKIE"
 The secret value does not contain the `sp_dc` cookie. The syncer needs the full Cookie header from an authenticated **open.spotify.com** request, and that header must include `sp_dc=...`.
@@ -38,12 +48,20 @@ Fix: log into open.spotify.com again, copy the full Cookie header fresh, update 
 - Refresh token revoked or expired. OAuth consent screen in "Testing" mode expires refresh tokens after 7 days → publish the app (personal use) or re-run `python -m phonksync youtube-auth`.
 - Re-run the auth helper and update `YT_REFRESH_TOKEN`.
 
-## "YouTube API quota exceeded" / run stops early
-Normal on big first syncs. Google's default quota is 10,000 units/day; one search costs 100.
-- The syncer stops cleanly and resumes on the next run; nothing is lost or re-added.
-- The search cache means later runs cost far less.
-- You can request a quota increase in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
-- Tune `max_searches_per_run` / `youtube_daily_quota_units` in `config.json`.
+## "YouTube API quota exceeded" / "Daily search limit reached" / run stops early
+Google's default quota is 10,000 units/day: **1 search = 100 units** (max 100 searches/day) and **1 playlist add = 50 units**.
+
+The app caps itself below that so several runs in one day can never trip Google's 403:
+- `max_searches_per_run` (default 80) — per run
+- `youtube_max_searches_per_day` (default 80) — per UTC day, ~8,000 units
+- `youtube_max_inserts_per_day` (default 40) — per UTC day, ~2,000 units (adds are only needed once per track)
+
+Counters persist in `data/sync-state.json` → `quota` and reset at UTC midnight.
+
+- "Daily search limit reached" means **your** cap was hit, not Google's — the key is still valid. Wait for UTC rollover or raise `youtube_max_searches_per_day`.
+- The run stops cleanly and the next one continues where it left off; the search cache makes repeat queries free.
+- A second API key from a *different* Google Cloud project gives a second 10,000 units/day — separate project, separate quota. Add both to `YOUTUBE_API_KEY` separated by a comma (`AIza...,AIza...`); the client rotates automatically on 403 `quotaExceeded` and tracks usage per key in `quota.keys`.
+- Two keys from the **same** project share the same 10,000 units — that does not help.
 
 ## A track never matches
 1. Check the Telegram ❌ message / run log for how many methods were tried.

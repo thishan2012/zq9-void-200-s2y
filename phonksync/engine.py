@@ -42,6 +42,10 @@ class RunReport:
     errors: list[str] = field(default_factory=list)
     method_wins: dict[str, int] = field(default_factory=dict)
     quota_stopped: bool = False
+    quota_reason: str = ""
+    searches_used: int = 0
+    inserted: int = 0
+    search_mode: str = ""
     dry_run: bool = False
     source_read_limit: int = 0
 
@@ -59,8 +63,14 @@ class RunReport:
         if self.method_wins:
             wins = ", ".join(f"{k}={v}" for k, v in sorted(self.method_wins.items()))
             lines.append(f"🏆 Methods: {wins}")
+        if self.searches_used:
+            lines.append(
+                f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
+            )
         if self.quota_stopped:
-            lines.append("⚠️ Stopped early: YouTube quota budget reached")
+            lines.append(f"⚠️ Stopped early: {escape(self.quota_reason or 'YouTube quota budget reached')}")
+        elif self.inserted:
+            lines.append("ℹ️ Next run continues from where this one stopped")
         if self.dry_run:
             if self.source_read_limit:
                 lines.append(
@@ -103,8 +113,11 @@ class SyncEngine:
                 client_json=secrets.youtube_client_json,
                 refresh_token=secrets.youtube_refresh_token,
                 token_json=secrets.youtube_token_json,
+                api_key=secrets.youtube_api_key,
                 daily_quota_units=config.youtube_daily_quota_units,
                 max_searches_per_run=config.max_searches_per_run,
+                max_searches_per_day=config.youtube_max_searches_per_day,
+                max_inserts_per_day=config.youtube_max_inserts_per_day,
                 quota_state=self.state.quota,
                 region_code=config.youtube_region_code,
             )
@@ -129,6 +142,10 @@ class SyncEngine:
         if cfg.dry_run and cfg.dry_run_track_limit:
             mode += f" (first {cfg.dry_run_track_limit} source tracks)"
         targets = "Spotify + YouTube" if cfg.youtube_enabled else "Spotify only"
+        if cfg.youtube_enabled and self.youtube is not None and not getattr(
+            self.youtube, "can_write", True
+        ):
+            targets += " (read-only API key: search works, playlist adds need OAuth)"
         self.telegram.info(
             f"🎧 <b>Phonk sync started</b>\n"
             f"Sources: {len(cfg.spotify_source_playlists)} playlists\n"
@@ -187,6 +204,7 @@ class SyncEngine:
                 )
             except QuotaExceeded as exc:
                 report.quota_stopped = True
+                report.quota_reason = str(exc)
                 self.telegram.warn(f"YouTube quota reached: {escape(str(exc))}")
                 break
             except Exception as exc:
@@ -196,6 +214,9 @@ class SyncEngine:
         # Record method statistics for every method that was exercised.
         self.state.record_run()
         if cfg.youtube_enabled:
+            report.searches_used = int(getattr(self.youtube, "searches_this_run", 0) or 0)
+            report.inserted = int(getattr(self.youtube.quota, "inserts", 0) or 0)
+            report.search_mode = getattr(self.youtube, "search_mode", "")
             self.state.save_quota(self.youtube.quota)
         report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -289,6 +310,7 @@ class SyncEngine:
                 if not spotify_done and not cfg.dry_run:
                     self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
                     target_spotify_ids.add(track.id)
+                if not cfg.dry_run:
                     self.state.mark_synced(track, "", "", True, False)
                 return
             video_id = result.candidate.video_id
@@ -310,10 +332,19 @@ class SyncEngine:
             self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
             target_spotify_ids.add(track.id)
         if video_id and not youtube_done:
-            self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
-            target_youtube_ids.add(video_id)
+            if getattr(self.youtube, "can_write", True):
+                self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
+                target_youtube_ids.add(video_id)
+            elif not report.quota_reason:
+                report.quota_reason = (
+                    "YouTube playlist writes disabled (API key only) — set "
+                    "YT_CLIENT_JSON + YT_REFRESH_TOKEN to add videos to the playlist"
+                )
 
-        self.state.mark_synced(track, video_id, method, True, bool(video_id))
+        self.state.mark_synced(
+            track, video_id, method, True,
+            bool(video_id) and getattr(self.youtube, "can_write", True),
+        )
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
         report.added += 1

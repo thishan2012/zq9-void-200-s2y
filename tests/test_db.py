@@ -43,3 +43,22 @@ def test_spotify_only_add_keeps_unmatched(tmp_path):
     db.mark_synced(track, "", "", spotify_added=True, youtube_added=False)
     # Unmatched record must survive so YouTube matching is retried later.
     assert db.unmatched_tries(track.id) == 1
+
+
+def test_quota_counters_persist_across_runs(tmp_path):
+    from phonksync.db import StateDB
+    from phonksync.youtube import QuotaState
+
+    db = StateDB(tmp_path / "state.json")
+    quota = db.quota
+    quota.rollover()
+    quota.searches = 79
+    quota.inserts = 10
+    db.save_quota(quota)
+    db.save()
+
+    again = StateDB(tmp_path / "state.json").quota
+    assert again.searches == 79
+    assert again.inserts == 10
+    assert again.date == quota.date
+    assert QuotaState.from_dict(again.to_dict()).searches == 79

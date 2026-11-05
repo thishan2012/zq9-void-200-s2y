@@ -274,3 +274,37 @@ def test_spotify_only_dry_run_writes_nothing(monkeypatch, cfg):
     assert spotify.added == []
     assert youtube.inserted == []
     assert not eng.state.is_synced(track.id)
+
+
+def test_api_key_only_mode_adds_to_spotify_and_warns_about_writes(monkeypatch, cfg):
+    """With just an API key, search runs but nothing is inserted into YouTube."""
+    track = make_track(id="track000000000000000001")
+    good = make_candidate("vid00000001", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube(
+        catalog={"vid00000001": good},
+        search_map={"nulteex montagem miau": ["vid00000001"]},
+    )
+    youtube.can_write = False
+    youtube.search_mode = "api_key"
+    youtube.searches_this_run = 1
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.added == 1
+    assert spotify.added == [track.uri]
+    assert youtube.inserted == []
+    assert "API key only" in report.quota_reason
+    entry = eng.state.get_synced(track.id)
+    assert entry["youtube_added"] is False
+
+
+def test_dry_run_does_not_record_unmatched_as_synced(monkeypatch, cfg):
+    cfg.dry_run = True
+    track = make_track(id="track000000000000000009", name="No Match Song", artists=["Solo"])
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.unmatched == 1
+    assert not eng.state.is_synced(track.id)
+    assert spotify.added == []
