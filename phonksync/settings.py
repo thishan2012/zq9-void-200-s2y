@@ -80,8 +80,11 @@ class Config:
     youtube_region_code: str = "US"
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
+    spotify_web_fallback: bool = True  # read public playlists from the HTML page on 429
+    spotify_collection_fallback: bool = True  # use a saved collection when the API is blocked
     spotify_queue_flush_size: int = 40
     manual_queue_path: str = "data/manual-queue.txt"
+    collection_path: str = "data/collection.json"
     source_cache_path: str = ".cache/source-tracks.json"
     source_cache_ttl_hours: int = 12  # reuse a playlist read while it is unchanged
     state_path: str = "data/sync-state.json"

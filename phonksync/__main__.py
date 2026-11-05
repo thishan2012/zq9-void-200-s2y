@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 import time
+from pathlib import Path
 
 from .errors import AuthError, ConfigError, PhonkSyncError
 from .settings import Config, Secrets, load_dotenv
@@ -149,6 +150,70 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_collect(args: argparse.Namespace) -> int:
+    """Save a playlist's tracks into state so a blocked API never stops a run.
+
+    Two ways: read the public page (`--from-web`), or paste anything you copied
+    from the browser (`--from-file`, stdin) — e.g. Ctrl+U page source, or the
+    "Copy all" of a track list.
+    """
+    from .db import StateDB
+    from .settings import parse_spotify_playlist_id
+    from .spotify import PublicPlaylistReader, playlist_tracks_from_html
+
+    cfg = Config.load(args.config)
+    db = StateDB(cfg.state_path)
+
+    if args.show:
+        summary = db.collection_summary()
+        if not summary:
+            print("📭 No collection saved yet.")
+            return 0
+        for pid, info in summary.items():
+            print(f"• {pid}: {info['tracks']} tracks ({info['source']}, {info['captured_at']})")
+        return 0
+
+    playlist_id = parse_spotify_playlist_id(args.playlist)
+
+    tracks = []
+    source = ""
+    if args.from_web:
+        reader = PublicPlaylistReader()
+        tracks = reader.playlist_tracks(playlist_id)
+        source = "public page"
+        if not tracks:
+            print(f"❌ Could not read the public page: {reader.last_error}", file=sys.stderr)
+            return 3
+    else:
+        raw = ""
+        if args.from_file:
+            try:
+                raw = Path(args.from_file).read_text(encoding="utf-8", errors="ignore")
+            except OSError as exc:
+                print(f"❌ {exc}", file=sys.stderr)
+                return 2
+        elif not sys.stdin.isatty():
+            raw = sys.stdin.read()
+        if not raw.strip():
+            print("❌ Paste the page source / track list, or use --from-web", file=sys.stderr)
+            return 2
+        tracks = playlist_tracks_from_html(raw, playlist_id)
+        source = "pasted page"
+        if not tracks:
+            print(
+                "❌ No playlist tracks found in that text. Open the playlist page, "
+                "press Ctrl+U (view source), select all and pipe it in.",
+                file=sys.stderr,
+            )
+            return 3
+
+    db.set_collection(playlist_id, tracks, source)
+    db.save()
+    print(f"✅ Saved {len(tracks)} tracks for {playlist_id} ({source}).")
+    print("   Runs will use this when the Spotify API is rate limited.")
+    return 0
+
+
 def cmd_manual(args: argparse.Namespace) -> int:
     """Inspect or flush the manual bucket written when Spotify was cooling down."""
     from .db import StateDB
@@ -270,6 +335,17 @@ def main(argv: list[str] | None = None) -> int:
     p_stats = sub.add_parser("stats", help="Show sync state statistics")
     p_stats.add_argument("--json", action="store_true", help="Dump full state JSON")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_collect = sub.add_parser(
+        "collect",
+        help="Save playlist tracks locally (public page or pasted page source)",
+    )
+    p_collect.add_argument("playlist", nargs="?", default="", help="Source playlist ID or URL")
+    p_collect.add_argument("--from-web", action="store_true",
+                           help="Read the public playlist page (no login needed)")
+    p_collect.add_argument("--from-file", default="", help="Read pasted/copied page text")
+    p_collect.add_argument("--show", action="store_true", help="Show what is saved")
+    p_collect.set_defaults(func=cmd_collect)
 
     p_manual = sub.add_parser(
         "manual", help="Show/apply tracks parked while Spotify was rate limited"

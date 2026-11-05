@@ -450,3 +450,58 @@ def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
     report2 = eng2.run()
     assert report2.added == 3  # tracks 2, 3, 4
     assert not eng2.state.get_resume_point()
+
+
+class _WebReader:
+    """Stand-in for PublicPlaylistReader (no network)."""
+
+    def __init__(self, tracks, error=""):
+        self.tracks = tracks
+        self.last_error = error
+
+    def playlist_tracks(self, playlist_id):
+        return self.tracks
+
+
+def test_web_fallback_reads_public_page_when_api_is_throttled(monkeypatch, cfg):
+    """429 on the API -> read the public page instead of failing the run."""
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    tracks = _many_tracks(2)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+
+    def throttled(playlist_id, max_tracks=None):
+        raise RateLimited(1800, "still 429")
+
+    monkeypatch.setattr(spotify, "playlist_tracks", throttled)
+    monkeypatch.setattr(spotify, "playlist_track_ids", lambda pid: set())
+    eng.public_spotify = _WebReader(tracks)
+
+    report = eng.run()
+    assert report.web_reads == 1
+    assert report.added == 2  # dry run counts what it would add
+    assert report.sources_read == 1
+    assert "public page" in report.summary_text().lower() or report.web_reads == 1
+
+
+def test_web_fallback_failure_falls_back_to_cache(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    tracks = _many_tracks(2)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    eng.source_cache.put(cfg.spotify_source_playlists[0], tracks, "")
+
+    def throttled(playlist_id, max_tracks=None):
+        raise RateLimited(1800, "still 429")
+
+    monkeypatch.setattr(spotify, "playlist_tracks", throttled)
+    monkeypatch.setattr(spotify, "playlist_track_ids", lambda pid: set())
+    eng.public_spotify = _WebReader([], error="HTTP 404")
+
+    report = eng.run()
+    assert report.web_reads == 0
+    assert report.cached_sources >= 1
+    assert report.added == 2

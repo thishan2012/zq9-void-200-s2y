@@ -49,6 +49,9 @@ _MAX_QUEUE = 50
 # Spotify can hand out multi-hour blocks after a retry storm. Never sleep that
 # long inside a run: stop cleanly, remember the cooldown, continue next run.
 _MAX_INLINE_WAIT = 120
+# When Spotify answers 429 over and over with short Retry-After values, stop
+# knocking and come back later (this is the "5 days" trap we never want).
+_SHORT_BLOCK_COOLDOWN = 1800
 
 
 def _header_seconds(headers: Any) -> float:
@@ -391,6 +394,186 @@ def _server_time(session: requests.Session) -> int:
     return int(time.time())
 
 
+_HTML_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
+
+class PublicPlaylistReader:
+    """Read a **public** playlist without any Spotify credentials.
+
+    Used when the Web API is throttled for the account: a patch-request header
+    (``_patch=%5B%22browser%22%5D``) makes Spotify's HTML endpoint return the
+    render payload server side, which contains ``items`` with the same track
+    fields the API returns. No login, no token, no rate-limit budget — the very
+    same trick the web player uses to render the page.
+
+    Returns ``None`` when the payload cannot be read (private playlist, layout
+    change, odd CDN response) so the caller can fall back to the cache.
+    """
+
+    def __init__(self, session: requests.Session | None = None):
+        self.session = session or requests.Session()
+        self.session.headers.update({"User-Agent": _HTML_UA})
+        self.last_error = ""
+
+    def _payload(self, playlist_id: str) -> dict[str, Any] | None:
+        try:
+            resp = self.session.get(
+                f"https://open.spotify.com/playlist/{playlist_id}",
+                headers={
+                    "Accept": "text/html,application/xhtml+xml",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://open.spotify.com/",
+                    "app-platform": "WebPlayer",
+                    "_patch": '%22browser%22',
+                },
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            self.last_error = f"network: {exc}"
+            return None
+        if resp.status_code != 200:
+            self.last_error = f"HTTP {resp.status_code}"
+            return None
+        return _find_playlist_payload(resp.text)
+
+    def snapshot(self, playlist_id: str) -> str:
+        data = self._payload(playlist_id)
+        if not data:
+            return ""
+        items = ((data.get("playlistV2") or {}).get("content") or {}).get("items") or []
+        return f"{len(items)}:{data.get('snapshotId', '')}"
+
+    def playlist_tracks(self, playlist_id: str) -> list[Track]:
+        data = self._payload(playlist_id)
+        if not data:
+            if not self.last_error:
+                self.last_error = "payload not found in HTML"
+            return []
+        content = (data.get("playlistV2") or {}).get("content") or {}
+        items = content.get("items") or []
+        tracks: list[Track] = []
+        for item in items:
+            track = _track_from_item(item)
+            if track:
+                track.sources = [playlist_id]
+                tracks.append(track)
+        if not tracks:
+            self.last_error = "no tracks in payload"
+        return tracks
+
+
+def playlist_tracks_from_html(html: str, playlist_id: str = "") -> list[Track]:
+    """Parse tracks out of any Spotify page/payload text (collection import)."""
+    data = _find_playlist_payload(html)
+    if not data:
+        return []
+    items = ((data.get("playlistV2") or {}).get("content") or {}).get("items") or []
+    tracks: list[Track] = []
+    for item in items:
+        track = _track_from_item(item)
+        if track:
+            track.sources = [playlist_id] if playlist_id else []
+            tracks.append(track)
+    return tracks
+
+
+def _find_playlist_payload(html: str) -> dict[str, Any] | None:
+    """Locate the JSON entity that holds ``playlistV2`` in a render payload."""
+    decoder = json.JSONDecoder()
+    start = 0
+    needles = ('"playlistV2"', '\\"playlistV2\\"')
+    while True:
+        best = -1
+        for needle in needles:
+            found = html.find(needle, start)
+            if found != -1 and (best == -1 or found < best):
+                best = found
+        if best == -1:
+            return None
+        brace = html.rfind("{", max(0, best - 4000), best)
+        while brace != -1:
+            try:
+                obj, _ = decoder.raw_decode(html[brace:])
+            except ValueError:
+                brace = html.rfind("{", max(0, best - 4000), brace)
+                continue
+            data = _unwrap_entity(obj)
+            if isinstance(data, dict) and isinstance(data.get("playlistV2"), dict):
+                return data
+            brace = html.rfind("{", max(0, best - 4000), brace)
+        start = best + 1
+
+
+def _unwrap_entity(obj: Any) -> dict[str, Any] | None:
+    if not isinstance(obj, dict):
+        return None
+    for key in ("data", "payload", "entity"):
+        inner = obj.get(key)
+        if isinstance(inner, dict):
+            found = _unwrap_entity(inner)
+            if found:
+                return found
+    return obj
+
+
+def _name_of(node: Any) -> str:
+    if isinstance(node, dict):
+        for key in ("name", "title", "text"):
+            value = node.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+def _track_from_item(item: dict[str, Any]) -> Track | None:
+    """Map a ``playlistV2`` item onto our Track model.
+
+    The HTML payload mirrors the GraphQL shape:
+    ``{"itemV2": {"data": {"uri", "name", "artists": {"items": [{"profile": {"name"}}]},
+    "albumOfTrack": {"name"}, "trackDuration": {"totalMilliseconds"}}}}``
+    """
+    if not isinstance(item, dict):
+        return None
+    body = item.get("itemV2") or item.get("item") or item
+    data = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(data, dict):
+        return None
+
+    uri = data.get("uri") if isinstance(data.get("uri"), str) else ""
+    if not uri.startswith("spotify:track:"):
+        uri = ""
+    track_id = data.get("id") or (uri.split(":")[-1] if uri else "")
+    if not track_id:
+        return None
+
+    artists = [
+        _name_of(entry.get("profile"))
+        for entry in (data.get("artists") or {}).get("items") or []
+        if isinstance(entry, dict)
+    ]
+    duration_ms = 0
+    duration = data.get("trackDuration")
+    if isinstance(duration, dict) and duration.get("totalMilliseconds"):
+        try:
+            duration_ms = int(duration["totalMilliseconds"])
+        except (TypeError, ValueError):
+            duration_ms = 0
+
+    return Track(
+        id=str(track_id),
+        name=_name_of(data.get("name")) or str(data.get("name") or ""),
+        artists=[a for a in artists if a],
+        album=_name_of(data.get("albumOfTrack")),
+        duration_ms=duration_ms,
+        isrc="",  # not exposed in the HTML payload; the matcher copes
+        uri=uri or f"spotify:track:{track_id}",
+        popularity=0,
+    )
+
+
 class SpotifyClient:
     def __init__(
         self,
@@ -605,12 +788,18 @@ class SpotifyClient:
                         "(SPOTIFY_COOKIE_2) to keep going on another account.",
                     )
                 if attempt == _MAX_RETRIES - 1:
+                    # Persistent 429 with short Retry-After values: treat it as a
+                    # cooldown (30 min) instead of a hard failure. The run then
+                    # ends cleanly and the next one resumes from the same spot.
+                    cooldown = _SHORT_BLOCK_COOLDOWN
+                    self.blocked_until = time.time() + cooldown
                     raise RateLimited(
-                        retry_after,
-                        "Spotify rate limit: still 429 after "
-                        f"{_MAX_RETRIES} tries (~{int(self._rate_limit_wait)}s of waiting). "
-                        "The web-player token is being throttled; wait a few minutes "
-                        "and run again, or lower max_tracks for this run.",
+                        cooldown,
+                        f"Spotify kept answering 429 after {_MAX_RETRIES} tries "
+                        f"(~{int(self._rate_limit_wait)}s of waiting) — parking the run "
+                        f"for {_human_duration(cooldown)}. Nothing was lost: the next run "
+                        "resumes here. Use an unused account cookie (SPOTIFY_COOKIE_2) or "
+                        "wait for the window to clear.",
                     )
                 self._rate_limit_wait += retry_after
                 log.warning(
@@ -740,6 +929,11 @@ class SpotifyClient:
         )
         total = (data.get("tracks") or {}).get("total", "")
         return f"{data.get('snapshot_id', '')}:{total}"
+
+    def whoami(self) -> dict[str, str]:
+        """Cheap identity probe used to detect per-account throttling."""
+        data = self._request("GET", "me", params={})
+        return {"id": data.get("id", ""), "country": data.get("country", "")}
 
     def playlist_track_ids(self, playlist_id: str) -> set[str]:
         return {t.id for t in self.playlist_tracks(playlist_id)}

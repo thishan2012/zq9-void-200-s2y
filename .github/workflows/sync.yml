@@ -98,6 +98,7 @@ jobs:
           if [ -f data/sync-state.json ]; then
             git add data/sync-state.json
             [ -f data/manual-queue.txt ] && git add data/manual-queue.txt
+            [ -f data/collection.json ] && git add data/collection.json
             if git diff --cached --quiet; then
               echo "No state changes to commit."
             else

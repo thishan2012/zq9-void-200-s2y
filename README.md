@@ -95,6 +95,7 @@ tests/                # offline tests
 - එකම project එකේ keys 2ක් දැම්මොත් quota **වැඩි වෙන්නේ නෑ** — project එකට 10,000 තමයි. ඒ නිසා key එකකට එක project එකක්. [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
 - **සරලම setting:** `REQUEST_DELAY_SECONDS=2` (හැම Spotify call එකට තත්පර 2ක pause) — rate limit වැදෙන එක ගොඩක් අඩු කරනවා. 429 ආවොත් `Retry-After` අනුව backoff වෙලා retry කරනවා (6 වතාවක් වෙනකන්) — run එක fail වෙන්නේ නෑ.
 - **Song එකක් add කරන්න බැරි වුනොත්:** ඒක skip කරලා ඊළඟ එකට යනවා (`⏭ Skipped`). දිග block එකක් නම් resume point එක save වෙනවා — ඊළඟ run එක ඒ තැනින්ම පටන් ගන්නවා.
+- **API 429 වුනත් වැඩේ නවතින්නේ නෑ:** public playlist එකක් නම් **public page එකෙන්** (token නැතුව) tracks කියවනවා, ඒකත් බැරි නම් **cache** එකෙන්, ඒකත් නැත්නම් ඔයා save කරපු **collection** එකෙන්.
 - **Spotify rate limit (429) වලට defence 4ක්:** pages 50 + pause, playlist snapshot cache (1 call), queue එකෙන් writes (batch), සහ cooldown මතක තියාගෙන live runs skip කිරීම. විස්තර: **[Instructions/SPOTIFY-LIMITS.md](Instructions/SPOTIFY-LIMITS.md)**
 - **Spare accounts:** `SPOTIFY_COOKIE_2` (තව Spotify account එකක cookie) දාලා තිබ්බොත්, එකක් block වුනාම code එක ඊළඟ එකට මාරු වෙනවා — දවස් 5 ඉන්න ඕන නෑ.
 - Spotify rate limit (429) ආවොත්: code එක pages 50 බැගින්, පොඩි pause එකක් එක්ක ඉල්ලනවා; 6 වතාවක් retry කරනවා. ඒත් 429 ආවොත් ඒ වෙනකොට කියවලා තියෙන tracks වලින් වැඩේ කරනවා (නැති කරන්නේ නෑ) — විනාඩි 5ක් ඉඳලා ආයේ run කරන්න.

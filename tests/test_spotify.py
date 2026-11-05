@@ -352,7 +352,9 @@ def test_rate_limit_gives_up_with_helpful_message(monkeypatch):
     with pytest.raises(RateLimited) as exc:
         client.playlist_tracks("x", max_tracks=10)
     msg = str(exc.value)
-    assert "wait a few minutes" in msg and "max_tracks" in msg
+    # a persistent 429 is a cooldown now, not a hard failure
+    assert "parking the run" in msg and "resumes here" in msg
+    assert client.blocked_until > 0
 
 
 def test_partial_playlist_survives_rate_limit(monkeypatch):
@@ -556,3 +558,109 @@ def test_pace_uses_configured_delay(monkeypatch):
     client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
     client._pace()
     assert slept and abs(slept[0] - 1.25) < 0.01
+
+
+# --------------------------------------------- public page reader (no API)
+
+
+def _html_payload(items):
+    import json as _json
+
+    return (
+        '<html><script id="__NEXT_DATA__">'
+        + _json.dumps({"props": {"pageProps": {"state": {"data": {"playlistV2": {
+            "content": {"items": items}}}}}}})
+        + "</script></html>"
+    )
+
+
+def _v2_item(vid, name, artist, ms=200000):
+    return {"itemV2": {"data": {
+        "uri": f"spotify:track:{vid}",
+        "name": name,
+        "artists": {"items": [{"profile": {"name": artist}}]},
+        "albumOfTrack": {"name": "Album"},
+        "trackDuration": {"totalMilliseconds": ms},
+    }}}
+
+
+class _HtmlSession:
+    def __init__(self, html, status=200):
+        self.headers = {}
+        self.html = html
+        self.status = status
+        self.calls = []
+
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append({"url": url, "headers": dict(headers or {})})
+
+        class R:
+            status_code = self.status
+            text = self.html
+
+        return R()
+
+
+def test_public_reader_parses_playlist_page():
+    import phonksync.spotify as sp
+
+    session = _HtmlSession(_html_payload([
+        _v2_item("4uLU6hMCjMI75M1A2tKUQC", "Never Gonna Give You Up", "Rick Astley", 213573),
+        _v2_item("0VjIjW4GlUZAMYd2vXMi3b", "Blinding Lights", "The Weeknd", 200040),
+    ]))
+    reader = sp.PublicPlaylistReader(session)
+    tracks = reader.playlist_tracks("37i9dQZF1DXcBWIGoYBM5M")
+    assert [t.name for t in tracks] == ["Never Gonna Give You Up", "Blinding Lights"]
+    assert tracks[0].artists == ["Rick Astley"]
+    assert tracks[0].duration_ms == 213573
+    assert tracks[0].uri.startswith("spotify:track:")
+    # the render payload needs the browser patch header, not an API token
+    assert session.calls[0]["headers"]["_patch"] == '%22browser%22'
+    assert "Authorization" not in session.calls[0]["headers"]
+
+
+def test_public_reader_reports_private_playlist():
+    import phonksync.spotify as sp
+
+    reader = sp.PublicPlaylistReader(_HtmlSession("<html>nope</html>"))
+    assert reader.playlist_tracks("x") == []
+    assert "payload not found" in reader.last_error
+
+
+def test_public_reader_handles_http_errors():
+    import phonksync.spotify as sp
+
+    reader = sp.PublicPlaylistReader(_HtmlSession("", status=403))
+    assert reader.playlist_tracks("x") == []
+    assert "403" in reader.last_error
+
+
+def test_persistent_short_429_becomes_a_cooldown(monkeypatch):
+    """6 x 429 with short Retry-After must end as a cooldown, not a crash."""
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    monkeypatch.setenv("SPOTIFY_TOTP_REMOTE", "0")
+
+    class Resp:
+        status_code = 429
+        headers = {"Retry-After": "5"}
+        text = "{}"
+
+        def json(self):
+            return {}
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, *a, **kw):
+            return Resp()
+
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    with pytest.raises(RateLimited) as exc:
+        client.playlist_tracks("x", max_tracks=10)
+    assert "parking the run" in str(exc.value)
+    assert client.blocked_until > time.time() + 60
+    assert client.blocked_until <= time.time() + sp._SHORT_BLOCK_COOLDOWN + 5
