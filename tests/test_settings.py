@@ -3,6 +3,7 @@ import pytest
 from phonksync.settings import (
     Config,
     ConfigError,
+    Secrets,
     parse_spotify_playlist_id,
     parse_youtube_playlist_id,
 )
@@ -46,3 +47,29 @@ def test_config_rejects_target_as_source(monkeypatch, tmp_path):
     cfg = Config.load(tmp_path / "missing.json")
     with pytest.raises(ConfigError):
         cfg.validate()
+
+
+def test_spotify_only_config_and_secrets_do_not_require_youtube(monkeypatch, tmp_path):
+    monkeypatch.setenv("SPOTIFY_SOURCE_PLAYLISTS", "37i9dQZF1DXcBWIGoYBM5M")
+    monkeypatch.setenv("SPOTIFY_TARGET_PLAYLIST", "37i9dQZF1DX4WYpdgoIcn6")
+    monkeypatch.delenv("YOUTUBE_ENABLED", raising=False)
+    monkeypatch.delenv("YOUTUBE_TARGET_PLAYLIST", raising=False)
+    cfg = Config.load(tmp_path / "missing.json")
+    assert cfg.youtube_enabled is False
+    cfg.validate()
+    secrets = Secrets(spotify_cookie="sp_dc=fake")
+    secrets.validate(require_youtube=cfg.youtube_enabled)
+
+
+def test_youtube_enabled_requires_target_and_secrets(monkeypatch, tmp_path):
+    monkeypatch.setenv("SPOTIFY_SOURCE_PLAYLISTS", "37i9dQZF1DXcBWIGoYBM5M")
+    monkeypatch.setenv("SPOTIFY_TARGET_PLAYLIST", "37i9dQZF1DX4WYpdgoIcn6")
+    monkeypatch.setenv("YOUTUBE_ENABLED", "true")
+    monkeypatch.delenv("YOUTUBE_TARGET_PLAYLIST", raising=False)
+    cfg = Config.load(tmp_path / "missing.json")
+    assert cfg.youtube_enabled is True
+    with pytest.raises(ConfigError):
+        cfg.validate()
+    secrets = Secrets(spotify_cookie="sp_dc=fake")
+    with pytest.raises(ConfigError):
+        secrets.validate(require_youtube=True)

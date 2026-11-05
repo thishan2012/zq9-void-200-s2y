@@ -1,40 +1,31 @@
 # 🎧 Phonk Playlist Syncer
 
-Accuracy-first sync from **many Spotify playlists** → **one YouTube playlist + one Spotify playlist**, running automatically on GitHub Actions with Telegram logs.
+Sync from **many Spotify playlists** → **one Spotify playlist**, running automatically on GitHub Actions with Telegram logs.
 
-Reads every track from your source Spotify playlists (20, 30, any number), finds the **exact same recording** on YouTube through a 31-method search pipeline, and adds it to both targets. A JSON database committed to this repo guarantees a song is **never added twice**.
+Reads every track from your source Spotify playlists (20, 30, any number) and copies the exact same tracks into your target Spotify playlist. A JSON database committed to this repo guarantees a song is **never added twice**.
 
+> YouTube sync has been removed from the default setup. The syncer now runs **Spotify-only** unless you explicitly enable YouTube.
 > All repository content is in English by design (public repo).
 
 ## ✨ Features
 
-- **Many sources → two targets.** Any number of Spotify source playlists; one YouTube target + one Spotify target.
+- **Many sources → one Spotify target.** Any number of Spotify source playlists; one Spotify target playlist.
 - **Cookie-based Spotify auth.** Paste the whole browser `Cookie` header into a secret — no Spotify app registration needed.
-- **YouTube Data API (OAuth).** Uses your own Google Cloud OAuth client JSON + refresh token (read & write).
-- **Accuracy first.** 31 search methods + manual overrides, with 3 safety checks under every step:
-  1. `same_song_title()` — blocks a different song that shares only one word
-  2. `version_ok()` — never swaps `slowed` ↔ original ↔ `sped up` ↔ `remix`
-  3. `artist_ok()` — blocks the same title by a different artist
-- **Telegram logs.** Per-track ✅/❌ messages and a run summary.
+- **Telegram logs.** Per-track ✅ messages and a run summary.
 - **No duplicates.** `data/sync-state.json` is committed back to the repo after every run; ISRC dedup catches the same recording under different Spotify IDs.
-- **Quota-safe.** Local YouTube quota budget + persistent search cache; runs stop cleanly and resume where they left off.
-- **Manual overrides.** Pin any track to an exact video in `data/track-overrides.json`.
+- **Dry-run preview.** Reads only the first 200 source tracks by default and writes nothing.
+- **Optional YouTube sync (disabled).** The old YouTube matching pipeline is still in the codebase but is off by default (`youtube_enabled: false`).
 
 ## 🚀 Quick start
 
 Full setup guide: **[Instructions/README.md](Instructions/README.md)**
 Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRETS.md)**
 
-1. Create a Google Cloud OAuth client (YouTube Data API v3) and do the one-time authorization to get a refresh token.
-   - **No terminal?** Use the browser-only OAuth Playground method in [Instructions/SECRETS.md §3 Option A](Instructions/SECRETS.md).
-   - Or use the local helper:
-     ```bash
-     pip install -r requirements.txt
-     python -m phonksync youtube-auth --client-json client_secret.json
-     ```
+1. Create a Spotify target playlist you own (e.g. `Phonk Sync`).
 2. Add the repository secrets (see [Instructions/SECRETS.md](Instructions/SECRETS.md)):
-   `SPOTIFY_COOKIE`, `YT_CLIENT_JSON`, `YT_REFRESH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
-   `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`, `YOUTUBE_TARGET_PLAYLIST`.
+   `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`.
+   Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` for logs.
+   YouTube secrets are **not needed** for the default Spotify-only mode.
 3. Push to GitHub. The **Phonk Sync** workflow runs every 12 hours (and on demand via *Actions → Phonk Sync → Run workflow*). A manual `dry_run` previews only the first 200 source tracks.
 4. Watch Telegram. ✅
 
@@ -42,14 +33,16 @@ Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRE
 
 ```bash
 python -m phonksync check --live      # validate config + credentials
-python -m phonksync sync --dry-run    # match only, write nothing, first 200 source tracks
+python -m phonksync sync --dry-run    # preview only, write nothing, first 200 source tracks
 python -m phonksync sync --max-tracks 5
-python -m phonksync stats             # method win statistics
+python -m phonksync stats             # sync statistics
 ```
 
 Local runs can use a `.env` file (git-ignored) instead of exported environment variables.
 
-## 🔎 How matching works
+## 🔎 Optional YouTube matching (disabled by default)
+
+YouTube sync is off by default (`youtube_enabled: false`). If you enable it, the old accuracy-first pipeline is used.
 
 Pipeline order (first verified win stops the search):
 
@@ -88,6 +81,6 @@ tests/                # offline test suite (fake APIs, no network)
 
 ## ⚠️ Notes
 
-- YouTube API quota is 10,000 units/day by default (1 search = 100 units). A large first sync may span several scheduled runs — state is persisted, nothing is re-added. See [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md).
+- Default mode is Spotify-only, so no YouTube API quota is used. If you enable YouTube sync, the YouTube Data API daily quota (10,000 units/day; 1 search = 100 units) applies. See [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md).
 - The Spotify cookie is a session credential: treat it like a password, keep it only in GitHub Secrets, and refresh it if it expires.
 - Intended for personal use with your own accounts and playlists.

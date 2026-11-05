@@ -2,8 +2,8 @@ name: Phonk Sync
 
 on:
   schedule:
-    # Every 12 hours. No custom syncer runtime cap; the YouTube API quota
-    # budget still applies. Adjust the cron if you want more/less frequent syncs.
+    # Every 12 hours. Spotify-only by default; no custom syncer runtime cap.
+    # Adjust the cron if you want more/less frequent syncs.
     - cron: "0 */12 * * *"
   workflow_dispatch:
     inputs:
@@ -38,34 +38,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore search cache
-        uses: actions/cache@v4
-        with:
-          path: .cache
-          key: yt-search-cache-${{ github.run_id }}
-          restore-keys: |
-            yt-search-cache-
-
       - name: Validate config and secrets
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
-          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
-          YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
         run: python -m phonksync check
 
       - name: Run sync
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
-          YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
-          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
-          YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
         run: python -m phonksync sync

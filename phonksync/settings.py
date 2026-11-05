@@ -60,6 +60,7 @@ def _split_ids(raw: str) -> list[str]:
 class Config:
     spotify_source_playlists: list[str] = field(default_factory=list)
     spotify_target_playlist: str = ""
+    youtube_enabled: bool = False  # YouTube sync is removed/disabled by default
     youtube_target_playlist: str = ""
 
     max_tracks_per_run: int = 0  # 0 = unlimited
@@ -99,6 +100,11 @@ class Config:
             cfg.spotify_source_playlists = _split_ids(env_sources)
         if os.environ.get("SPOTIFY_TARGET_PLAYLIST"):
             cfg.spotify_target_playlist = os.environ["SPOTIFY_TARGET_PLAYLIST"]
+        env_yt_enabled = os.environ.get("YOUTUBE_ENABLED", "").lower()
+        if env_yt_enabled in {"1", "true", "yes"}:
+            cfg.youtube_enabled = True
+        elif env_yt_enabled in {"0", "false", "no"}:
+            cfg.youtube_enabled = False
         if os.environ.get("YOUTUBE_TARGET_PLAYLIST"):
             cfg.youtube_target_playlist = os.environ["YOUTUBE_TARGET_PLAYLIST"]
         if os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes"}:
@@ -125,8 +131,8 @@ class Config:
             )
         if not self.spotify_target_playlist:
             raise ConfigError("spotify_target_playlist is not configured")
-        if not self.youtube_target_playlist:
-            raise ConfigError("youtube_target_playlist is not configured")
+        if self.youtube_enabled and not self.youtube_target_playlist:
+            raise ConfigError("youtube_target_playlist is not configured (YouTube sync is enabled)")
         if self.spotify_target_playlist in self.spotify_source_playlists:
             raise ConfigError("Target Spotify playlist must not also be a source playlist")
         if self.dry_run_track_limit < 0:
@@ -153,14 +159,15 @@ class Secrets:
             telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
         )
 
-    def validate(self, require_telegram: bool = False) -> None:
+    def validate(self, require_telegram: bool = False, require_youtube: bool = False) -> None:
         missing = []
         if not self.spotify_cookie:
             missing.append("SPOTIFY_COOKIE")
-        if not (self.youtube_client_json or self.youtube_token_json):
-            missing.append("YT_CLIENT_JSON (or YT_TOKEN_JSON)")
-        if not (self.youtube_refresh_token or self.youtube_token_json):
-            missing.append("YT_REFRESH_TOKEN (or YT_TOKEN_JSON)")
+        if require_youtube:
+            if not (self.youtube_client_json or self.youtube_token_json):
+                missing.append("YT_CLIENT_JSON (or YT_TOKEN_JSON)")
+            if not (self.youtube_refresh_token or self.youtube_token_json):
+                missing.append("YT_REFRESH_TOKEN (or YT_TOKEN_JSON)")
         if require_telegram and not (self.telegram_bot_token and self.telegram_chat_id):
             missing.append("TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID")
         if missing:

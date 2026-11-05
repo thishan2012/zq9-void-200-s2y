@@ -1,6 +1,7 @@
 {
   "spotify_source_playlists": [],
   "spotify_target_playlist": "",
+  "youtube_enabled": false,
   "youtube_target_playlist": "",
   "max_tracks_per_run": 0,
   "dry_run_track_limit": 200,
