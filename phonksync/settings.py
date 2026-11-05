@@ -185,6 +185,12 @@ def load_dotenv(path: str | Path = ".env") -> None:
             continue
         key, _, value = line.partition("=")
         key = key.strip()
-        value = value.strip().strip('"').strip("'")
+        value = value.strip()
+        # Strip one layer of outer quotes (handles \"sp_dc=...; ...\" pasted with quotes).
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+            # .env values are often double-wrapped: '\"...\"'
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                value = value[1:-1]
         if key and key not in os.environ:
             os.environ[key] = value

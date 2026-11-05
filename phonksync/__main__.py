@@ -51,6 +51,17 @@ def cmd_check(args: argparse.Namespace) -> int:
         print("✅ Required secrets present")
     except ConfigError as exc:
         problems.append(str(exc))
+
+    # Early Spotify cookie parse check (no network) — catches the
+    # common \"Could not find sp_dc\" mistake even without --live.
+    if secrets.spotify_cookie:
+        try:
+            from .spotify import extract_sp_dc
+
+            tok = extract_sp_dc(secrets.spotify_cookie)
+            print(f"✅ Spotify cookie parses (sp_dc length {len(tok)}, starts with {tok[:6]}...)")
+        except Exception as exc:
+            problems.append(f"Spotify cookie: {exc}")
     if secrets.telegram_bot_token and secrets.telegram_chat_id:
         print("✅ Telegram secrets present")
     else:
