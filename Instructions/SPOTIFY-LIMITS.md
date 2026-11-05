@@ -8,11 +8,28 @@ When you trip it you get `429` plus `Retry-After`. That number can be seconds…
 or **hours** (5h, 12h, 21h and ~24h have all been reported after retry storms).
 Retrying through it is what makes it last days. So this repo never does that.
 
+## The simple knobs (start here)
+
+```text
+REQUEST_DELAY_SECONDS = 2     # gap before EVERY Spotify call (config.json: spotify_request_delay_seconds)
+```
+
+That one number is the cheapest protection: 2 seconds between calls is slow enough
+to stay out of the window, and a 2,689-track playlist still finishes in a few
+minutes thanks to the caches below.
+
+```
+429 → backoff_seconds(Retry-After) → retry (up to 6x)
+```
+Every retry path uses `backoff_seconds()` (`phonksync/spotify.py`):
+`Retry-After` (seconds *or* HTTP-date) → exponential `2**attempt` → +jitter,
+capped. A 429 therefore **never fails the run**; it slows it down.
+
 ## The four defences (all automatic)
 
 | # | Defence | What it saves |
 |---|---|---|
-| 1 | **Paced pages** — 50 tracks/page, 0.35s pause, `Retry-After` honoured | avoids tripping the limit at all |
+| 1 | **Paced pages** — 50 tracks/page, `REQUEST_DELAY_SECONDS` (2s) between calls, `Retry-After` honoured | avoids tripping the limit at all |
 | 2 | **Source cache** — 1 `snapshot_id` call instead of N pages when a playlist is unchanged | ~1 request instead of 54 per 2,689-track playlist |
 | 3 | **Queue writes** — tracks are parked in the player queue and saved to the playlist in batches | ~1 call per track instead of 1 insert per track, and Spotify de-dupes on save |
 | 4 | **Cooldown memory** — a long `Retry-After` is stored in `data/sync-state.json`, live runs skip until it expires | no retry storm, no 5-day block |
@@ -42,6 +59,14 @@ available (no active device, account restriction), the run logs it once and
 falls back to normal adds for the rest of the run.
 
 Prefer the old behaviour? `"spotify_write_mode": "direct"`.
+
+## One bad track never kills the run
+
+- a write error → that track is skipped, the rest continue
+  (`⏭ Skipped …` in the report; it is retried on a later run)
+- a short 429 → waited out and retried inline
+- a *long* 429 (block) → the run stops cleanly and saves a **resume point**, so the
+  next run continues from the track after the skipped one instead of the top
 
 ## Checking state
 

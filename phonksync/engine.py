@@ -10,6 +10,7 @@ never added twice.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -60,6 +61,8 @@ class RunReport:
     queued: int = 0
     queued_flushes: int = 0
     manual_queued: int = 0
+    skipped: int = 0
+    rate_limited_skips: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
     inserted: int = 0
@@ -89,6 +92,13 @@ class RunReport:
             lines.append(
                 f"🧺 Spotify writes via queue: {self.queued} tracks "
                 f"({self.queued_flushes} batch save(s))"
+            )
+        if self.skipped:
+            lines.append(f"⏭ Skipped (errors): {self.skipped} — retried next run")
+        if self.rate_limited_skips:
+            lines.append(
+                f"⏸ Skipped due to Spotify 429: {self.rate_limited_skips} — "
+                "resume point saved, continue next run"
             )
         if self.manual_queued:
             lines.append(
@@ -134,6 +144,8 @@ class SyncEngine:
             secrets.telegram_bot_token, secrets.telegram_chat_id
         )
         self.state = StateDB(config.state_path)
+        if "REQUEST_DELAY_SECONDS" not in os.environ:
+            os.environ["REQUEST_DELAY_SECONDS"] = str(config.spotify_request_delay_seconds)
         self.spotify = SpotifyClient(
             secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
         )
@@ -206,7 +218,19 @@ class SyncEngine:
 
         try:
             tracks = self._collect_source_tracks(report)
-            target_spotify_ids = self.spotify.playlist_track_ids(cfg.spotify_target_playlist)
+            try:
+                target_spotify_ids = self.spotify.playlist_track_ids(
+                    cfg.spotify_target_playlist
+                )
+            except RateLimited:
+                # Target playlist is usually ours/small; a 429 here must not
+                # kill the run — treating it as empty only risks a duplicate
+                # "already there" add, which Spotify ignores.
+                log.warning("Could not read the target playlist (429) — continuing")
+                report.spotify_throttled = True
+                target_spotify_ids = {
+                    k for k, v in self.state.data["synced"].items() if v.get("spotify_added")
+                }
             target_youtube_ids = (
                 self.youtube.playlist_video_ids(cfg.youtube_target_playlist)
                 if cfg.youtube_enabled
@@ -224,6 +248,14 @@ class SyncEngine:
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return report
+
+        resume = self.state.get_resume_point()
+        resume_id = resume.get("track_id", "")
+        resume_seen = not resume_id
+        if resume_id and not cfg.dry_run:
+            self.telegram.info(
+                f"▶️ Resuming after the skipped track <code>{escape(resume.get('name', ''))}</code>"
+            )
 
         synced_isrcs = {
             (v.get("isrc") or "").upper()
@@ -254,6 +286,13 @@ class SyncEngine:
                 report.deferred += 1
                 continue
 
+            if not resume_seen:
+                if track.id == resume_id:
+                    resume_seen = True
+                else:
+                    report.deferred += 1
+                    continue
+
             processed += 1
             try:
                 self._process_track(
@@ -265,9 +304,26 @@ class SyncEngine:
                 report.quota_reason = str(exc)
                 self.telegram.warn(f"YouTube quota reached: {escape(str(exc))}")
                 break
+            except RateLimited as exc:
+                report.spotify_throttled = True
+                report.rate_limited_skips += 1
+                report.quota_reason = str(exc)
+                held = self._hold_resume_point(track)
+                self.telegram.warn(
+                    f"⏸ Spotify rate limit — skipping {escape(track.display())} "
+                    f"and continuing ({report.rate_limited_skips} skipped, "
+                    f"{'resume point saved' if held else 'no resume point'})"
+                )
+                if held:
+                    break  # long cooldown: stop cleanly, resume from here next run
+                continue  # short 429s were already retried: skip this track only
             except Exception as exc:
                 log.exception("Track %s failed", track.id)
                 report.errors.append(f"{track.display()}: {exc}")
+                report.skipped += 1
+                self.telegram.warn(
+                    f"⏭ Skipped {escape(track.display())}: {escape(str(exc))[:160]}"
+                )
 
         blocked_until = getattr(self.spotify, "blocked_until", 0.0)
         if blocked_until:
@@ -278,6 +334,9 @@ class SyncEngine:
                 + datetime.fromtimestamp(blocked_until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             )
             self.telegram.warn(escape(report.quota_reason))
+
+        if resume_id and resume_seen and not cfg.dry_run:
+            self.state.clear_resume_point()
 
         if not cfg.dry_run:
             self._flush_queue()
@@ -419,6 +478,12 @@ class SyncEngine:
         200. Any queue failure falls back to a normal add, so nothing is lost.
         """
         cfg = self.config
+        if getattr(self.spotify, "blocked_until", 0.0):
+            # Spotify is cooling down: park the track in the manual bucket so a
+            # human (or the next run) can drop it in without re-reading Spotify.
+            self.state.add_manual(track)
+            report.manual_queued += 1
+            return
         if cfg.spotify_write_mode == "queue" and getattr(
             self.spotify, "queue_supported", False
         ):
@@ -465,6 +530,18 @@ class SyncEngine:
             log.error("Could not save the queued tracks: %s", exc)
             self.state.set_pending_queue(getattr(self.spotify, "_queued", []))
             return 0
+
+    def _hold_resume_point(self, track: Track) -> bool:
+        """Long cooldown mid-run: remember this track so the next run starts here.
+
+        Returns True when the run should stop (a long block was detected).
+        """
+        blocked_until = getattr(self.spotify, "blocked_until", 0.0)
+        if not blocked_until:
+            return False
+        self.state.set_resume_point(track.id, track.name, track.artists, blocked_until)
+        self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
+        return True
 
     def _deferred(self, track: Track) -> bool:
         tries = self.state.unmatched_tries(track.id)

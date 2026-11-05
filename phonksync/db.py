@@ -114,6 +114,21 @@ class StateDB:
     def clear_manual(self) -> None:
         self.spotify.pop("manual", None)
 
+    def set_resume_point(self, track_id: str, name: str, artists: list[str], until: float) -> None:
+        self.spotify["resume"] = {
+            "track_id": track_id,
+            "name": name,
+            "artists": list(artists),
+            "blocked_until": float(until),
+            "saved_at": _now(),
+        }
+
+    def get_resume_point(self) -> dict[str, Any]:
+        return dict(self.spotify.get("resume") or {})
+
+    def clear_resume_point(self) -> None:
+        self.spotify.pop("resume", None)
+
     def set_pending_queue(self, uris: list[str]) -> None:
         self.spotify["pending_queue"] = list(uris)
 

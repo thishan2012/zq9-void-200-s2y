@@ -503,3 +503,56 @@ def test_queue_stops_at_max_items():
     for i in range(3):
         assert client.queue_track(f"spotify:track:{i}", max_items=3) is True
     assert client.queue_track("spotify:track:overflow", max_items=3) is False
+
+
+# ------------------------------------------------- delay + backoff knobs
+
+
+def test_request_delay_defaults_to_two_seconds(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.delenv("REQUEST_DELAY_SECONDS", raising=False)
+    assert sp.request_delay_seconds() == 2.0
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
+    assert client.request_delay == 2.0
+
+
+def test_request_delay_env_override_and_bad_values(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "1.5")
+    assert sp.request_delay_seconds() == 1.5
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "nonsense")
+    assert sp.request_delay_seconds() == 2.0
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "999")
+    assert sp.request_delay_seconds() == 30.0  # clamped
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "-4")
+    assert sp.request_delay_seconds() == 0.0
+
+
+def test_backoff_seconds_uses_retry_after_then_exponential():
+    import phonksync.spotify as sp
+
+    assert 29 <= sp.backoff_seconds({"Retry-After": "30"}) <= 32
+    # no header -> 2**attempt, floored at 2s
+    assert 2 <= sp.backoff_seconds({}, 1) <= 4
+    assert 8 <= sp.backoff_seconds({}, 3) <= 10  # 2**3 + jitter
+    # never above the cap (+ jitter)
+    assert sp.backoff_seconds({"Retry-After": "76000"}) <= 47
+    # HTTP-date form is understood
+    from email.utils import format_datetime
+    from datetime import datetime, timedelta, timezone
+
+    future = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=30))
+    assert 25 <= sp.backoff_seconds({"Retry-After": future}) <= 33
+
+
+def test_pace_uses_configured_delay(monkeypatch):
+    import phonksync.spotify as sp
+
+    slept = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "1.25")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
+    client._pace()
+    assert slept and abs(slept[0] - 1.25) < 0.01

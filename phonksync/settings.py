@@ -79,6 +79,7 @@ class Config:
     require_youtube_match_for_spotify: bool = False
     youtube_region_code: str = "US"
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
+    spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
     spotify_queue_flush_size: int = 40
     manual_queue_path: str = "data/manual-queue.txt"
     source_cache_path: str = ".cache/source-tracks.json"

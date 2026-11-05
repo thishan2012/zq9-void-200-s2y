@@ -13,6 +13,10 @@ on:
         description: "Max tracks to process this run (0 = unlimited)"
         type: string
         default: "0"
+      request_delay:
+        description: "Seconds to wait between Spotify API calls (empty = config.json, 2s)"
+        type: string
+        default: ""
       max_inserts:
         description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
         type: string
@@ -81,6 +85,7 @@ jobs:
           SPOTIFY_COOKIE_3: ${{ secrets.SPOTIFY_COOKIE_3 }}
           SPOTIFY_COOKIE_4: ${{ secrets.SPOTIFY_COOKIE_4 }}
           MAX_INSERTS_PER_DAY: ${{ inputs.max_inserts }}
+          REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
         run: python -m phonksync sync
