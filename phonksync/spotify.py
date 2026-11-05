@@ -7,6 +7,7 @@ No Spotify password, client secret, or OAuth app is required.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -28,56 +29,155 @@ _UA = (
 )
 
 
+# Cookie names that are never the session token; useful for diagnostics only.
+_SP_DC_RE = re.compile(r"\bsp_dc\b", re.IGNORECASE)
+# A value-shaped sp_dc token (Spotify's values are long; be lenient).
+_SP_DC_TOKEN_RE = re.compile(r"sp_dc\W{0,3}?([A-Za-z0-9._~+/=%\-]{20,})", re.IGNORECASE)
+
+
+def _clean_cookie(raw: str) -> str:
+    """Normalise copy-paste variants into a single-line ``k=v; k=v`` string.
+
+    Handles:
+      * ``Cookie: ...`` prefix and Chrome/Edge "Copy request headers" output
+        (``cookie:`` line followed by indented values, or one ``cookie:`` line
+        per cookie)
+      * multiline dumps where each line is ``name=value;`` or ``name<TAB>value``
+        (WebView / Netscape cookie files)
+      * markdown/backtick or comment noise (``# WebView ...``)
+      * stray CRLF, tabs, doubled quotes
+    """
+    text = (raw or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+    text = text.replace("\u00a0", " ").strip()
+    if not text:
+        return ""
+
+    lines = [ln.strip() for ln in text.split("\n")]
+    # Drop comment lines (# ...) but keep everything else.
+    lines = [ln for ln in lines if ln and not ln.startswith("#")]
+    if not lines:
+        return ""
+
+    # Remove a leading "cookie:" / "set-cookie:" label wherever it appears and
+    # strip surrounding backticks/quotes per line.
+    cleaned: list[str] = []
+    for ln in lines:
+        ln = ln.strip()
+        low = ln.lower()
+        if low.startswith("set-cookie:"):
+            ln = ln[len("set-cookie:"):].strip()
+        elif low.startswith("cookie:"):
+            ln = ln[len("cookie:"):].strip()
+        ln = ln.strip("`").strip()
+        if ln:
+            cleaned.append(ln)
+        # A "cookie:" header may be followed by indented continuation lines in
+        # DevTools "Copy request headers" output; those are already collected.
+    text = " ".join(cleaned)
+
+    # Netscape/WebView files are TAB separated -> already normalised to space.
+    # Join whitespace-separated pairs that lost their ';' (e.g. "sp_t abc sp_dc AQ..")
+    if "sp_dc" in text.lower() and "=" not in text.split("sp_dc", 1)[1][:3]:
+        m = _SP_DC_TOKEN_RE.search(text)
+        if m:
+            # Rebuild a minimal header so later steps can parse it.
+            return f"sp_dc={m.group(1)}"
+    return text
+
+
+def _normalise_value(value: str) -> str:
+    return (value or "").strip().strip('"\'').strip()
+
+
 def extract_sp_dc(cookie_header: str) -> str:
     """Accept a full Cookie header, a bare sp_dc value, or 'sp_dc=...'.
 
     Robust to common copy-paste mistakes:
-      * \"Cookie: \" prefix from DevTools (Copy request headers)
-      * outer quotes around the whole value (\"sp_dc=...; ...\")
-      * quoted sp_dc value (sp_dc=\"AQ...\")
-      * extra whitespace / case differences
+      * "Cookie: " prefix from DevTools (Copy request headers / Copy as cURL)
+      * multiline dumps, "name=value" lines, or "name<TAB>value" (WebView)
+      * outer quotes around the whole value ("sp_dc=...; ...")
+      * quoted sp_dc value (sp_dc="AQ..."), stray whitespace, case differences
+      * JSON-ish output from browser extensions (sp_dc: "AQ...")
     """
     raw = (cookie_header or "").strip()
     if not raw:
         raise AuthError("SPOTIFY_COOKIE is empty — add it to .env or GitHub Secrets")
 
-    # Strip optional \"Cookie:\" prefix (DevTools \"Copy request headers\" includes it).
-    if raw[:7].lower() == "cookie:":
-        raw = raw[7:].strip()
+    text = _clean_cookie(raw)
 
-    # Strip outer matching quotes around the entire header (e.g. pasted as \"...\").
-    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-        raw = raw[1:-1].strip()
-        # Handle double-wrapped case like '\"sp_dc=...\"'
-        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-            raw = raw[1:-1].strip()
+    # Strip outer matching quotes around the entire header.
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+        text = text[1:-1].strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+            text = text[1:-1].strip()
 
-    # Bare token value (no '=' and no ';') — just the sp_dc value itself.
-    if "=" not in raw and ";" not in raw and len(raw) > 40:
-        return raw.strip('"\'').strip()
+    # Bare token value — just the sp_dc value itself (token-shaped, no pairs).
+    if (
+        "=" not in text
+        and ";" not in text
+        and len(text) > 40
+        and re.fullmatch(r"[A-Za-z0-9._~+/%\-=]+", text)
+    ):
+        return _normalise_value(text)
 
-    # Try SimpleCookie first (handles sp_dc=\"...\" correctly).
+    # JSON output (browser cookie extensions, "Copy as JSON") — the object may
+    # be a flat list of cookies or wrap an array under a key.
+    if text[:1] in "{[":
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            data = None
+        if data is not None:
+            stack = [data]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, dict):
+                    # {"name": "sp_dc", "value": "AQ..."} (extension exports)
+                    if (
+                        str(node.get("name", "")).lower() == "sp_dc"
+                        and isinstance(node.get("value"), str)
+                        and node["value"].strip()
+                    ):
+                        return _normalise_value(node["value"])
+                    for key, value in node.items():
+                        if str(key).lower() == "sp_dc" and isinstance(value, str) and value.strip():
+                            return _normalise_value(value)
+                        stack.append(value)
+                elif isinstance(node, list):
+                    stack.extend(node)
+
+    # Try SimpleCookie first (handles sp_dc="..." correctly).
     jar = SimpleCookie()
     try:
-        jar.load(raw)
+        jar.load(text)
     except Exception:
         pass
     if "sp_dc" in jar:
-        val = jar["sp_dc"].value.strip('"\'').strip()
+        val = _normalise_value(jar["sp_dc"].value)
         if val:
             return val
-    # Case-insensitive search that tolerates spaces and optional quotes:
-    #   sp_dc = \"AQ...\"  /  SP_DC=AQ...;  /  sp_dc=\"AQ...\"
-    m = re.search(r"sp_dc\s*=\s*\"?([^;\"\s]+)\"?", raw, re.IGNORECASE)
-    if m:
-        return m.group(1).strip().strip('"\'').strip()
 
-    # Diagnostic hint without leaking the secret: show length + preview.
-    preview = raw[:60].replace("\n", " ") if raw else ""
-    has_sp_dc = "sp_dc" in raw.lower()
+    # Fallback: tolerant regex (sp_dc = "AQ..." / sp_dc:AQ... / SP_DC=AQ...).
+    m = re.search(r"sp_dc\s*[=:]\s*\"?([^;\"\s]+)", text, re.IGNORECASE)
+    if m and _normalise_value(m.group(1)):
+        return _normalise_value(m.group(1))
+
+    # Last resort: any long token sitting next to the sp_dc marker (WebView /
+    # Netscape dumps where the separator was mangled).
+    m = _SP_DC_TOKEN_RE.search(text)
+    if m and _normalise_value(m.group(1)):
+        return _normalise_value(m.group(1))
+
+    names = re.findall(r"([A-Za-z0-9_.\-]+)\s*=", text)
+    has_sp_dc = "sp_dc" in text.lower()
+    seen = ", ".join(dict.fromkeys(names))[:200] or "none"
     hint = (
-        f" Got {len(raw)} chars starting with {preview!r}."
-        + (" It contains 'sp_dc' but parsing failed — check for stray quotes or newlines." if has_sp_dc else " It does not appear to contain 'sp_dc'.")
+        f" Got {len(raw)} chars, cookie names found: {seen}."
+        + (" It contains 'sp_dc' but no usable value followed it — the value may be "
+           "empty or truncated. Copy the Cookie header again from a request to "
+           "open.spotify.com that is 200 OK."
+           if has_sp_dc else " It does not contain a 'sp_dc' cookie at all — make sure "
+           "you copied from open.spotify.com while logged in, not accounts.spotify.com.")
     )
     raise AuthError(
         "Could not find sp_dc in SPOTIFY_COOKIE. Paste the full Cookie header "
@@ -144,7 +244,7 @@ class SpotifyClient:
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=45,
                 )
-            except requests.RequestException as exc:
+            except requests.RequestException:
                 if attempt == 3:
                     raise
                 time.sleep(2 ** attempt)

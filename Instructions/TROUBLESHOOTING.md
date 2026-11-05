@@ -37,8 +37,22 @@ Fix: either disable YouTube sync (`youtube_enabled: false`), or add `YOUTUBE_API
 - `python -m phonksync check --live` prints the exact error.
 
 ## "Could not find sp_dc in SPOTIFY_COOKIE"
-The secret value does not contain the `sp_dc` cookie. The syncer needs the full Cookie header from an authenticated **open.spotify.com** request, and that header must include `sp_dc=...`.
-Common mistakes: pasting a playlist URL, pasting cookies from `accounts.spotify.com`, or copying only `sp_t`/other cookies without `sp_dc`.
+The error lists the cookie **names** it found, e.g. `cookie names found: sp_t, sp_key`. If `sp_dc` is missing from that list, the copy came from the wrong place (`accounts.spotify.com`, a mobile app cookie, or a logged-out tab).
+
+Accepted formats (all of these parse):
+- full `Cookie:` header on one line, with or without the `Cookie:` prefix
+- multiline dumps / DevTools "Copy request headers" (`cookie:` followed by indented lines)
+- WebView or Netscape cookie exports (`name<TAB>value`)
+- JSON cookie exports (`{"sp_dc": "AQ..."}` or `[{"name":"sp_dc","value":"AQ..."}]`)
+- a bare `sp_dc=AQ...` pair, or the `AQ...` value alone
+
+Fastest reliable route:
+```bash
+python -m phonksync cookie-fix --show   # paste the whole dump on stdin
+```
+Then store **only** the printed `AQ...` value as `SPOTIFY_COOKIE`. The value is long (usually 200+ chars); a short value usually means the cookie was truncated by the clipboard or the request was a redirect.
+
+If `sp_dc` is in the list but parsing still failed, the value itself was empty/truncated — copy it again from a **200 OK** request to `open.spotify.com`.
 
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.

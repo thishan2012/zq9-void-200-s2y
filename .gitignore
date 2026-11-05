@@ -24,3 +24,7 @@ venv/
 
 # Temp state writes
 *.tmp
+
+# Cookie helper output
+.sp_dc
+.sp_dc*
