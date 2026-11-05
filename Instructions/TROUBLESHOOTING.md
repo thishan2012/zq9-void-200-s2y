@@ -1,25 +1,21 @@
 # 🛠 Troubleshooting
 
-## Public vs private repo, Google indexing, and Actions minutes
+## Public repo, Google indexing, and runtime
 
-**The trade-off**
-- **Public repo** → unlimited GitHub Actions minutes, but the code and any committed files *can* be indexed by Google. There is no reliable per-repo `noindex` on GitHub.
-- **Private repo** → never indexed by Google, but the free plan includes **2,000 Actions minutes/month**.
+- **Public repo** → standard GitHub-hosted Actions runs do not consume the private-repo monthly minute allowance. The code and committed files *can* still be indexed by Google; there is no reliable per-repo `noindex` on GitHub.
+- **No custom syncer time cap** is applied. GitHub's own platform/job limits still exist, but the syncer itself does not stop after a fixed number of minutes.
+- **YouTube API quota is separate from Actions minutes.** The official YouTube Data API still has a daily quota (default 10,000 units; one search costs 100). The quota budget stops YouTube searching cleanly and resumes on the next run.
+- **Dry runs are sampled:** by default they read only the first 200 source tracks (`dry_run_track_limit` in `config.json`) and write nothing. Live syncs read the full source playlists.
 
-**Why private is usually fine here (the 43-minute fear)**
-A 43-minute run for 500 songs usually comes from *scraping* YouTube search (no quota). This syncer uses the **official YouTube Data API**, where each search costs 100 quota units and the default daily quota is 10,000 units. The built-in quota budget therefore caps each run to roughly **95 searches (~a few minutes)**, and a large first sync automatically spreads across several days. On top of that, `max_minutes_per_run` (default **25**) is a hard wall-clock cap.
-
-So with the default every-12-hours schedule, worst case is about `25 min × 2 runs/day × 30 days = 1,500 min/month` — under the 2,000 free private minutes, and in practice far less because runs are quota-limited and only *new* songs are processed after the first sync.
-
-**If you still want a public repo (unlimited minutes) without exposing personal data**
-The code itself is generic and harmless if indexed. Keep the *personal* parts out of the public repo:
+**Keep personal data out of a public repo**
+The code itself is generic. Keep the *personal* parts out of the public repo:
 - Playlist IDs → GitHub Secrets (`SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`, `YOUTUBE_TARGET_PLAYLIST`), not `config.json`.
 - Credentials → GitHub Secrets (already required).
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
-**Reduce minutes further**
+**Reduce load if needed**
 - Increase the cron interval (e.g. daily: `0 3 * * *`).
-- Lower `max_minutes_per_run`.
+- Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
 ## "Spotify returned an anonymous token" / 401 from Spotify

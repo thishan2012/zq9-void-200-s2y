@@ -148,11 +148,21 @@ class SpotifyClient:
 
     # ------------------------------------------------------------- endpoints
 
-    def playlist_tracks(self, playlist_id: str) -> list[Track]:
+    def playlist_tracks(
+        self, playlist_id: str, max_tracks: int | None = None
+    ) -> list[Track]:
+        """Read playlist tracks.
+
+        ``max_tracks`` stops pagination early and is used for dry-run previews.
+        ``None`` reads the full playlist (live sync).
+        """
+        if max_tracks is not None and max_tracks <= 0:
+            return []
         tracks: list[Track] = []
         path = f"playlists/{playlist_id}/tracks"
+        page_size = min(100, max_tracks) if max_tracks else 100
         params: dict[str, Any] = {
-            "limit": 100,
+            "limit": page_size,
             "fields": (
                 "items(is_local,track(id,name,type,artists(name),album(name),"
                 "duration_ms,external_ids(isrc),uri,popularity)),next"
@@ -161,6 +171,8 @@ class SpotifyClient:
         while True:
             data = self._request("GET", path, params=params)
             for item in data.get("items", []):
+                if max_tracks is not None and len(tracks) >= max_tracks:
+                    break
                 t = item.get("track") or {}
                 if not t or item.get("is_local") or not t.get("id"):
                     continue
@@ -179,6 +191,8 @@ class SpotifyClient:
                         sources=[playlist_id],
                     )
                 )
+            if max_tracks is not None and len(tracks) >= max_tracks:
+                break
             next_url = data.get("next")
             if not next_url:
                 break

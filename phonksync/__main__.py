@@ -113,7 +113,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_sync = sub.add_parser("sync", help="Run one sync pass")
-    p_sync.add_argument("--dry-run", action="store_true", help="Match only, write nothing")
+    p_sync.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Match only, write nothing; reads the first 200 source tracks by default",
+    )
     p_sync.add_argument("--max-tracks", type=int, default=0, help="Limit tracks this run")
     p_sync.set_defaults(func=cmd_sync)
 

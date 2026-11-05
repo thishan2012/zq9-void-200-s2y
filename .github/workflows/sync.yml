@@ -2,14 +2,13 @@ name: Phonk Sync
 
 on:
   schedule:
-    # Every 12 hours. Each run is bounded by max_minutes_per_run (config.json)
-    # and the YouTube daily quota, so monthly Actions minutes stay low even on
-    # a private repo. Adjust the cron if you want more/less frequent syncs.
+    # Every 12 hours. No custom syncer runtime cap; the YouTube API quota
+    # budget still applies. Adjust the cron if you want more/less frequent syncs.
     - cron: "0 */12 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (match only, write nothing)"
+        description: "Dry run: preview the first 200 source tracks, write nothing"
         type: boolean
         default: false
       max_tracks:
@@ -27,7 +26,6 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
