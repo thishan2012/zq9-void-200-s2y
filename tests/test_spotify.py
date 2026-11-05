@@ -664,3 +664,234 @@ def test_persistent_short_429_becomes_a_cooldown(monkeypatch):
     assert "parking the run" in str(exc.value)
     assert client.blocked_until > time.time() + 60
     assert client.blocked_until <= time.time() + sp._SHORT_BLOCK_COOLDOWN + 5
+
+
+# --------------------------------------------------------------------------- #
+# CORS-proxy routing (SPOTIFY_PROXY_URL)
+# --------------------------------------------------------------------------- #
+class _ProxyResp:
+    def __init__(self, code, payload=None, headers=None, text="{}"):
+        self.status_code = code
+        self.headers = headers or {}
+        self.text = text
+        self._p = payload if payload is not None else {"items": [], "next": None}
+
+    def json(self):
+        return self._p
+
+
+def test_with_proxy_builds_query_and_header_urls(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    url = sp._with_proxy("https://p.example/", "https://api.spotify.com/v1/me?x=1", None)
+    assert url == "https://p.example?url=https%3A%2F%2Fapi.spotify.com%2Fv1%2Fme%3Fx%3D1"
+
+    monkeypatch.setenv("SPOTIFY_PROXY_SECRET", "s3cret")
+    assert sp.proxy_headers()["x-proxy-secret"] == "s3cret"
+    url = sp._with_proxy("https://p.example", "https://api.spotify.com/v1/me", {"limit": 50})
+    assert url == "https://p.example/https://api.spotify.com/v1/me?limit=50"
+
+
+def test_requests_go_through_the_proxy_when_configured(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://corsly-proxy2.camdvr.org")
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+
+    seen = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, method, url, **kw):
+            seen.append(url)
+            return _ProxyResp(200, {"items": [], "next": None})
+
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    client.playlist_tracks("x", max_tracks=10)
+    assert seen and all("corsly-proxy2.camdvr.org" in u for u in seen)
+    assert seen[0].startswith("https://corsly-proxy2.camdvr.org?url=")
+    assert client.proxy_used > 0 and client.direct_used == 0
+
+
+def test_429_switches_route_from_proxy_to_direct(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://p.example")
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+
+    seen = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, method, url, **kw):
+            seen.append(url)
+            if "p.example" in url:
+                return _ProxyResp(429, headers={"Retry-After": "3"})
+            return _ProxyResp(200, {"items": [], "next": None})
+
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    client.playlist_tracks("x", max_tracks=10)
+    assert len(seen) >= 2
+    assert "p.example" in seen[0] and seen[1].startswith("https://api.spotify.com/v1/")
+    assert client.proxy_used == 1 and client.direct_used >= 1
+
+
+def test_token_request_sends_cookie_header_through_the_proxy(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://p.example")
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    monkeypatch.setattr(sp, "_refresh_totp_secrets", lambda session: None)
+    monkeypatch.setattr(sp, "_totp_version", lambda: 61)
+    monkeypatch.setattr(sp, "_server_time", lambda session: 12345)
+
+    seen = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def get(self, url, headers=None, timeout=None, **kw):
+            seen.append((url, headers or {}))
+            return _ProxyResp(200, {"accessToken": "abc", "expiresIn": 3600})
+
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    monkeypatch.setattr(client, "_totp_params", lambda ts, ver: {"reason": "transport"})
+    assert client._ensure_token() == "abc"
+    url, headers = seen[0]
+    assert url.startswith("https://p.example?url=")
+    assert headers["Cookie"].startswith("sp_dc=")
+    assert "cookies" not in seen[0][1]
+
+
+def test_proxy_test_command_reports_missing_setting(monkeypatch, capsys):
+    import phonksync.__main__ as main
+
+    monkeypatch.delenv("SPOTIFY_PROXY_URL", raising=False)
+    assert main.main(["proxy-test"]) == 2
+    assert "SPOTIFY_PROXY_URL is not set" in capsys.readouterr().err
+
+
+def test_broken_proxy_falls_back_to_direct(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://dead.example")
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+
+    seen = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, method, url, **kw):
+            seen.append(url)
+            if "dead.example" in url:
+                raise sp.requests.ConnectionError("proxy down")
+            return _ProxyResp(200, {"items": [], "next": None})
+
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    client.playlist_tracks("x", max_tracks=10)
+    assert "dead.example" in seen[0]
+    assert seen[-1].startswith("https://api.spotify.com/v1/")
+    assert client.direct_used >= 1
+
+
+def test_proxy_5xx_falls_back_to_direct(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://p.example")
+    monkeypatch.delenv("SPOTIFY_PROXY_SECRET", raising=False)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+
+    seen = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, method, url, **kw):
+            seen.append(url)
+            if "p.example" in url:
+                return _ProxyResp(502)
+            return _ProxyResp(200, {"items": [], "next": None})
+
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    client.playlist_tracks("x", max_tracks=10)
+    assert "p.example" in seen[0] and seen[-1].startswith("https://api.spotify.com/v1/")
+
+
+def _token_only_session(responses):
+    """Session that serves token responses from a scripted list."""
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.calls = 0
+
+        def get(self, url, headers=None, timeout=None, **kw):
+            self.calls += 1
+            r = responses[min(self.calls - 1, len(responses) - 1)]
+            return r
+
+    return Session()
+
+
+def _token_client(monkeypatch, session):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp, "_refresh_totp_secrets", lambda s: None)
+    monkeypatch.setattr(sp, "_totp_version", lambda: 61)
+    monkeypatch.setattr(sp, "_server_time", lambda s: 12345)
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=session)
+    monkeypatch.setattr(client, "_totp_params", lambda ts, ver: {"reason": "transport"})
+    return client
+
+
+def test_token_429_is_waited_out_not_reported_as_bad_cookie(monkeypatch):
+    import phonksync.spotify as sp
+
+    slept = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: slept.append(s))
+    session = _token_only_session([
+        _ProxyResp(429, headers={"Retry-After": "5"}),
+        _ProxyResp(200, {"accessToken": "tok", "expiresIn": 3600}),
+    ])
+    client = _token_client(monkeypatch, session)
+    assert client._ensure_token() == "tok"
+    assert any(4.9 <= s <= 40 for s in slept)
+
+
+def test_token_429_forever_parks_the_run_instead_of_auth_error(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    session = _token_only_session([_ProxyResp(429, headers={"Retry-After": "2"})])
+    client = _token_client(monkeypatch, session)
+    with pytest.raises(RateLimited) as info:
+        client._ensure_token()
+    assert "throttling the token endpoint" in str(info.value)
+    assert client.blocked_until > time.time() + 1700
+
+
+def test_token_429_with_long_retry_after_parks_immediately(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    session = _token_only_session([_ProxyResp(429, headers={"Retry-After": "7200"})])
+    client = _token_client(monkeypatch, session)
+    with pytest.raises(RateLimited):
+        client._ensure_token()
+    assert session.calls == 1
+    assert client.blocked_until > time.time() + 7100

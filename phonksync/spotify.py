@@ -26,6 +26,7 @@ import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from http.cookies import SimpleCookie
+from urllib.parse import quote, urlencode
 from typing import Any
 
 import requests
@@ -140,6 +141,8 @@ _TOTP_SECRETS_URL = (
 )
 _TOTP_REMOTE_CACHE: dict[str, Any] = {"ts": 0.0, "ver": ""}
 _API = "https://api.spotify.com/v1"
+_API_HOST = "https://api.spotify.com"
+_OPEN_HOST = "https://open.spotify.com"
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -394,6 +397,55 @@ def _server_time(session: requests.Session) -> int:
     return int(time.time())
 
 
+def _build_url(host: str, path: str) -> str:
+    """URL builder that honours SPOTIFY_PROXY_URL (CORS-proxy style).
+
+    A proxy is expected to accept ``?url=<encoded absolute url>`` (corsproxy.io,
+    allorigins, most Vercel/Cloudflare CORS proxies). Two modes:
+
+      * forward — SPOTIFY_PROXY_SECRET is set: the absolute URL is sent in the
+        ``x-spotify-url`` header and the proxy forwards it untouched
+      * query   — otherwise: ``<proxy>?url=<encoded>`` (corsproxy.io style)
+    """
+    proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip().rstrip("/")
+    absolute = f"{host}{path}"
+    if not proxy:
+        return absolute
+    if proxy.endswith("raw") and "allorigins" in proxy:
+        return f"{proxy}?url={quote(absolute, safe='')}"
+    if os.environ.get("SPOTIFY_PROXY_SECRET", "").strip():
+        # header mode keeps the path visible; the proxy does the rewrite
+        return f"{proxy}/{absolute}"
+    return f"{proxy}?url={quote(absolute, safe='')}"
+
+
+def _with_proxy(proxy: str, url: str, params: dict[str, Any] | None) -> str:
+    """Return the proxy URL for ``url`` (params folded in when needed)."""
+    proxy = proxy.rstrip("/")
+    target = url
+    if params:
+        target = f"{url}?{urlencode(params, doseq=True)}"
+    if os.environ.get("SPOTIFY_PROXY_SECRET", "").strip():
+        return f"{proxy}/{target}"
+    return f"{proxy}?url={quote(target, safe='')}"
+
+
+def proxy_headers() -> dict[str, str]:
+    """Extra headers for a header-forwarding proxy (header mode only)."""
+    secret = os.environ.get("SPOTIFY_PROXY_SECRET", "").strip()
+    if not secret:
+        return {}
+    headers = {"x-proxy-secret": secret, "x-spotify-proxy-secret": secret}
+    name = os.environ.get("SPOTIFY_PROXY_SECRET_HEADER", "x-proxy-secret").strip()
+    if name and name not in headers:
+        headers[name] = secret
+    return headers
+
+
+def proxy_enabled() -> bool:
+    return bool(os.environ.get("SPOTIFY_PROXY_URL", "").strip())
+
+
 _HTML_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -419,18 +471,21 @@ class PublicPlaylistReader:
         self.last_error = ""
 
     def _payload(self, playlist_id: str) -> dict[str, Any] | None:
+        url = f"{_OPEN_HOST}/playlist/{playlist_id}"
+        headers = {
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://open.spotify.com/",
+            "app-platform": "WebPlayer",
+            "_patch": '%22browser%22',
+            **proxy_headers(),
+        }
+        proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip()
         try:
-            resp = self.session.get(
-                f"https://open.spotify.com/playlist/{playlist_id}",
-                headers={
-                    "Accept": "text/html,application/xhtml+xml",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": "https://open.spotify.com/",
-                    "app-platform": "WebPlayer",
-                    "_patch": '%22browser%22',
-                },
-                timeout=30,
-            )
+            if proxy:
+                resp = self.session.get(_with_proxy(proxy, url, None), headers=headers, timeout=30)
+            else:
+                resp = self.session.get(url, headers=headers, timeout=30)
         except requests.RequestException as exc:
             self.last_error = f"network: {exc}"
             return None
@@ -611,6 +666,9 @@ class SpotifyClient:
         self._rate_limit_wait = 0.0
         self._pace_debt = 0.0
         self.partial_read = False
+        self.proxy_url = os.environ.get("SPOTIFY_PROXY_URL", "").strip()
+        self.proxy_used = 0
+        self.direct_used = 0
 
     # ------------------------------------------------------------------ auth
 
@@ -653,21 +711,54 @@ class SpotifyClient:
             (_LEGACY_TOKEN_URL, {}, _LEGACY_TOKEN_URL)
         )
 
+        token_headers = {
+            "Accept": "application/json",
+            "Referer": "https://open.spotify.com/",
+            "App-Platform": "WebPlayer",
+        }
+        # The token endpoint answers 429 too (and it is the *first* call of a
+        # run, which is why a throttled token used to look like a broken
+        # cookie).  Wait out short windows, park the run on a long one.
+        use_proxy = bool(self.proxy_url)
         for url, params, label in attempts:
-            try:
-                resp = self.session.get(
-                    url,
-                    params=params or None,
-                    headers={
-                        "Accept": "application/json",
-                        "Referer": "https://open.spotify.com/",
-                        "App-Platform": "WebPlayer",
-                    },
-                    cookies={"sp_dc": self.sp_dc},
-                    timeout=30,
-                )
-            except requests.RequestException as exc:
-                errors.append(f"{label}: {exc}")
+            resp = None
+            for _round in range(3):
+                try:
+                    resp = self._token_http(url, params, token_headers, use_proxy)
+                except requests.RequestException as exc:
+                    if use_proxy:
+                        log.warning(
+                            "Token request via proxy failed (%s) — trying direct", exc
+                        )
+                        use_proxy = False
+                        continue
+                    break
+                if resp.status_code == 429 and _round < 2:
+                    wait = _retry_after_seconds(resp.headers, _round)
+                    raw_wait = _header_seconds(resp.headers) or 0.0
+                    if max(wait, raw_wait) > _MAX_INLINE_WAIT:
+                        wait = max(wait, raw_wait)
+                        self.blocked_until = time.time() + wait
+                        raise RateLimited(
+                            wait,
+                            f"Spotify is throttling the token endpoint for "
+                            f"~{_human_duration(wait)}. Nothing was lost — the next run "
+                            "resumes here, or add a spare cookie (SPOTIFY_COOKIE_2).",
+                        )
+                    if use_proxy:
+                        use_proxy = False
+                        log.warning("Token endpoint 429 — retrying on a direct connection")
+                        continue
+                    self._rate_limit_wait += wait
+                    log.warning(
+                        "Token endpoint rate limit (429) — waiting %.0fs before retry %d/2",
+                        wait, _round + 2,
+                    )
+                    time.sleep(wait)
+                    continue
+                break
+            if resp is None:
+                errors.append(f"{label}: connection failed")
                 continue
             if resp.status_code == 200:
                 try:
@@ -683,6 +774,16 @@ class SpotifyClient:
             errors.append(f"{label}: HTTP {resp.status_code}")
             log.debug("Spotify token attempt failed (%s): %s", label, resp.text[:200])
 
+        if any("HTTP 429" in e for e in errors):
+            cooldown = _SHORT_BLOCK_COOLDOWN
+            self.blocked_until = time.time() + cooldown
+            raise RateLimited(
+                cooldown,
+                "Spotify is throttling the token endpoint (HTTP 429), so no API call can "
+                f"be made right now. Parking the run for {_human_duration(cooldown)} — "
+                "nothing was lost, the next run resumes here. Reading playlists from the "
+                "public page still works in the meantime.",
+            )
         if self._rotate_cookie():
             return self._token_request()
         self.totp_failed = True
@@ -696,6 +797,39 @@ class SpotifyClient:
             "or run a sync with SPOTIFY_TOTP_REMOTE=1 so the newest secret is fetched.\n"
             "Details: " + " | ".join(errors[:3])
         )
+
+    def _token_http(
+        self,
+        url: str,
+        params: dict[str, str],
+        token_headers: dict[str, str],
+        use_proxy: bool,
+    ) -> requests.Response:
+        """One token request, through the proxy or direct."""
+        if use_proxy:
+            # A CORS proxy cannot relay the cookie jar, so sp_dc travels as a
+            # real Cookie header (header mode forwards it untouched).
+            resp = self.session.get(
+                _with_proxy(self.proxy_url, url, params or None),
+                headers={
+                    **token_headers,
+                    **proxy_headers(),
+                    # A CORS proxy cannot relay the cookie jar.
+                    "Cookie": f"sp_dc={self.sp_dc}",
+                },
+                timeout=30,
+            )
+            self.proxy_used += 1
+            return resp
+        resp = self.session.get(
+            url,
+            params=params or None,
+            headers=token_headers,
+            cookies={"sp_dc": self.sp_dc},
+            timeout=30,
+        )
+        self.direct_used += 1
+        return resp
 
     def _ensure_token(self) -> str:
         if self._access_token and time.time() < self._access_expiry - 60:
@@ -750,20 +884,43 @@ class SpotifyClient:
     ) -> dict[str, Any]:
         token = self._ensure_token()
         url = path if path.startswith("http") else f"{_API}/{path}"
+        # A proxy (clean IP) is preferred; on 429 we alternate proxy <-> direct
+        # because Spotify limits by IP *and* account, so a different egress can
+        # clear the block.
+        use_proxy = bool(self.proxy_url)
         for attempt in range(_MAX_RETRIES):
             try:
-                resp = self.session.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json_body,
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=45,
-                )
-            except requests.RequestException:
+                if use_proxy:
+                    target = _with_proxy(self.proxy_url, url, params)
+                    headers = {"Authorization": f"Bearer {token}", **proxy_headers()}
+                    resp = self.session.request(
+                        method, target, json=json_body, headers=headers, timeout=45,
+                    )
+                    self.proxy_used += 1
+                else:
+                    resp = self.session.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json_body,
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=45,
+                    )
+                    self.direct_used += 1
+            except requests.RequestException as exc:
+                if use_proxy:
+                    # A broken proxy must never break a run: go direct.
+                    log.warning("Proxy request failed (%s) — using a direct connection", exc)
+                    use_proxy = False
+                    continue
                 if attempt == _MAX_RETRIES - 1:
                     raise
                 time.sleep(min(2 ** attempt, 30))
+                continue
+
+            if use_proxy and resp.status_code >= 500:
+                log.warning("Proxy returned HTTP %s — using a direct connection", resp.status_code)
+                use_proxy = False
                 continue
 
             if resp.status_code == 200:
@@ -773,6 +930,14 @@ class SpotifyClient:
                 retry_after = _retry_after_seconds(resp.headers, attempt)
                 raw_retry = _header_seconds(resp.headers)
                 self._pace_debt += 3.0
+                if self.proxy_url and attempt == 0:
+                    # First 429: try the other egress before waiting.
+                    use_proxy = not use_proxy
+                    log.warning(
+                        "Spotify 429 — retrying through the %s route",
+                        "proxy" if use_proxy else "direct connection",
+                    )
+                    continue
                 if raw_retry and raw_retry > _MAX_INLINE_WAIT:
                     if self._rotate_cookie():
                         return self._request(

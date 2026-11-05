@@ -21,6 +21,7 @@
   "spotify_write_mode": "queue",
   "spotify_queue_flush_size": 40,
   "spotify_request_delay_seconds": 2,
+  "spotify_proxy_url": "",
   "source_cache_path": ".cache/source-tracks.json",
   "source_cache_ttl_hours": 12,
   "spotify_web_fallback": true,

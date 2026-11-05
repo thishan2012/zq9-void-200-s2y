@@ -80,6 +80,8 @@ class Config:
     youtube_region_code: str = "US"
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
+    spotify_proxy_url: str = ""  # CORS proxy for Spotify calls (clean egress IP)
+    spotify_proxy_url: str = ""  # CORS proxy for Spotify calls (clean egress IP)
     spotify_web_fallback: bool = True  # read public playlists from the HTML page on 429
     spotify_collection_fallback: bool = True  # use a saved collection when the API is blocked
     spotify_queue_flush_size: int = 40

@@ -86,6 +86,8 @@ jobs:
           SPOTIFY_COOKIE_4: ${{ secrets.SPOTIFY_COOKIE_4 }}
           MAX_INSERTS_PER_DAY: ${{ inputs.max_inserts }}
           REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
+          SPOTIFY_PROXY_URL: ${{ vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
         run: python -m phonksync sync

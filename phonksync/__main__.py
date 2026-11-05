@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -34,7 +35,19 @@ def cmd_sync(args: argparse.Namespace) -> int:
     secrets.validate(require_youtube=cfg.youtube_enabled)
     engine = SyncEngine(cfg, secrets)
     report = engine.run()
+    if report.spotify_throttled:
+        print(f"⏸ Spotify is throttling — {report.quota_reason or 'cooldown stored'}", file=sys.stderr)
+        print("   Nothing was lost: the next run resumes from the same track.", file=sys.stderr)
+        if not report.errors:
+            return 0
+        if all(_is_rate_limit_text(e) for e in report.errors):
+            return 0
     return 1 if report.errors and not report.added else 0
+
+
+def _is_rate_limit_text(text: str) -> bool:
+    low = text.lower()
+    return "429" in low or "throttl" in low or "rate limit" in low or "cooldown" in low
 
 
 def cmd_check(args: argparse.Namespace) -> int:
@@ -85,6 +98,15 @@ def cmd_check(args: argparse.Namespace) -> int:
                 "`python -m phonksync cookie-fix --show` locally and paste that value "
                 "as SPOTIFY_COOKIE."
             )
+    from .spotify import proxy_enabled
+
+    proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip() or cfg.spotify_proxy_url
+    if proxy_enabled() or proxy:
+        print(f"🔗 Spotify route: proxy {proxy or '(config value)'} "
+              f"({'armed' if proxy_enabled() else 'from config'})")
+    else:
+        print("🔗 Spotify route: direct (set SPOTIFY_PROXY_URL to use your CORS proxy)")
+
     if secrets.telegram_bot_token and secrets.telegram_chat_id:
         print("✅ Telegram secrets present")
     else:
@@ -148,6 +170,77 @@ def cmd_stats(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(db.data, indent=2, ensure_ascii=False))
     return 0
+
+
+def cmd_proxy_test(args: argparse.Namespace) -> int:
+    """Probe the configured CORS proxy with Spotify's public endpoints."""
+    import requests as _requests
+
+    from .spotify import (
+        PublicPlaylistReader,
+        SpotifyClient,
+        proxy_enabled,
+        proxy_headers,
+        _with_proxy,
+    )
+
+    proxy = args.url or os.environ.get("SPOTIFY_PROXY_URL", "")
+    if proxy:
+        os.environ["SPOTIFY_PROXY_URL"] = proxy
+    if not proxy_enabled():
+        print(
+            "ℹ️  SPOTIFY_PROXY_URL is not set — requests go out directly from this host.\n"
+            "   Set it (e.g. https://your-proxy.vercel.app) and run this again.",
+            file=sys.stderr,
+        )
+        return 2
+    print(f"🔗 proxy: {proxy}")
+    if proxy_headers():
+        print("🔑 header mode (x-proxy-secret is sent)")
+
+    session = _requests.Session()
+    ok = True
+
+    # 1) plain HTML through the proxy (no credentials at all)
+    target = _with_proxy(proxy, "https://open.spotify.com/", None)
+    try:
+        resp = session.get(target, headers=proxy_headers(), timeout=30)
+        print(f"1️⃣  public page : HTTP {resp.status_code} ({len(resp.text)} bytes)")
+        ok = ok and resp.status_code == 200
+    except _requests.RequestException as exc:
+        print(f"1️⃣  public page : ❌ {exc}")
+        ok = False
+
+    # 2) token endpoint with the cookie, if we have one
+    secrets = Secrets.from_env()
+    if secrets.spotify_cookie:
+        try:
+            client = SpotifyClient(secrets.spotify_cookie)
+            token = client._ensure_token()
+            print(f"2️⃣  token       : ✅ {len(token)} chars (proxy calls: {client.proxy_used})")
+            try:
+                me = client.whoami()
+                print(f"3️⃣  /me         : ✅ user {me.get('id')} ({me.get('country')})")
+            except Exception as exc:
+                print(f"3️⃣  /me         : ⚠️ {exc}")
+        except Exception as exc:
+            print(f"2️⃣  token       : ❌ {str(exc).splitlines()[0]}")
+            ok = False
+    else:
+        print("2️⃣  token       : skipped (no SPOTIFY_COOKIE)")
+
+    # 3) public playlist read (needs a playlist id)
+    if args.playlist:
+        reader = PublicPlaylistReader()
+        tracks = reader.playlist_tracks(args.playlist)
+        if tracks:
+            print(f"4️⃣  playlist    : ✅ {len(tracks)} tracks via public page")
+        else:
+            print(f"4️⃣  playlist    : ❌ {reader.last_error or 'no tracks'}")
+            ok = False
+
+    print("\n✅ proxy works" if ok else "\n❌ proxy did not work — check the URL / secret / allowlist")
+    return 0 if ok else 3
 
 
 def cmd_collect(args: argparse.Namespace) -> int:
@@ -335,6 +428,13 @@ def main(argv: list[str] | None = None) -> int:
     p_stats = sub.add_parser("stats", help="Show sync state statistics")
     p_stats.add_argument("--json", action="store_true", help="Dump full state JSON")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_proxy = sub.add_parser(
+        "proxy-test", help="Check SPOTIFY_PROXY_URL against Spotify endpoints"
+    )
+    p_proxy.add_argument("--url", default="", help="Proxy base URL (overrides the env var)")
+    p_proxy.add_argument("--playlist", default="", help="Optional public playlist ID to read")
+    p_proxy.set_defaults(func=cmd_proxy_test)
 
     p_collect = sub.add_parser(
         "collect",
