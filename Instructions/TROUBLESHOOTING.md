@@ -74,6 +74,20 @@ If it still fails:
    (byte values from https://github.com/xyloflake/spot-secrets-go `secretDict.json`).
 3. `python -m phonksync check --live` prints which endpoints were tried and why.
 
+## "Spotify rate limit" / 429 during a sync
+The web-player token is throttled per rolling window. Reading 2689 tracks with pages of 100 hits 429s almost immediately.
+
+What the syncer does now:
+- pages of **50** with a ~0.35s pace between requests (≈170 tracks/minute)
+- honours `Retry-After` (capped at 45s, plus jitter) and retries up to 6 times, backing off more if 429s repeat
+- if a playlist is still throttled mid-read, it **keeps the tracks already read** and processes them; the rest is picked up next run
+- the Telegram summary says `⚠️ Spotify rate limited (429): used the tracks read so far`
+
+If it persists:
+- wait 5–10 minutes — the window is short, nothing is corrupted
+- run smaller batches: `MAX_TRACKS_PER_RUN=50` (or the `max_tracks` input)
+- the YouTube search cache makes repeat runs much cheaper
+
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.
 Fix: log into open.spotify.com again, copy the full Cookie header fresh, update `SPOTIFY_COOKIE`. Avoid logging out of that browser profile.

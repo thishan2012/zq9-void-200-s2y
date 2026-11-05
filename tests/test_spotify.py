@@ -1,7 +1,7 @@
 """Spotify client pagination + cookie parsing tests (no network)."""
 import pytest
 
-from phonksync.errors import AuthError
+from phonksync.errors import AuthError, RateLimited
 from phonksync.spotify import SpotifyClient
 
 
@@ -48,8 +48,9 @@ def test_playlist_tracks_max_tracks_stops_pagination(monkeypatch):
     client, calls = _client(monkeypatch, pages)
     tracks = client.playlist_tracks("x", max_tracks=150)
     assert len(tracks) == 150
-    assert len(calls) == 2
-    assert calls[0][2]["limit"] == 100
+    # 50 per page now (gentler on the rate window) -> 3 pages, then stop.
+    assert len(calls) == 2  # the fake page always returns 100 items
+    assert calls[0][2]["limit"] == 50
 
 
 def test_playlist_tracks_small_max_tracks_uses_small_page(monkeypatch):
@@ -70,7 +71,7 @@ def test_playlist_tracks_full_read_without_limit(monkeypatch):
     tracks = client.playlist_tracks("x")
     assert len(tracks) == 105
     assert len(calls) == 2
-    assert calls[0][2]["limit"] == 100
+    assert calls[0][2]["limit"] == 50
 
 
 # ---------------------------------------------------------------- sp_dc parsing
@@ -284,3 +285,113 @@ def test_token_flow_error_mentions_help(monkeypatch):
         client._ensure_token()
     msg = str(exc.value)
     assert "SPOTIFY_TOTP_VER" in msg and "SPOTIFY_COOKIE" in msg
+
+
+# ------------------------------------------------------------- rate limiting
+
+
+def test_429_is_retried_with_retry_after(monkeypatch):
+    import phonksync.spotify as sp
+
+    slept = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: slept.append(s))
+
+    class Resp:
+        def __init__(self, code, headers=None, payload=None):
+            self.status_code = code
+            self.headers = headers or {}
+            self.text = "{}"
+            self._p = payload or {"items": [], "next": None}
+
+        def json(self):
+            return self._p
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.n = 0
+
+        def request(self, *a, **kw):
+            self.n += 1
+            if self.n == 1:
+                return Resp(429, {"Retry-After": "7"})
+            return Resp(200)
+
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    client.playlist_tracks("x", max_tracks=10)
+    # 7s from Retry-After (+ jitter) plus the pacing sleep
+    assert any(6.9 <= s <= 50 for s in slept)
+    assert client._rate_limit_wait > 0
+
+
+def test_rate_limit_gives_up_with_helpful_message(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+
+    class Resp:
+        status_code = 429
+        headers = {"Retry-After": "30"}
+        text = '{"error": "rate limited"}'
+
+        def json(self):
+            return {}
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, *a, **kw):
+            return Resp()
+
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    with pytest.raises(RateLimited) as exc:
+        client.playlist_tracks("x", max_tracks=10)
+    msg = str(exc.value)
+    assert "wait a few minutes" in msg and "max_tracks" in msg
+
+
+def test_partial_playlist_survives_rate_limit(monkeypatch):
+    """A 429 mid-pagination keeps the tracks already read."""
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+
+    def item(i):
+        return {
+            "is_local": False,
+            "track": {
+                "id": f"track{i:017d}", "name": f"S{i}", "type": "track",
+                "artists": [{"name": "A"}], "album": {"name": "B"},
+                "duration_ms": 1000, "external_ids": {}, "uri": f"spotify:track:t{i}",
+            },
+        }
+
+    class Resp:
+        def __init__(self, payload):
+            self.status_code = 200
+            self.headers = {}
+            self.text = "{}"
+            self._p = payload
+
+        def json(self):
+            return self._p
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.n = 0
+
+        def request(self, *a, **kw):
+            self.n += 1
+            if self.n == 1:
+                return Resp({"items": [item(i) for i in range(5)], "next": "next-url"})
+            raise RateLimited(30, "Spotify rate limit")
+
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    tracks = client.playlist_tracks("x")
+    assert len(tracks) == 5
+    assert client.partial_read is True

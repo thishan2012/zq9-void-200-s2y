@@ -306,3 +306,26 @@ def test_dry_run_does_not_record_unmatched_as_synced(monkeypatch, cfg):
     assert report.unmatched == 1
     assert not eng.state.is_synced(track.id)
     assert spotify.added == []
+
+
+def test_partial_source_read_still_processes_tracks(monkeypatch, cfg):
+    """A 429 in the middle of a source read must not lose the whole run."""
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    cfg.dry_run = True
+    source_id = cfg.spotify_source_playlists[0]
+    tracks = _many_tracks(3)
+    spotify = FakeSpotify({source_id: tracks})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+
+    def partial(playlist_id, max_tracks=None):
+        spotify.partial_read = True
+        return tracks
+
+    monkeypatch.setattr(spotify, "playlist_tracks", partial)
+    report = eng.run()
+    assert report.partial_sources == 1
+    assert report.spotify_throttled is True
+    assert "rate limited" in report.summary_text()
+    assert report.added == 3

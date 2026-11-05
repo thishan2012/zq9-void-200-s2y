@@ -43,6 +43,8 @@ class RunReport:
     method_wins: dict[str, int] = field(default_factory=dict)
     quota_stopped: bool = False
     quota_reason: str = ""
+    partial_sources: int = 0
+    spotify_throttled: bool = False
     searches_used: int = 0
     inserted: int = 0
     search_mode: str = ""
@@ -66,6 +68,11 @@ class RunReport:
         if self.searches_used:
             lines.append(
                 f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
+            )
+        if self.spotify_throttled:
+            lines.append(
+                "⚠️ Spotify rate limited (429): used the tracks read so far — "
+                "wait a few minutes and run again to continue"
             )
         if self.quota_stopped:
             lines.append(f"⚠️ Stopped early: {escape(self.quota_reason or 'YouTube quota budget reached')}")
@@ -251,6 +258,10 @@ class SyncEngine:
                 self.telegram.warn(f"Could not read source <code>{playlist_id}</code>: {escape(str(exc))}")
                 continue
             report.sources_read += 1
+            if getattr(self.spotify, "partial_read", False):
+                self.spotify.partial_read = False
+                report.partial_sources += 1
+                report.spotify_throttled = True
             for track in tracks:
                 if read_limit and len(seen) >= read_limit:
                     break
