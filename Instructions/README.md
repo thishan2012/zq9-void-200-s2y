@@ -73,7 +73,9 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 | `telegram_per_track` | `true` | per-track Telegram messages |
 | `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track (YouTube mode) |
 | `max_searches_per_run` | `80` | YouTube only: cap on searches per run |
-| `youtube_daily_quota_units` | `9500` | YouTube only: local quota budget |
+| `youtube_max_searches_per_day` | `80` | YouTube only: cap on searches per UTC day (80 x 100 = 8,000 units) |
+| `youtube_max_inserts_per_day` | `40` | YouTube only: cap on playlist adds per UTC day (40 x 50 = 2,000 units) |
+| `youtube_daily_quota_units` | `9800` | YouTube only: overall local quota budget |
 | `search_results_per_query` | `10` | YouTube only: results fetched per search |
 | `duration_tolerance_seconds` | `7` | YouTube only: DURATION/TITLEONLY tolerance |
 | `exact_duration_tolerance_seconds` | `3` | YouTube only: DURVER tolerance |

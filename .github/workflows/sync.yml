@@ -13,6 +13,10 @@ on:
         description: "Max tracks to process this run (0 = unlimited)"
         type: string
         default: "0"
+      max_inserts:
+        description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -49,6 +53,8 @@ jobs:
           YOUTUBE_OAUTH_TOKEN_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
           YT_OAUTH_TOKEN_JSON: ${{ secrets.YT_OAUTH_TOKEN_JSON }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: python -m phonksync check
 
       - name: Run sync
@@ -66,6 +72,9 @@ jobs:
           YOUTUBE_OAUTH_TOKEN_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}
           YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
           YT_OAUTH_TOKEN_JSON: ${{ secrets.YT_OAUTH_TOKEN_JSON }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          MAX_INSERTS_PER_DAY: ${{ inputs.max_inserts }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
         run: python -m phonksync sync

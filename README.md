@@ -26,7 +26,8 @@
 2. GitHub Secrets දාන්න:
    `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`
    Telegram ඕන නම්: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-   YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YT_CLIENT_JSON`, `YT_REFRESH_TOKEN`, `YOUTUBE_TARGET_PLAYLIST`
+   YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YOUTUBE_API_KEY`, `YOUTUBE_TARGET_PLAYLIST`
+   (playlist එකට video **දාන්න** නම් අමතරව `YT_CLIENT_JSON` + `YT_REFRESH_TOKEN` — API key එකෙන් write කරන්න බෑ)
 3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
 4. Telegram බලන්න. ✅
 
@@ -56,6 +57,8 @@ PART → POPULAR → TOPRESULT
 ```
 
 - 29 numbered steps + 2 classic = 31 methods + DETAIL + MANUAL = 33 pipeline entries.
+- **Search + metadata කියවීම API key එකෙන් (`YOUTUBE_API_KEY`) — read-only, OAuth refresh ඕන නෑ.** Playlist එකට add කිරීම විතරයි OAuth ඕන (Google එකේ නීතිය).
+- API key එක විතරක් තියෙනවා නම්: search සම්පූර්ණ වැඩ කරනවා, `python -m phonksync check --live` එකෙන් key එක test කරන්න පුළුවන්, ඒත් videos playlist එකට එකතු වෙන්නේ නෑ — Telegram report එකේ ඒ ගැන warning එකක් එනවා.
 - Condition නැති step එක `never tried` ලෙස record වෙනවා.
 - `ISRC` / `LINKED` exact identity විශ්වාස කරනවා. අනිත් හැම එකම safety checks 3න් pass විය යුතුයි.
 
@@ -81,7 +84,14 @@ tests/                # offline tests
 
 ## ⚠️ Notes
 
-- Default Spotify-only නිසා YouTube quota වැය වෙන්නේ නෑ. YouTube on කළොත් daily quota 10,000 units (1 search = 100 units). [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
+- Default Spotify-only නිසා YouTube quota වැය වෙන්නේ නෑ.
+- YouTube on කළොත් daily quota **10,000 units** (1 search = 100, 1 playlist add = 50). ඒක නිසා app එකේම cap දෙකක් තියෙනවා: **80 search/දවස** (8,000 units) + **40 add/දවස** (2,000 units). `data/sync-state.json` එකේ මේවා දවස අනුව save වෙනවා නිසා දවසට run කීපයක් කළත් limit එක පනින්නේ නෑ.
+- **80 search මදි නම් (දවසට 80 ට වඩා ඕන නම්):** Google quota එක යන්නේ **project එකකට**, key එකකට නෙවෙයි. ඉතින් **වෙනම Google Cloud project එකකින් තව key එකක්** හදලා `YOUTUBE_API_KEY` එකේ comma එකෙන් වෙන් කරලා දාන්න:
+  ```
+  YOUTUBE_API_KEY = AIzaKey1...,AIzaKey2...
+  ```
+  එතකොට 2 keys = **16,000 units/දවසකට = 160 search** (adds 40ක් සමඟ). Key එකක් ඉවර උනාම code එක ඉබේම ඊළඟ key එකට මාරු වෙනවා (403 `quotaExceeded` ආවත් run එක නවත්තන්නේ නෑ). Keys 3ක් = 240 search/දවස.
+- එකම project එකේ keys 2ක් දැම්මොත් quota **වැඩි වෙන්නේ නෑ** — project එකට 10,000 තමයි. ඒ නිසා key එකකට එක project එකක්. [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
 - Spotify cookie එක password එකක් වගේ — GitHub Secrets වල විතරක් තියාගන්න, expire උනොත් refresh කරන්න.
 - පුද්ගලික භාවිතය සඳහා පමණයි.
 

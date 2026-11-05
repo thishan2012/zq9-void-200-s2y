@@ -14,9 +14,12 @@ Nothing secret is ever committed to the repo. This page shows exactly how to obt
 | `SPOTIFY_TARGET_PLAYLIST` | ✅ | Your Spotify target playlist ID or URL |
 | `TELEGRAM_BOT_TOKEN` | optional | Bot token from @BotFather (for logs) |
 | `TELEGRAM_CHAT_ID` | optional | Your Telegram chat ID (for logs) |
-| `YT_CLIENT_JSON` | only if YouTube enabled | Entire Google OAuth client JSON file contents |
-| `YT_REFRESH_TOKEN` | only if YouTube enabled | Long-lived YouTube OAuth refresh token |
+| `YOUTUBE_API_KEY` | only if YouTube enabled | Read-only API key (`AIza...`) used for search + metadata |
 | `YOUTUBE_TARGET_PLAYLIST` | only if YouTube enabled | Your YouTube target playlist ID (`PL...`) |
+| `YT_CLIENT_JSON` | only if videos must be **added** | Entire Google OAuth client JSON file contents |
+| `YT_REFRESH_TOKEN` | only if videos must be **added** | Long-lived YouTube OAuth refresh token |
+
+> **API key vs OAuth:** Google allows *reads* (search, video details, playlist listing) with a plain API key, but **playlist inserts always require OAuth**. So `YOUTUBE_API_KEY` alone = matching works, nothing gets added. Add `YT_CLIENT_JSON` + `YT_REFRESH_TOKEN` to actually write to the YouTube playlist. Both bill the same 10,000 units/day project quota.
 
 > Playlist secrets are optional only if you put the IDs in `config.json` instead. Secrets override `config.json`. For a public repo, secrets are the cleaner choice.
 
@@ -41,6 +44,22 @@ You do **not** need to pick out individual values. Paste the entire cookie heade
 - If you prefer, a bare `sp_dc=...` pair or just the `sp_dc` value also works.
 - The cookie expires eventually (weeks/months). If runs start failing with an auth error, repeat these steps and update the secret. Logging out of Spotify in that browser can invalidate it — use a browser profile you stay logged into.
 - ⚠️ This cookie grants access to your Spotify account. Never share it, never commit it, never paste it into issues or chats.
+
+## 1b. `YOUTUBE_API_KEY` — read-only search key 🔎 (only if YouTube sync is enabled)
+
+1. Go to **https://console.cloud.google.com** → create/select a project.
+2. **APIs & Services → Library** → search **YouTube Data API v3** → **Enable**.
+3. **APIs & Services → Credentials → Create credentials → API key**.
+4. (Recommended) Restrict the key: **Application restrictions → None**, **API restrictions → YouTube Data API v3** only.
+5. Create the secret `YOUTUBE_API_KEY` with the `AIza...` value.
+   Aliases also accepted: `YT_API_KEY`, `YOUTUBE_DATA_API_KEY`, `GOOGLE_API_KEY`.
+6. **Need more than 100 searches/day?** Quota is per **Google Cloud project**, not per key. Create a *second project*, enable YouTube Data API v3, create a key there, and put both in the same secret separated by a comma:
+   ```text
+   YOUTUBE_API_KEY = AIzaKey1...,AIzaKey2...
+   ```
+   The client rotates keys automatically and only gives up when *every* key is out of quota. Per-key usage is tracked in `data/sync-state.json` under `quota.keys`.
+
+Test it: `python -m phonksync check --live` must print `✅ YouTube API key works (read-only search, 1 result)`.
 
 ## 2. `YT_CLIENT_JSON` — Google OAuth client 📄 (only if YouTube sync is enabled)
 
@@ -139,7 +158,19 @@ If Google doesn't return a refresh token: revoke the grant at https://myaccount.
 
 > Group chats also work (IDs are negative, like `-1001234567890`); add the bot to the group and send a message there first.
 
-## 6. Playlist secrets 🎵
+## 6. Quota plan 📊 (10,000 units/day)
+
+| Action | Units | App cap | Units used |
+|---|---|---|---|
+| `search.list` | 100 | 80 / day (`max_searches_per_run`, `youtube_max_searches_per_day`) | 8,000 per key |
+| `playlistItems.insert` | 50 | 40 / day (`youtube_max_inserts_per_day`) | 2,000 |
+| `videos.list` / `playlistItems.list` | 1 | — | ~100 |
+
+Counters live in `data/sync-state.json` under `quota` (`date`, `units_used`, `searches`, `inserts`, `keys`) and roll over at UTC midnight, so **three manual runs in one day still cannot exceed the Google limit**. With N API keys (N different projects) the daily budget becomes N x 10,000 units, tracked per key. When a cap is hit the run stops cleanly, the report says which cap, and the next run continues where it left off.
+
+Tune these in `config.json`: `max_searches_per_run`, `youtube_max_searches_per_day`, `youtube_max_inserts_per_day`, `youtube_daily_quota_units`.
+
+## 6b. Playlist secrets 🎵
 
 | Secret | Example value |
 |---|---|

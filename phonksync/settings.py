@@ -66,7 +66,9 @@ class Config:
     max_tracks_per_run: int = 0  # 0 = unlimited
     dry_run_track_limit: int = 200  # dry-run only: max source tracks to read (0 = unlimited)
     max_searches_per_run: int = 80
-    youtube_daily_quota_units: int = 9500
+    youtube_max_searches_per_day: int = 80  # 80 x 100 = 8000 units; hard Google cap is 10000/day
+    youtube_max_inserts_per_day: int = 40  # 40 x 50 = 2000 units -> 8000 + 2000 = 10000 exactly
+    youtube_daily_quota_units: int = 9800
     search_cache_ttl_days: int = 14
     search_results_per_query: int = 10
     duration_tolerance_seconds: int = 7
@@ -109,6 +111,10 @@ class Config:
             cfg.youtube_target_playlist = os.environ["YOUTUBE_TARGET_PLAYLIST"]
         if os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes"}:
             cfg.dry_run = True
+        if os.environ.get("MAX_SEARCHES_PER_RUN"):
+            cfg.max_searches_per_run = int(os.environ["MAX_SEARCHES_PER_RUN"])
+        if os.environ.get("MAX_INSERTS_PER_DAY"):
+            cfg.youtube_max_inserts_per_day = int(os.environ["MAX_INSERTS_PER_DAY"])
         if os.environ.get("MAX_TRACKS_PER_RUN"):
             cfg.max_tracks_per_run = int(os.environ["MAX_TRACKS_PER_RUN"])
 
@@ -145,6 +151,7 @@ class Secrets:
     youtube_client_json: str = ""
     youtube_refresh_token: str = ""
     youtube_token_json: str = ""
+    youtube_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
@@ -170,6 +177,12 @@ class Secrets:
                 "YOUTUBE_TOKEN_JSON",
                 "YOUTUBE_OAUTH_TOKEN",
             ),
+            youtube_api_key=_first(
+                "YOUTUBE_API_KEY",
+                "YT_API_KEY",
+                "YOUTUBE_DATA_API_KEY",
+                "GOOGLE_API_KEY",
+            ),
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
         )
@@ -179,10 +192,15 @@ class Secrets:
         if not self.spotify_cookie:
             missing.append("SPOTIFY_COOKIE")
         if require_youtube:
-            if not (self.youtube_client_json or self.youtube_token_json):
-                missing.append("YT_CLIENT_JSON (or YT_TOKEN_JSON)")
-            if not (self.youtube_refresh_token or self.youtube_token_json):
-                missing.append("YT_REFRESH_TOKEN (or YT_TOKEN_JSON)")
+            # Read-only search needs an API key; playlist writes need OAuth.
+            has_oauth = bool(
+                (self.youtube_client_json or self.youtube_token_json)
+                and (self.youtube_refresh_token or self.youtube_token_json)
+            )
+            if not (self.youtube_api_key or has_oauth):
+                missing.append(
+                    "YOUTUBE_API_KEY (read-only search) or YT_CLIENT_JSON + YT_REFRESH_TOKEN"
+                )
         if require_telegram and not (self.telegram_bot_token and self.telegram_chat_id):
             missing.append("TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID")
         if missing:

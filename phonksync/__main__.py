@@ -44,6 +44,22 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"✅ Config OK — {len(cfg.spotify_source_playlists)} source playlists")
         if not cfg.youtube_enabled:
             print("ℹ️  YouTube sync disabled — Spotify-only mode")
+        else:
+            key_count = len([k for k in __import__("re").split(r"[\s,;]+", secrets.youtube_api_key) if k])
+            print(
+                f"🔎 YouTube search: API key (read-only, {key_count} key(s) / "
+                f"{cfg.youtube_daily_quota_units * max(1, key_count)} units/day)"
+                if key_count else "🔎 YouTube search: OAuth"
+            )
+            has_oauth = bool(
+                (secrets.youtube_client_json or secrets.youtube_token_json)
+                and (secrets.youtube_refresh_token or secrets.youtube_token_json)
+            )
+            print(
+                "✅ YouTube playlist writes: OAuth enabled" if has_oauth
+                else "⚠️  YouTube playlist writes disabled — API key cannot add videos "
+                     "(add YT_CLIENT_JSON + YT_REFRESH_TOKEN)"
+            )
     except ConfigError as exc:
         problems.append(f"Config: {exc}")
     try:
@@ -83,9 +99,22 @@ def cmd_check(args: argparse.Namespace) -> int:
                     client_json=secrets.youtube_client_json,
                     refresh_token=secrets.youtube_refresh_token,
                     token_json=secrets.youtube_token_json,
+                    api_key=secrets.youtube_api_key,
                 )
-                yt.playlist_video_ids(cfg.youtube_target_playlist)
-                print("✅ YouTube OAuth valid, target playlist readable")
+                if yt.api_keys:
+                    hits = yt.search("phonk", max_results=1)
+                    print(
+                        f"✅ YouTube API key works (read-only search, {len(hits)} result, "
+                        f"{len(yt.api_keys)} key(s) x {yt.daily_quota_units} units/day)"
+                    )
+                if yt.can_write:
+                    yt.playlist_video_ids(cfg.youtube_target_playlist)
+                    print("✅ YouTube OAuth valid, target playlist readable (writes enabled)")
+                else:
+                    print(
+                        "⚠️  YouTube writes disabled (API key only) — add "
+                        "YT_CLIENT_JSON + YT_REFRESH_TOKEN to add videos"
+                    )
             except Exception as exc:
                 problems.append(f"YouTube live check: {exc}")
 

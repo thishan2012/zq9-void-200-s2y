@@ -1,13 +1,20 @@
-"""YouTube Data API v3 client (OAuth refresh-token flow).
+"""YouTube Data API v3 client.
 
-Only the endpoints the syncer needs are implemented:
-  * search.list           (100 quota units)
-  * videos.list           (1 quota unit)
-  * playlistItems.list    (1 quota unit)
-  * playlistItems.insert  (50 quota units)
+Search and metadata reads (``search.list`` / ``videos.list``) can run on a plain
+**read-only API key** (``YOUTUBE_API_KEY``) sent as ``key=...``. Playlist writes
+(``playlistItems.insert``) *require* OAuth — Google does not allow key-based
+writes — so a refresh-token flow is used only for those calls.
 
-A local quota budget is enforced so a run stops cleanly before Google returns
-403 quotaExceeded, and the state file remembers how much was spent today.
+Endpoints used:
+  * search.list           (read, 100 quota units, API key OK)
+  * videos.list           (read, 1 quota unit, API key OK)
+  * playlistItems.list    (read, 1 quota unit, API key OK for public playlists)
+  * playlistItems.insert  (write, 50 quota units, OAuth only)
+
+Quota: both the API key and the OAuth token bill the *same* Google Cloud
+project, so one local budget is enforced across the two. A run stops cleanly
+before Google returns 403 quotaExceeded, and the state file remembers how much
+was spent today.
 """
 from __future__ import annotations
 
@@ -63,20 +70,54 @@ class QuotaState:
 
     date: str = ""
     units_used: int = 0
+    # Daily counters, so a multi-run day cannot exceed the real project quota.
+    searches: int = 0
+    inserts: int = 0
+    # key index -> units used today. Every API key needs its own Google Cloud
+    # project (quota is per project), so each key gets its own daily budget.
+    keys: dict[str, int] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.keys is None:
+            self.keys = {}
 
     def rollover(self) -> None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if self.date != today:
             self.date = today
             self.units_used = 0
+            self.searches = 0
+            self.inserts = 0
+            self.keys = {}
+
+    def key_units(self, index: str) -> int:
+        return int(self.keys.get(index, 0))
+
+    def spend_on_key(self, index: str, cost: int) -> None:
+        self.keys[index] = self.key_units(index) + cost
 
     def to_dict(self) -> dict[str, Any]:
-        return {"date": self.date, "units_used": self.units_used}
+        return {
+            "date": self.date,
+            "units_used": self.units_used,
+            "searches": self.searches,
+            "inserts": self.inserts,
+            "keys": dict(self.keys),
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> "QuotaState":
         data = data or {}
-        return cls(date=data.get("date", ""), units_used=int(data.get("units_used", 0)))
+        keys = {
+            str(k): int(v) for k, v in (data.get("keys") or {}).items()
+        }
+        return cls(
+            date=data.get("date", ""),
+            units_used=int(data.get("units_used", 0) or 0),
+            searches=int(data.get("searches", 0) or 0),
+            inserts=int(data.get("inserts", 0) or 0),
+            keys=keys,
+        )
 
 
 class YouTubeClient:
@@ -85,41 +126,70 @@ class YouTubeClient:
         client_json: str = "",
         refresh_token: str = "",
         token_json: str = "",
+        api_key: str | list[str] = "",
         daily_quota_units: int = 9500,
         max_searches_per_run: int = 80,
+        max_searches_per_day: int = 0,
+        max_inserts_per_day: int = 0,
         quota_state: QuotaState | None = None,
         region_code: str = "US",
         session: requests.Session | None = None,
     ) -> None:
+        raw_keys: list[str] = []
+        if isinstance(api_key, str):
+            raw_keys = re.split(r"[\s,;]+", api_key or "")
+        else:
+            for item in api_key or []:
+                raw_keys.extend(re.split(r"[\s,;]+", str(item or "")))
+        # Preserve order, drop blanks and duplicates.
+        self.api_keys = [k for k in dict.fromkeys(k.strip() for k in raw_keys) if k]
+        self.api_key = self.api_keys[0] if self.api_keys else ""
+        self._key_index = 0
+        self._key_exhausted: set[int] = set()
         self.client_id = ""
         self.client_secret = ""
         self.token_uri = "https://oauth2.googleapis.com/token"
         self.refresh_token = refresh_token.strip()
+        self._oauth_error = ""
 
         blob: dict[str, Any] = {}
-        if token_json:
-            blob = json.loads(token_json)
-        elif client_json:
-            blob = json.loads(client_json)
-        else:
-            raise AuthError("YouTube OAuth client JSON is missing")
-
+        raw_json = token_json or client_json
+        if raw_json:
+            try:
+                blob = json.loads(raw_json)
+            except json.JSONDecodeError as exc:
+                raise AuthError(f"YouTube OAuth JSON is not valid JSON: {exc}") from exc
         section = blob.get("installed") or blob.get("web") or blob
         self.client_id = section.get("client_id", "")
         self.client_secret = section.get("client_secret", "")
         self.token_uri = section.get("token_uri", self.token_uri)
         if not self.refresh_token:
-            self.refresh_token = blob.get("refresh_token", "")
-        if not self.client_id or not self.client_secret:
-            raise AuthError("YouTube client JSON must contain client_id and client_secret")
-        if not self.refresh_token:
-            raise AuthError(
-                "YouTube refresh_token is missing. Run the one-time OAuth setup "
-                "(Instructions/SECRETS.md) and store YT_REFRESH_TOKEN."
+            # Token JSONs keep refresh_token at the top level; be lenient and
+            # also look inside the installed/web section.
+            self.refresh_token = (
+                blob.get("refresh_token", "") or section.get("refresh_token", "")
             )
 
+        if not self.api_key and not (self.client_id and self.client_secret):
+            raise AuthError(
+                "YouTube credentials are missing. Set YOUTUBE_API_KEY (read-only "
+                "search) and/or YT_CLIENT_JSON + YT_REFRESH_TOKEN (playlist writes)."
+            )
+        if not self.refresh_token and not self.api_key:
+            raise AuthError(
+                "YouTube refresh_token is missing. Run the one-time OAuth setup "
+                "(Instructions/SECRETS.md) and store YT_REFRESH_TOKEN, or set "
+                "YOUTUBE_API_KEY for read-only search."
+            )
+
+        # Quota is per Google Cloud project, i.e. per key. With N keys the run
+        # may spend N x daily_quota_units in total, but never more than
+        # daily_quota_units on any single key.
         self.daily_quota_units = daily_quota_units
+        self.total_quota_units = daily_quota_units * max(1, len(self.api_keys))
         self.max_searches_per_run = max_searches_per_run
+        self.max_searches_per_day = max_searches_per_day
+        self.max_inserts_per_day = max_inserts_per_day
         self.searches_this_run = 0
         self.quota = quota_state or QuotaState()
         self.quota.rollover()
@@ -130,7 +200,23 @@ class YouTubeClient:
 
     # ------------------------------------------------------------------ auth
 
+    @property
+    def can_write(self) -> bool:
+        """Playlist inserts need OAuth; an API key alone cannot write."""
+        return bool(self.refresh_token and self.client_id and self.client_secret)
+
+    @property
+    def search_mode(self) -> str:
+        if not self.api_keys:
+            return "oauth"
+        return "api_key" if len(self.api_keys) == 1 else f"api_key x{len(self.api_keys)}"
+
     def _ensure_token(self) -> str:
+        if not self.can_write:
+            raise AuthError(
+                "YouTube playlist writes need OAuth (an API key cannot add videos). "
+                "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN to enable writes."
+            )
         if self._access_token and time.time() < self._access_expiry - 60:
             return self._access_token
         try:
@@ -155,16 +241,54 @@ class YouTubeClient:
         self._access_expiry = time.time() + int(data.get("expires_in", 3600))
         return self._access_token
 
-    def _budget(self, cost: int, search: bool = False) -> None:
+    def _next_key(self, cost: int) -> int | None:
+        """Pick a key that still has quota left today (rotating)."""
+        if not self.api_keys:
+            return None
+        for offset in range(len(self.api_keys)):
+            idx = (self._key_index + offset) % len(self.api_keys)
+            if idx in self._key_exhausted:
+                continue
+            if self.quota.key_units(str(idx)) + cost <= self.daily_quota_units:
+                self._key_index = idx
+                return idx
+        return None
+
+    def _budget(self, cost: int, search: bool = False, insert: bool = False, oauth: bool = False) -> None:
         self.quota.rollover()
-        if self.quota.units_used + cost > self.daily_quota_units:
+        if oauth and not self.can_write:
+            raise AuthError(
+                "YouTube playlist writes need OAuth (an API key cannot add videos). "
+                "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN."
+            )
+        if self.quota.units_used + cost > self.total_quota_units:
             raise QuotaExceeded(
                 f"Local YouTube quota budget reached "
-                f"({self.quota.units_used}/{self.daily_quota_units} units today)"
+                f"({self.quota.units_used}/{self.total_quota_units} units today)"
             )
-        if search and self.searches_this_run >= self.max_searches_per_run:
+        if not oauth and self.api_keys and self._next_key(cost) is None:
             raise QuotaExceeded(
-                f"Per-run search limit reached ({self.max_searches_per_run} searches)"
+                f"Every YouTube API key has used its daily budget "
+                f"({len(self.api_keys)} key(s), {self.daily_quota_units} units each). "
+                "Add another key from a different Google Cloud project or wait for the "
+                "UTC rollover."
+            )
+        if search:
+            if self.searches_this_run >= self.max_searches_per_run:
+                raise QuotaExceeded(
+                    f"Per-run search limit reached ({self.max_searches_per_run} searches)"
+                )
+            if self.max_searches_per_day and self.quota.searches >= self.max_searches_per_day:
+                raise QuotaExceeded(
+                    f"Daily search limit reached ({self.quota.searches}/"
+                    f"{self.max_searches_per_day} searches today) — the API key is still "
+                    "valid, this is the app's own safety cap. Raise "
+                    "youtube_max_searches_per_day in config.json to use more of the day."
+                )
+        if insert and self.max_inserts_per_day and self.quota.inserts >= self.max_inserts_per_day:
+            raise QuotaExceeded(
+                f"Daily insert limit reached ({self.quota.inserts}/"
+                f"{self.max_inserts_per_day} playlist adds today)"
             )
 
     def _request(
@@ -176,11 +300,24 @@ class YouTubeClient:
         json_body: dict[str, Any] | None = None,
         cost: int = 1,
         search: bool = False,
+        insert: bool = False,
+        oauth: bool = False,
     ) -> dict[str, Any]:
-        self._budget(cost, search=search)
-        token = self._ensure_token()
+        self._budget(cost, search=search, insert=insert, oauth=oauth)
+        params = dict(params or {})
+        headers: dict[str, str] = {}
+        key_index: int | None = None
+        if oauth or not self.api_keys:
+            # Writes always use OAuth. Reads use an API key when one is set
+            # (no token refresh, no expiry in the hot search path) and fall back
+            # to OAuth for configs that only have a refresh token.
+            headers["Authorization"] = f"Bearer {self._ensure_token()}"
+        else:
+            key_index = self._next_key(cost)
+            if key_index is None:  # pragma: no cover - _budget already raises
+                raise QuotaExceeded("No YouTube API key has quota left today")
+            params["key"] = self.api_keys[key_index]
         url = f"{_API}/{path}"
-        headers = {"Authorization": f"Bearer {token}"}
         for attempt in range(4):
             try:
                 resp = self.session.request(
@@ -191,7 +328,7 @@ class YouTubeClient:
                     headers=headers,
                     timeout=45,
                 )
-            except requests.RequestException as exc:
+            except requests.RequestException:
                 if attempt == 3:
                     raise
                 time.sleep(2 ** attempt)
@@ -211,9 +348,45 @@ class YouTubeClient:
                 except Exception:
                     reason = resp.text[:200]
                 if "quota" in reason.lower():
-                    self.quota.units_used = self.daily_quota_units
+                    if key_index is not None:
+                        # This key's project is out of quota; try the next key
+                        # (a different project) instead of ending the run.
+                        self.quota.spend_on_key(str(key_index), self.daily_quota_units)
+                        self._key_exhausted.add(key_index)
+                        log.warning(
+                            "API key #%d hit its project quota — rotating to the next key",
+                            key_index + 1,
+                        )
+                        if self._next_key(cost) is not None:
+                            return self._request(
+                                method, path,
+                                params={k: v for k, v in params.items() if k != "key"},
+                                json_body=json_body, cost=cost, search=search,
+                                insert=insert, oauth=oauth,
+                            )
+                        raise QuotaExceeded(
+                            "All YouTube API keys are out of quota for today "
+                            f"({reason})"
+                        )
+                    self.quota.units_used = self.total_quota_units
                     raise QuotaExceeded(f"YouTube API quota exceeded: {reason}")
+                if not oauth and "accessnotconfigured" in reason.lower().replace(" ", ""):
+                    raise AuthError(
+                        f"YouTube Data API v3 is not enabled for this key's project: {reason}"
+                    )
+                if not oauth and ("key" in reason.lower() or "apikey" in reason.lower()):
+                    raise AuthError(
+                        f"YouTube API key rejected: {reason}. Check YOUTUBE_API_KEY and "
+                        "that YouTube Data API v3 is enabled in that project."
+                    )
                 raise AuthError(f"YouTube API forbidden: {reason}")
+            if resp.status_code == 400 and not oauth:
+                detail = resp.text[:300]
+                if "API key not valid" in detail or "keyInvalid" in detail:
+                    raise AuthError(
+                        f"YouTube API key invalid: {detail}. Check YOUTUBE_API_KEY."
+                    )
+                raise RuntimeError(f"YouTube API error 400: {detail}")
             if resp.status_code == 404:
                 raise NotFound(f"YouTube resource not found: {path}")
             if resp.status_code == 409:
@@ -223,8 +396,13 @@ class YouTubeClient:
                 raise RuntimeError(f"YouTube API error {resp.status_code}: {resp.text[:300]}")
 
             self.quota.units_used += cost
+            if key_index is not None:
+                self.quota.spend_on_key(str(key_index), cost)
             if search:
                 self.searches_this_run += 1
+                self.quota.searches += 1
+            if insert:
+                self.quota.inserts += 1
             return resp.json() if resp.text else {}
         raise RuntimeError("YouTube request retry loop exhausted")
 
@@ -293,9 +471,7 @@ class YouTubeClient:
             }
             if page_token:
                 params["pageToken"] = page_token
-            data = self._request(
-                "GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST
-            )
+            data = self._playlist_page(params)
             for item in data.get("items", []):
                 vid = item.get("contentDetails", {}).get("videoId")
                 if vid:
@@ -304,6 +480,21 @@ class YouTubeClient:
             if not page_token:
                 break
         return ids
+
+    def _playlist_page(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Read a playlist page with OAuth when possible (private playlists).
+
+        Falls back to the API key so public / unlisted playlists still work
+        when only a key is configured.
+        """
+        if self.can_write:
+            try:
+                return self._request(
+                    "GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST, oauth=True
+                )
+            except AuthError as exc:
+                log.warning("OAuth playlist read failed (%s) — retrying with API key", exc)
+        return self._request("GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST)
 
     def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
         self._request(
@@ -317,4 +508,6 @@ class YouTubeClient:
                 }
             },
             cost=COST_PLAYLIST_INSERT,
+            insert=True,
+            oauth=True,
         )
