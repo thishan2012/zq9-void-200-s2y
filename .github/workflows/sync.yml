@@ -17,6 +17,10 @@ on:
         description: "Seconds to wait between Spotify API calls (empty = config.json, 2s)"
         type: string
         default: ""
+      proxy_url:
+        description: "CORS proxy for Spotify calls (empty = repo var SPOTIFY_PROXY_URL, or direct)"
+        type: string
+        default: ""
       max_inserts:
         description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
         type: string
@@ -46,6 +50,8 @@ jobs:
 
       - name: Validate config and secrets
         env:
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
@@ -86,7 +92,7 @@ jobs:
           SPOTIFY_COOKIE_4: ${{ secrets.SPOTIFY_COOKIE_4 }}
           MAX_INSERTS_PER_DAY: ${{ inputs.max_inserts }}
           REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
-          SPOTIFY_PROXY_URL: ${{ vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
