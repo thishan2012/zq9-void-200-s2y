@@ -83,6 +83,7 @@ def cfg(tmp_path):
     c.state_path = str(tmp_path / "state.json")
     c.overrides_path = str(tmp_path / "overrides.json")
     c.cache_path = str(tmp_path / "cache.json")
+    c.source_cache_path = str(tmp_path / "source-cache.json")
     (tmp_path / "overrides.json").write_text('{"overrides": {}}')
     return c
 
@@ -329,3 +330,61 @@ def test_partial_source_read_still_processes_tracks(monkeypatch, cfg):
     assert report.spotify_throttled is True
     assert "rate limited" in report.summary_text()
     assert report.added == 3
+
+
+def test_queue_mode_batches_writes(monkeypatch, cfg):
+    """Queue mode: one queue call per track + a batch save, not one insert each."""
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    cfg.spotify_write_mode = "queue"
+    cfg.spotify_queue_flush_size = 2
+    tracks = _many_tracks(3)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    spotify.queue_supported = True
+    spotify._queued = []
+    spotify.queue_saves = 0
+    spotify.queue_calls = []
+    spotify.batch_calls = []
+
+    def queue_track(uri, max_items=50):
+        spotify.queue_calls.append(uri)
+        spotify._queued.append(uri)
+        return True
+
+    def save_queue_to_playlist(playlist_id):
+        sent = list(spotify._queued)
+        spotify.batch_calls.append(list(sent))
+        spotify._queued.clear()
+        spotify.queue_saves += 1
+        return len(sent)
+
+    spotify.queue_track = queue_track
+    spotify.save_queue_to_playlist = save_queue_to_playlist
+    type(spotify).queued = property(lambda self: len(self._queued))
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = eng.run()
+    assert len(spotify.queue_calls) == 3
+    assert spotify.added == []  # no per-track inserts
+    assert report.queued == 3
+    assert "queue" in report.summary_text()
+
+
+def test_queue_failure_falls_back_to_direct_add(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    cfg.spotify_write_mode = "queue"
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.queue_supported = True
+    spotify._queued = []
+    spotify.queue_saves = 0
+
+    def boom(uri, max_items=50):
+        raise RuntimeError("player not available")
+
+    spotify.queue_track = boom
+    type(spotify).queued = property(lambda self: len(self._queued))
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = eng.run()
+    assert spotify.added == [track.uri]  # direct fallback worked
+    assert report.added == 1

@@ -42,6 +42,33 @@ _SERVER_TIME_URL = "https://open.spotify.com/"
 _MAX_RETRIES = 6
 _PAGE_SIZE = 50
 _PACE_SECONDS = 0.35
+_MAX_QUEUE = 50
+# Spotify can hand out multi-hour blocks after a retry storm. Never sleep that
+# long inside a run: stop cleanly, remember the cooldown, continue next run.
+_MAX_INLINE_WAIT = 120
+
+
+def _header_seconds(headers: Any) -> float:
+    """Raw Retry-After value in seconds (0 when absent/unparsable)."""
+    try:
+        value = headers.get("Retry-After", "") or ""
+    except AttributeError:
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _human_duration(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
 
 
 def _retry_after_seconds(headers: Any, attempt: int) -> float:
@@ -333,9 +360,34 @@ def _server_time(session: requests.Session) -> int:
 
 
 class SpotifyClient:
-    def __init__(self, cookie_header: str, session: requests.Session | None = None):
+    def __init__(
+        self,
+        cookie_header: str,
+        session: requests.Session | None = None,
+        extra_cookies: list[str] | None = None,
+    ):
         _apply_cipher_override()
         self.sp_dc = extract_sp_dc(cookie_header)
+        # Extra accounts (spares): if one cookie gets rate limited we simply
+        # switch to the next. Spotify limits per token, so a different account
+        # is a clean way to keep going without retry storming.
+        self._cookie_pool: list[str] = [self.sp_dc]
+        for raw in extra_cookies or []:
+            if not raw.strip():
+                continue
+            try:
+                value = extract_sp_dc(raw)
+            except AuthError as exc:
+                log.warning("Ignoring extra Spotify cookie: %s", exc)
+                continue
+            if value not in self._cookie_pool:
+                self._cookie_pool.append(value)
+        self._cookie_index = 0
+        self.cookie_switches = 0
+        self._queued: list[str] = []
+        self.queue_saves = 0
+        self.queue_supported = True
+        self.blocked_until = 0.0
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": _UA})
         self._access_token = ""
@@ -415,6 +467,9 @@ class SpotifyClient:
             errors.append(f"{label}: HTTP {resp.status_code}")
             log.debug("Spotify token attempt failed (%s): %s", label, resp.text[:200])
 
+        if self._rotate_cookie():
+            return self._token_request()
+        self.totp_failed = True
         raise AuthError(
             "Spotify refused to issue a web-player token (403/invalid token).\n"
             "• The WEB PLAYER auth flow changed or the sp_dc cookie is stale: log into "
@@ -441,6 +496,26 @@ class SpotifyClient:
         self._access_expiry = (expires_ms / 1000) if expires_ms else time.time() + 3000
         return self._access_token
 
+    def _rotate_cookie(self) -> bool:
+        """Switch to the next spare account's cookie. True if one was left."""
+        if self._cookie_index + 1 >= len(self._cookie_pool):
+            return False
+        self._cookie_index += 1
+        self.sp_dc = self._cookie_pool[self._cookie_index]
+        self._access_token = ""
+        self._access_expiry = 0.0
+        self.totp_failed = False
+        self.cookie_switches += 1
+        log.warning(
+            "Spotify cookie #%d got rate limited — switching to spare cookie #%d/%d",
+            self._cookie_index, self._cookie_index + 1, len(self._cookie_pool),
+        )
+        return True
+
+    @property
+    def cookie_count(self) -> int:
+        return len(self._cookie_pool)
+
     def _pace(self) -> None:
         """Soft pacing so a big playlist does not blow through the window."""
         time.sleep(_PACE_SECONDS + min(self._pace_debt, 3.0))
@@ -453,6 +528,7 @@ class SpotifyClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
         _retry_auth: bool = True,
+        allow_404: bool = False,
     ) -> dict[str, Any]:
         token = self._ensure_token()
         url = path if path.startswith("http") else f"{_API}/{path}"
@@ -477,7 +553,22 @@ class SpotifyClient:
                 self._pace_debt = max(0.0, self._pace_debt - 1.0)
             if resp.status_code == 429:
                 retry_after = _retry_after_seconds(resp.headers, attempt)
+                raw_retry = _header_seconds(resp.headers)
                 self._pace_debt += 3.0
+                if raw_retry and raw_retry > _MAX_INLINE_WAIT:
+                    if self._rotate_cookie():
+                        return self._request(
+                            method, path, params=params, json_body=json_body,
+                            _retry_auth=_retry_auth, allow_404=allow_404,
+                        )
+                    self.blocked_until = time.time() + raw_retry
+                    raise RateLimited(
+                        raw_retry,
+                        f"Spotify blocked this session for ~{_human_duration(raw_retry)} "
+                        "(Retry-After). This is a cooldown, not a bug — nothing was lost. "
+                        "Runs stay paused until then; add a spare cookie "
+                        "(SPOTIFY_COOKIE_2) to keep going on another account.",
+                    )
                 if attempt == _MAX_RETRIES - 1:
                     raise RateLimited(
                         retry_after,
@@ -503,7 +594,8 @@ class SpotifyClient:
             if resp.status_code == 401 and _retry_auth:
                 self._access_token = ""
                 return self._request(
-                    method, path, params=params, json_body=json_body, _retry_auth=False
+                    method, path, params=params, json_body=json_body,
+                    _retry_auth=False, allow_404=allow_404,
                 )
             if resp.status_code == 401:
                 raise AuthError("Spotify access token rejected. Refresh SPOTIFY_COOKIE.")
@@ -513,6 +605,8 @@ class SpotifyClient:
                     "The cookie may lack permission for this playlist."
                 )
             if resp.status_code == 404:
+                if allow_404:
+                    return {}
                 raise NotFound(f"Spotify resource not found: {path}")
             if resp.status_code >= 400:
                 raise RuntimeError(f"Spotify API error {resp.status_code}: {resp.text[:300]}")
@@ -598,8 +692,52 @@ class SpotifyClient:
             params = {}
         return tracks
 
+    def playlist_snapshot(self, playlist_id: str) -> str:
+        """One cheap call: has this playlist changed since we last read it?
+
+        Returns ``f"{snapshot_id}:{total}"``. Used together with the source
+        cache so repeat runs cost 1 request instead of N pages.
+        """
+        data = self._request(
+            "GET",
+            f"playlists/{playlist_id}",
+            params={"fields": "snapshot_id,tracks(total)"},
+        )
+        total = (data.get("tracks") or {}).get("total", "")
+        return f"{data.get('snapshot_id', '')}:{total}"
+
     def playlist_track_ids(self, playlist_id: str) -> set[str]:
         return {t.id for t in self.playlist_tracks(playlist_id)}
+
+    def queue_track(self, uri: str, max_items: int = _MAX_QUEUE) -> bool:
+        """Park a track in the player queue (1 cheap call, no playlist write).
+
+        Spotify applies *server-side* de-duplication when you later save the
+        queue into a playlist, so a long batch costs a few calls instead of one
+        insert per track. Returns False when the queue is full.
+        """
+        if len(self._queued) >= max_items:
+            return False
+        self._request(
+            "POST", "me/player/queue", params={"uri": uri}, allow_404=True
+        )
+        self._queued.append(uri)
+        return True
+
+    @property
+    def queued(self) -> int:
+        return len(self._queued)
+
+    def save_queue_to_playlist(self, playlist_id: str) -> int:
+        """Save the whole queue into the target playlist. Returns items sent."""
+        if not self._queued:
+            return 0
+        payload = {"uris": list(self._queued)}
+        self._request("POST", f"playlists/{playlist_id}/tracks", json_body=payload)
+        sent = len(self._queued)
+        self._queued.clear()
+        self.queue_saves += 1
+        return sent
 
     def add_tracks(self, playlist_id: str, uris: list[str]) -> None:
         for i in range(0, len(uris), 100):

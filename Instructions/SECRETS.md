@@ -12,6 +12,7 @@ Nothing secret is ever committed to the repo. This page shows exactly how to obt
 | `SPOTIFY_COOKIE` | ✅ | Full `Cookie` header from a logged-in open.spotify.com request |
 | `SPOTIFY_SOURCE_PLAYLISTS` | ✅ | Comma/newline-separated source playlist IDs or URLs |
 | `SPOTIFY_TARGET_PLAYLIST` | ✅ | Your Spotify target playlist ID or URL |
+| `SPOTIFY_COOKIE_2` / `_3` / `_4` | optional | Cookies of **other** Spotify accounts — the client rotates to them when one gets rate limited (see [SPOTIFY-LIMITS.md](SPOTIFY-LIMITS.md)) |
 | `TELEGRAM_BOT_TOKEN` | optional | Bot token from @BotFather (for logs) |
 | `TELEGRAM_CHAT_ID` | optional | Your Telegram chat ID (for logs) |
 | `YOUTUBE_API_KEY` | only if YouTube enabled | Read-only API key (`AIza...`) used for search + metadata |

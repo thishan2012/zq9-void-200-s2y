@@ -78,6 +78,11 @@ class Config:
     dry_run: bool = False
     require_youtube_match_for_spotify: bool = False
     youtube_region_code: str = "US"
+    spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
+    spotify_queue_flush_size: int = 40
+    manual_queue_path: str = "data/manual-queue.txt"
+    source_cache_path: str = ".cache/source-tracks.json"
+    source_cache_ttl_hours: int = 12  # reuse a playlist read while it is unchanged
     state_path: str = "data/sync-state.json"
     overrides_path: str = "data/track-overrides.json"
     cache_path: str = ".cache/yt-cache.json"
@@ -148,6 +153,7 @@ class Config:
 @dataclass
 class Secrets:
     spotify_cookie: str = ""
+    spotify_spare_cookies: list[str] = field(default_factory=list)
     youtube_client_json: str = ""
     youtube_refresh_token: str = ""
     youtube_token_json: str = ""
@@ -166,8 +172,19 @@ class Secrets:
                     return v
             return ""
 
+        # SPOTIFY_COOKIE_2 / _3 / _4 (or SPOTIFY_SPARE_COOKIES, comma separated)
+        spares: list[str] = []
+        for key in ("SPOTIFY_COOKIE_2", "SPOTIFY_COOKIE_3", "SPOTIFY_COOKIE_4"):
+            if os.environ.get(key, "").strip():
+                spares.append(os.environ[key])
+        for key in ("SPOTIFY_SPARE_COOKIES", "SPOTIFY_COOKIES"):
+            raw = os.environ.get(key, "").strip()
+            if raw:
+                spares.extend(p for p in raw.split("|||") if p.strip())
+
         return cls(
             spotify_cookie=os.environ.get("SPOTIFY_COOKIE", ""),
+            spotify_spare_cookies=spares,
             youtube_client_json=_first("YT_CLIENT_JSON", "YOUTUBE_CLIENT_JSON", "YOUTUBE_OAUTH_CLIENT_JSON"),
             youtube_refresh_token=_first("YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN"),
             youtube_token_json=_first(

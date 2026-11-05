@@ -74,7 +74,7 @@ If it still fails:
    (byte values from https://github.com/xyloflake/spot-secrets-go `secretDict.json`).
 3. `python -m phonksync check --live` prints which endpoints were tried and why.
 
-## "Spotify rate limit" / 429 during a sync
+## "Spotify rate limit" / 429 during a sync — see [SPOTIFY-LIMITS.md](SPOTIFY-LIMITS.md)
 The web-player token is throttled per rolling window. Reading 2689 tracks with pages of 100 hits 429s almost immediately.
 
 What the syncer does now:
