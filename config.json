@@ -18,6 +18,12 @@
   "dry_run": false,
   "require_youtube_match_for_spotify": false,
   "youtube_region_code": "US",
+  "spotify_write_mode": "queue",
+  "spotify_queue_flush_size": 40,
+  "spotify_request_delay_seconds": 2,
+  "source_cache_path": ".cache/source-tracks.json",
+  "source_cache_ttl_hours": 12,
+  "manual_queue_path": "data/manual-queue.txt",
   "state_path": "data/sync-state.json",
   "overrides_path": "data/track-overrides.json",
   "cache_path": ".cache/yt-cache.json"

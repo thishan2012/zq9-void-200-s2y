@@ -55,6 +55,13 @@ def make_candidate(vid: str, title: str, channel: str = "Phonk Music", **kw) -> 
     return Candidate(**base)
 
 
+@pytest.fixture(autouse=True)
+def _no_request_delay(monkeypatch):
+    """Keep the suite fast: the real client waits REQUEST_DELAY_SECONDS (2s)."""
+    monkeypatch.setenv("REQUEST_DELAY_SECONDS", "0")
+    monkeypatch.setenv("SPOTIFY_TOTP_REMOTE", "0")
+
+
 @pytest.fixture
 def cache(tmp_path):
     return SearchCache(tmp_path / "cache.json", ttl_days=14)

@@ -23,6 +23,7 @@ import random
 import re
 import struct
 import time
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from http.cookies import SimpleCookie
 from typing import Any
@@ -41,7 +42,9 @@ _LEGACY_TOKEN_URL = (
 _SERVER_TIME_URL = "https://open.spotify.com/"
 _MAX_RETRIES = 6
 _PAGE_SIZE = 50
-_PACE_SECONDS = 0.35
+# Delay between every API request. 2s by default (REQUEST_DELAY_SECONDS env
+# overrides) — the single cheapest way to stay under the rolling window.
+_PACE_SECONDS = 2.0
 _MAX_QUEUE = 50
 # Spotify can hand out multi-hour blocks after a retry storm. Never sleep that
 # long inside a run: stop cleanly, remember the cooldown, continue next run.
@@ -71,21 +74,50 @@ def _human_duration(seconds: float) -> str:
     return f"{secs}s"
 
 
-def _retry_after_seconds(headers: Any, attempt: int) -> float:
-    """Spotify asks for ~30s; honour Retry-After but cap and add jitter."""
-    value = ""
+def request_delay_seconds() -> float:
+    """Delay applied before every request (env: REQUEST_DELAY_SECONDS)."""
+    raw = os.environ.get("REQUEST_DELAY_SECONDS", "").strip()
+    if not raw:
+        return _PACE_SECONDS
     try:
-        value = headers.get("Retry-After", "") or ""
-    except AttributeError:
-        value = ""
-    try:
-        wait = float(value)
-    except (TypeError, ValueError):
-        wait = 2 ** attempt
-    # Some responses send a HTTP-date; treat anything unparsable as backoff.
+        value = float(raw)
+    except ValueError:
+        log.warning("Ignoring invalid REQUEST_DELAY_SECONDS=%r", raw)
+        return _PACE_SECONDS
+    return max(0.0, min(value, 30.0))
+
+
+def backoff_seconds(headers: Any = None, attempt: int = 0, cap: float = 45.0) -> float:
+    """Seconds to wait after a 429.
+
+    Order of truth: ``Retry-After`` (seconds or HTTP-date) -> exponential
+    backoff ``2 ** attempt`` (floored at 2s) -> jitter, capped at ``cap``.
+    This is the one function every retry path uses.
+    """
+    wait = _header_seconds(headers)
+    if not wait:
+        try:
+            raw = headers.get("Retry-After", "") if headers is not None else ""
+        except AttributeError:
+            raw = ""
+        raw = str(raw or "").strip()
+        if raw:
+            try:  # HTTP-date form
+                wait = max(
+                    0.0,
+                    (parsedate_to_datetime(raw) - datetime.now(timezone.utc)).total_seconds(),
+                )
+            except (TypeError, ValueError):
+                wait = 0.0
+    if not wait:
+        wait = 2 ** max(0, attempt)
     wait = max(wait, 2.0)
-    jitter = random.uniform(0, 1.5)
-    return min(wait, 45.0) + jitter
+    return min(wait, cap) + random.uniform(0, 1.5)
+
+
+def _retry_after_seconds(headers: Any, attempt: int) -> float:
+    """Backwards-compatible alias for :func:`backoff_seconds`."""
+    return backoff_seconds(headers, attempt)
 
 # Spotify's TOTP secret, versioned. The cipher bytes are XOR-scrambled with
 # (index % 33) + 9 before being turned into a base32 TOTP key. The web player
@@ -384,6 +416,7 @@ class SpotifyClient:
                 self._cookie_pool.append(value)
         self._cookie_index = 0
         self.cookie_switches = 0
+        self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
         self.queue_supported = True
@@ -517,8 +550,10 @@ class SpotifyClient:
         return len(self._cookie_pool)
 
     def _pace(self) -> None:
-        """Soft pacing so a big playlist does not blow through the window."""
-        time.sleep(_PACE_SECONDS + min(self._pace_debt, 3.0))
+        """Sleep the configured gap before a request (default 2s)."""
+        delay = self.request_delay + min(self._pace_debt, 3.0)
+        if delay > 0:
+            time.sleep(delay)
 
     def _request(
         self,

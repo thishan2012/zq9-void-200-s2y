@@ -3,6 +3,7 @@ import pytest
 from conftest import FakeYouTube, make_candidate, make_track
 
 from phonksync import engine as engine_mod
+from phonksync.errors import RateLimited
 from phonksync.settings import Config
 
 
@@ -388,3 +389,64 @@ def test_queue_failure_falls_back_to_direct_add(monkeypatch, cfg):
     report = eng.run()
     assert spotify.added == [track.uri]  # direct fallback worked
     assert report.added == 1
+
+
+def test_track_error_is_skipped_and_run_continues(monkeypatch, cfg):
+    """One bad track must not end the run — skip it, do the next one."""
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    tracks = _many_tracks(3)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+
+    calls = {"n": 0}
+
+    def add_tracks(playlist_id, uris):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the middle track fails
+            raise RuntimeError("playlist write failed")
+        spotify.added.extend(uris)
+
+    monkeypatch.setattr(spotify, "add_tracks", add_tracks)
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = eng.run()
+    assert report.added == 2          # tracks 1 and 3 went through
+    assert report.skipped == 1        # the bad one was skipped, not fatal
+    assert "Skipped (errors): 1" in report.summary_text()
+
+
+def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
+    """A long 429 stops cleanly and remembers where to restart."""
+    import time
+
+    cfg.youtube_enabled = False
+    cfg.youtube_target_playlist = ""
+    tracks = _many_tracks(4)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    calls = {"n": 0}
+
+    def add_one(track, target_ids, report):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            spotify.blocked_until = time.time() + 3600
+            raise RateLimited(3600, "Spotify blocked this session for ~1h 0m")
+        spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
+        target_ids.add(track.id)
+
+    monkeypatch.setattr(eng, "_add_spotify", add_one)
+    report = eng.run()
+    resume = eng.state.get_resume_point()
+    assert resume["track_id"] == tracks[1].id
+    assert report.rate_limited_skips == 1
+    assert eng.state.spotify_cooldown_until() > time.time()
+
+    # Next run starts after the skipped track instead of from the top.
+    spotify.blocked_until = 0.0
+    # Simulate the cooldown having expired (normally an hour later).
+    eng.state.clear_spotify_cooldown()
+    eng.state.save()
+    eng2 = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report2 = eng2.run()
+    assert report2.added == 3  # tracks 2, 3, 4
+    assert not eng2.state.get_resume_point()
