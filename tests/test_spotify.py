@@ -145,3 +145,142 @@ def test_extract_sp_dc_missing_cookie_names_the_problem():
     with pytest.raises(AuthError) as exc:
         extract_sp_dc("sp_t=abc; sp_key=1")
     assert "does not contain a 'sp_dc' cookie" in str(exc.value)
+
+
+# ---------------------------------------------------------------- TOTP (web player)
+
+from phonksync.spotify import (  # noqa: E402
+    _TOTP_SECRETS,
+    _totp_code,
+    _totp_secret,
+    _totp_version,
+)
+
+
+def test_totp_secret_matches_web_player_bundle():
+    """v61 cipher must decode to the base32 key the web player uses."""
+    assert _totp_secret(_TOTP_SECRETS["61"]) == (
+        "GM3TMMJTGYZTQNZVGM4DINJZHA4TGOBYGMZTCMRTGEYDSMJRHE4TEOBUG4YTCMRUGQ4DQOJUGQYTAMRR"
+        "GA2TCMJSHE3TCMBY"
+    )
+
+
+def test_totp_code_is_6_digits_and_time_based():
+    secret = _totp_secret(_TOTP_SECRETS["61"])
+    code = _totp_code(secret, 1770000000)
+    assert len(code) == 6 and code.isdigit()
+    # same 30s window -> same code, next window -> different code
+    assert _totp_code(secret, 1770000010) == code
+    assert _totp_code(secret, 1770000030) != code
+
+
+def test_totp_version_prefers_env(monkeypatch):
+    monkeypatch.setenv("SPOTIFY_TOTP_VER", "60")
+    assert _totp_version() == "60"
+    monkeypatch.delenv("SPOTIFY_TOTP_VER")
+    assert _totp_version() == max(_TOTP_SECRETS, key=int)
+
+
+def test_cipher_override_from_env(monkeypatch):
+    from phonksync.spotify import _apply_cipher_override
+
+    monkeypatch.setenv("SPOTIFY_TOTP_VER", "99")
+    monkeypatch.setenv("SPOTIFY_TOTP_CIPHER", "1,2,3,4,5,6,7,8,9,10")
+    _apply_cipher_override()
+    assert _TOTP_SECRETS["99"] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+
+class _TokResp:
+    def __init__(self, status=200, payload=None, text="", headers=None):
+        self.status_code = status
+        self._payload = payload or {}
+        self.text = text
+        self.headers = headers or {}
+
+    def json(self):
+        return self._payload
+
+
+class _TokSession:
+    """Fake session: token endpoint fails until the TOTP flow is used."""
+
+    def __init__(self, totp_required=True):
+        self.totp_required = totp_required
+        self.calls = []
+        self.headers = {}
+
+    def head(self, url, timeout=None):
+        return _TokResp(headers={"Date": "Wed, 04 Feb 2026 10:00:00 GMT"})
+
+    def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+        self.calls.append({"url": url, "params": dict(params or {})})
+        if url.endswith("/api/token"):
+            if self.totp_required and not (params or {}).get("totp"):
+                return _TokResp(403, {"error": {"status": 403, "message": "invalid token"}})
+            return _TokResp(
+                200,
+                {
+                    "accessToken": "WEBTOKEN",
+                    "accessTokenExpirationTimestampMs": 9999999999999,
+                    "isAnonymous": False,
+                },
+            )
+        return _TokResp(403, {})
+
+
+def test_token_flow_sends_totp_to_api_token():
+    from phonksync.spotify import SpotifyClient
+
+    session = _TokSession()
+    client = SpotifyClient("sp_dc=" + "a" * 60, session=session)
+    assert client._ensure_token() == "WEBTOKEN"
+    first = [c for c in session.calls if c["url"].endswith("/api/token")][0]
+    assert first["params"]["totp"] and first["params"]["totpServer"]
+    assert first["params"]["productType"] == "web-player"
+
+
+def test_token_flow_falls_back_to_legacy_endpoint():
+    from phonksync.spotify import SpotifyClient
+
+    class Session(_TokSession):
+        def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+            self.calls.append({"url": url, "params": dict(params or {})})
+            if "get_access_token" in url:
+                return _TokResp(200, {"accessToken": "LEGACY", "isAnonymous": False})
+            return _TokResp(403, {"error": {"message": "invalid token"}})
+
+    session = Session()
+    client = SpotifyClient("sp_dc=" + "a" * 60, session=session)
+    assert client._ensure_token() == "LEGACY"
+    assert any("get_access_token" in c["url"] for c in session.calls)
+
+
+def test_anonymous_token_raises_auth_error():
+    from phonksync.spotify import SpotifyClient
+
+    class Session(_TokSession):
+        def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+            self.calls.append({"url": url, "params": dict(params or {})})
+            return _TokResp(200, {"accessToken": "ANON", "isAnonymous": True})
+
+    client = SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    with pytest.raises(AuthError) as exc:
+        client._ensure_token()
+    assert "anonymous" in str(exc.value).lower()
+
+
+def test_token_flow_error_mentions_help(monkeypatch):
+    from phonksync.spotify import SpotifyClient
+
+    monkeypatch.setenv("SPOTIFY_TOTP_REMOTE", "0")
+
+    class Session(_TokSession):
+        def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+            self.calls.append({"url": url, "params": dict(params or {})})
+            return _TokResp(403, {"error": {"message": "invalid token"}})
+
+    client = SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    with pytest.raises(AuthError) as exc:
+        client._ensure_token()
+    msg = str(exc.value)
+    assert "SPOTIFY_TOTP_VER" in msg and "SPOTIFY_COOKIE" in msg

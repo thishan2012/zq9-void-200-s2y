@@ -1,16 +1,28 @@
-"""Spotify Web API client authenticated with a browser session cookie.
+"""Spotify Web API client authenticated with the Web Player cookie (sp_dc).
 
 The user pastes the *whole* Cookie header for open.spotify.com into the
 SPOTIFY_COOKIE secret. We extract `sp_dc` (the only value needed) and exchange
-it for a short-lived Web API access token via Spotify's public token endpoint.
-No Spotify password, client secret, or OAuth app is required.
+it for a short-lived Web API access token.
+
+Since March 2025 Spotify's token endpoint also requires a *TOTP* code that the
+web player generates from a versioned secret baked into its JS bundle. We
+derive that secret the same way the web player does (see ``_totp_secret``) and
+fall back to the older ``get_access_token`` endpoint if needed.
+
+No Spotify password, client secret, OAuth app, or Premium account is required.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
+import os
 import re
+import struct
 import time
+from email.utils import parsedate_to_datetime
 from http.cookies import SimpleCookie
 from typing import Any
 
@@ -21,7 +33,29 @@ from .models import Track
 
 log = logging.getLogger(__name__)
 
-_TOKEN_URL = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
+_TOKEN_URL = "https://open.spotify.com/api/token"
+_LEGACY_TOKEN_URL = (
+    "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
+)
+_SERVER_TIME_URL = "https://open.spotify.com/"
+
+# Spotify's TOTP secret, versioned. The cipher bytes are XOR-scrambled with
+# (index % 33) + 9 before being turned into a base32 TOTP key. The web player
+# rotates this every few months; the newest known version is used and can be
+# overridden with SPOTIFY_TOTP_VER / SPOTIFY_TOTP_CIPHER, or refreshed from the
+# community mirror (SPOTIFY_TOTP_REMOTE=0 disables that fetch).
+_TOTP_SECRETS: dict[str, list[int]] = {
+    "59": [123, 105, 79, 70, 110, 59, 52, 125, 60, 49, 80, 70, 89, 75, 80, 86,
+           63, 53, 123, 37, 117, 49, 52, 93, 77, 62, 47, 86, 48, 104, 68, 72],
+    "60": [79, 109, 69, 123, 90, 65, 46, 74, 94, 34, 58, 48, 70, 71, 92, 85,
+           122, 63, 91, 64, 87, 87],
+    "61": [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76,
+           94, 102, 43, 69, 49, 120, 118, 80, 64, 78],
+}
+_TOTP_SECRETS_URL = (
+    "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/main/secrets/secretDict.json"
+)
+_TOTP_REMOTE_CACHE: dict[str, Any] = {"ts": 0.0, "ver": ""}
 _API = "https://api.spotify.com/v1"
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -186,8 +220,100 @@ def extract_sp_dc(cookie_header: str) -> str:
     )
 
 
+
+def _totp_secret(cipher: list[int]) -> str:
+    """Rebuild the base32 TOTP key from Spotify's scrambled cipher bytes."""
+    transformed = [byte ^ ((index % 33) + 9) for index, byte in enumerate(cipher)]
+    joined = "".join(str(number) for number in transformed)
+    raw = bytes.fromhex(joined.encode().hex())
+    return base64.b32encode(raw).decode().rstrip("=")
+
+
+def _totp_code(secret_b32: str, timestamp: int, digits: int = 6, interval: int = 30) -> str:
+    """RFC 6238 TOTP (SHA-1) — what the web player sends as ``totp``."""
+    padded = secret_b32 + "=" * (-len(secret_b32) % 8)
+    key = base64.b32decode(padded)
+    counter = int(timestamp) // interval
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return str(value % (10 ** digits)).zfill(digits)
+
+
+def _totp_version() -> str:
+    """Version to use: explicit env override, else the newest known version."""
+    override = os.environ.get("SPOTIFY_TOTP_VER", "").strip()
+    if override:
+        if override not in _TOTP_SECRETS:
+            raise AuthError(
+                f"SPOTIFY_TOTP_VER={override} has no known secret. Set "
+                "SPOTIFY_TOTP_CIPHER too (comma-separated bytes)."
+            )
+        return override
+    return max(_TOTP_SECRETS, key=lambda v: int(v))
+
+
+def _apply_cipher_override() -> None:
+    raw = os.environ.get("SPOTIFY_TOTP_CIPHER", "").strip()
+    if not raw:
+        return
+    ver = os.environ.get("SPOTIFY_TOTP_VER", "").strip() or _totp_version()
+    try:
+        cipher = [int(part) for part in re.split(r"[,\s]+", raw) if part]
+    except ValueError as exc:
+        raise AuthError(f"SPOTIFY_TOTP_CIPHER must be comma-separated integers: {exc}")
+    if len(cipher) < 8:
+        raise AuthError("SPOTIFY_TOTP_CIPHER looks too short to be a Spotify TOTP cipher")
+    _TOTP_SECRETS[ver] = cipher
+
+
+def _refresh_totp_secrets(session: requests.Session, max_age: float = 21600) -> None:
+    """Optionally pull the newest TOTP cipher from the community mirror.
+
+    Fails silently: the embedded secrets keep working, and a network hiccup must
+    never break a sync run. Set SPOTIFY_TOTP_REMOTE=0 to skip the call entirely.
+    """
+    if os.environ.get("SPOTIFY_TOTP_REMOTE", "").strip().lower() in {"0", "false", "no"}:
+        return
+    if time.time() - float(_TOTP_REMOTE_CACHE.get("ts", 0)) < max_age:
+        return
+    _TOTP_REMOTE_CACHE["ts"] = time.time()
+    try:
+        resp = session.get(_TOTP_SECRETS_URL, timeout=10)
+        if resp.status_code != 200:
+            return
+        data = resp.json()
+    except (requests.RequestException, ValueError):
+        return
+    newest = _totp_version()
+    for ver, cipher in (data or {}).items():
+        try:
+            values = [int(v) for v in cipher]
+        except (TypeError, ValueError):
+            continue
+        if len(values) >= 8:
+            _TOTP_SECRETS[str(ver)] = values
+            if int(ver) > int(newest):
+                newest = str(ver)
+    _TOTP_REMOTE_CACHE["ver"] = newest
+    log.debug("Spotify TOTP secrets known versions: %s", sorted(_TOTP_SECRETS, key=int))
+
+
+def _server_time(session: requests.Session) -> int:
+    """Spotify edge time (TOTP is time-sensitive); local clock as fallback."""
+    try:
+        resp = session.head(_SERVER_TIME_URL, timeout=5)
+        date_header = resp.headers.get("Date", "")
+        if date_header:
+            return int(parsedate_to_datetime(date_header).timestamp())
+    except (requests.RequestException, TypeError, ValueError):
+        pass
+    return int(time.time())
+
+
 class SpotifyClient:
     def __init__(self, cookie_header: str, session: requests.Session | None = None):
+        _apply_cipher_override()
         self.sp_dc = extract_sp_dc(cookie_header)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": _UA})
@@ -196,27 +322,95 @@ class SpotifyClient:
 
     # ------------------------------------------------------------------ auth
 
+    def _totp_params(self, server_time: int, ver: str) -> dict[str, str]:
+        cipher = _TOTP_SECRETS[ver]
+        code = _totp_code(_totp_secret(cipher), server_time)
+        params = {
+            "reason": "transport",
+            "productType": "web-player",
+            "totp": code,
+            "totpServer": code,
+            "totpVer": ver,
+        }
+        if int(ver) < 10:
+            now = int(time.time())
+            day = time.strftime("%Y-%m-%d", time.gmtime(server_time))
+            params.update(
+                {
+                    "sTime": str(server_time),
+                    "cTime": str(now),
+                    "buildDate": day,
+                    "buildVer": f"web-player_{day}_{server_time * 1000}_{os.urandom(4).hex()}",
+                }
+            )
+        return params
+
+    def _token_request(self) -> dict[str, Any]:
+        """Ask Spotify for a web-player token, retrying the known variants."""
+        _refresh_totp_secrets(self.session)
+        ver = _totp_version()
+        server_time = _server_time(self.session)
+        attempts: list[tuple[str, dict[str, str], str]] = []
+        errors: list[str] = []
+        for reason in ("transport", "init"):
+            params = self._totp_params(server_time, ver)
+            params["reason"] = reason
+            attempts.append((_TOKEN_URL, params, f"{_TOKEN_URL} ({reason}, totp v{ver})"))
+        # Last resort: the pre-TOTP endpoint (works for some accounts/regions).
+        attempts.append(
+            (_LEGACY_TOKEN_URL, {}, _LEGACY_TOKEN_URL)
+        )
+
+        for url, params, label in attempts:
+            try:
+                resp = self.session.get(
+                    url,
+                    params=params or None,
+                    headers={
+                        "Accept": "application/json",
+                        "Referer": "https://open.spotify.com/",
+                        "App-Platform": "WebPlayer",
+                    },
+                    cookies={"sp_dc": self.sp_dc},
+                    timeout=30,
+                )
+            except requests.RequestException as exc:
+                errors.append(f"{label}: {exc}")
+                continue
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except ValueError:
+                    errors.append(f"{label}: response was not JSON")
+                    continue
+                if data.get("accessToken"):
+                    log.debug("Spotify token acquired via %s", label)
+                    return data
+                errors.append(f"{label}: no accessToken in response")
+                continue
+            errors.append(f"{label}: HTTP {resp.status_code}")
+            log.debug("Spotify token attempt failed (%s): %s", label, resp.text[:200])
+
+        raise AuthError(
+            "Spotify refused to issue a web-player token (403/invalid token).\n"
+            "• The WEB PLAYER auth flow changed or the sp_dc cookie is stale: log into "
+            "open.spotify.com in a private window, copy a fresh Cookie header, update "
+            "SPOTIFY_COOKIE.\n"
+            "• If it still fails, Spotify rotated the TOTP secret: update "
+            "SPOTIFY_TOTP_VER / SPOTIFY_TOTP_CIPHER (see Instructions/TROUBLESHOOTING.md), "
+            "or run a sync with SPOTIFY_TOTP_REMOTE=1 so the newest secret is fetched.\n"
+            "Details: " + " | ".join(errors[:3])
+        )
+
     def _ensure_token(self) -> str:
         if self._access_token and time.time() < self._access_expiry - 60:
             return self._access_token
-        try:
-            resp = self.session.get(
-                _TOKEN_URL,
-                cookies={"sp_dc": self.sp_dc},
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise AuthError(f"Spotify token request failed: {exc}") from exc
-        if resp.status_code != 200:
+        data = self._token_request()
+        if data.get("isAnonymous"):
             raise AuthError(
-                f"Spotify token endpoint returned {resp.status_code}. "
-                "The sp_dc cookie is probably expired; refresh SPOTIFY_COOKIE."
-            )
-        data = resp.json()
-        if data.get("isAnonymous", True) or not data.get("accessToken"):
-            raise AuthError(
-                "Spotify returned an anonymous token. The sp_dc cookie is invalid "
-                "or expired. Log into open.spotify.com and copy a fresh Cookie header."
+                "Spotify returned an anonymous (logged-out) token. The sp_dc cookie is "
+                "invalid or expired — copy a fresh Cookie header from a logged-in "
+                "open.spotify.com tab."
             )
         self._access_token = data["accessToken"]
         expires_ms = data.get("accessTokenExpirationTimestampMs", 0)

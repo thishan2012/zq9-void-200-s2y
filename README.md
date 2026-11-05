@@ -23,7 +23,7 @@
 සම්පූර්ණ guide: **[Instructions/README.md](Instructions/README.md)** | Secrets: **[Instructions/SECRETS.md](Instructions/SECRETS.md)**
 
 1. Spotify target playlist එකක් හදන්න (ඔයාගේ account එකේ).
-2. GitHub Secrets දාන්න:
+2. GitHub Secrets දාන්න (Spotify **Premium / developer app ඕන නෑ** — cookie එකෙන් විතරයි):
    `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`
    Telegram ඕන නම්: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
    YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YOUTUBE_API_KEY`, `YOUTUBE_TARGET_PLAYLIST`

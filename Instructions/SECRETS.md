@@ -50,6 +50,20 @@ python -m phonksync cookie-fix --show     # paste the dump when asked
 ```
 Copy the printed `AQ...` string and put **only that** in `SPOTIFY_COOKIE`.
 
+**No Premium or developer app is needed.** Since March 2025 the web-player token
+endpoint also demands a **TOTP** code. The syncer derives it the same way the web
+player does (versioned secret → XOR unscramble → base32 → RFC 6238 code) and asks
+the token endpoint with `totp`, `totpServer` and `totpVer`. Optional knobs:
+
+| Env var | Meaning |
+|---|---|
+| `SPOTIFY_TOTP_VER` | Force a TOTP secret version (default: newest known, e.g. `61`) |
+| `SPOTIFY_TOTP_CIPHER` | Comma-separated cipher bytes for that version |
+| `SPOTIFY_TOTP_REMOTE` | `0` disables the hourly fetch of newer secrets from the community mirror |
+
+If Spotify rotates the secret and both keys fail, the error message says so and
+`python -m phonksync check --live` shows the exact endpoint response.
+
 **Notes**
 - The only value that matters is `sp_dc`; everything else is ignored, so pasting the full header is safe and easiest.
 - If you prefer, a bare `sp_dc=...` pair or just the `sp_dc` value also works.
