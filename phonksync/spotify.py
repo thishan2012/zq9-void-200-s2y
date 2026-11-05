@@ -19,6 +19,7 @@ import hmac
 import json
 import logging
 import os
+import random
 import re
 import struct
 import time
@@ -38,6 +39,26 @@ _LEGACY_TOKEN_URL = (
     "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
 )
 _SERVER_TIME_URL = "https://open.spotify.com/"
+_MAX_RETRIES = 6
+_PAGE_SIZE = 50
+_PACE_SECONDS = 0.35
+
+
+def _retry_after_seconds(headers: Any, attempt: int) -> float:
+    """Spotify asks for ~30s; honour Retry-After but cap and add jitter."""
+    value = ""
+    try:
+        value = headers.get("Retry-After", "") or ""
+    except AttributeError:
+        value = ""
+    try:
+        wait = float(value)
+    except (TypeError, ValueError):
+        wait = 2 ** attempt
+    # Some responses send a HTTP-date; treat anything unparsable as backoff.
+    wait = max(wait, 2.0)
+    jitter = random.uniform(0, 1.5)
+    return min(wait, 45.0) + jitter
 
 # Spotify's TOTP secret, versioned. The cipher bytes are XOR-scrambled with
 # (index % 33) + 9 before being turned into a base32 TOTP key. The web player
@@ -319,6 +340,9 @@ class SpotifyClient:
         self.session.headers.update({"User-Agent": _UA})
         self._access_token = ""
         self._access_expiry = 0.0
+        self._rate_limit_wait = 0.0
+        self._pace_debt = 0.0
+        self.partial_read = False
 
     # ------------------------------------------------------------------ auth
 
@@ -417,6 +441,10 @@ class SpotifyClient:
         self._access_expiry = (expires_ms / 1000) if expires_ms else time.time() + 3000
         return self._access_token
 
+    def _pace(self) -> None:
+        """Soft pacing so a big playlist does not blow through the window."""
+        time.sleep(_PACE_SECONDS + min(self._pace_debt, 3.0))
+
     def _request(
         self,
         method: str,
@@ -428,7 +456,7 @@ class SpotifyClient:
     ) -> dict[str, Any]:
         token = self._ensure_token()
         url = path if path.startswith("http") else f"{_API}/{path}"
-        for attempt in range(4):
+        for attempt in range(_MAX_RETRIES):
             try:
                 resp = self.session.request(
                     method,
@@ -439,21 +467,38 @@ class SpotifyClient:
                     timeout=45,
                 )
             except requests.RequestException:
-                if attempt == 3:
+                if attempt == _MAX_RETRIES - 1:
                     raise
-                time.sleep(2 ** attempt)
+                time.sleep(min(2 ** attempt, 30))
                 continue
 
+            if resp.status_code == 200:
+                # Cheap call, no rate pressure: keep the soft pace budget full.
+                self._pace_debt = max(0.0, self._pace_debt - 1.0)
             if resp.status_code == 429:
-                retry_after = float(resp.headers.get("Retry-After", "2"))
-                if attempt == 3:
-                    raise RateLimited(retry_after, "Spotify rate limit")
-                time.sleep(min(retry_after, 30))
+                retry_after = _retry_after_seconds(resp.headers, attempt)
+                self._pace_debt += 3.0
+                if attempt == _MAX_RETRIES - 1:
+                    raise RateLimited(
+                        retry_after,
+                        "Spotify rate limit: still 429 after "
+                        f"{_MAX_RETRIES} tries (~{int(self._rate_limit_wait)}s of waiting). "
+                        "The web-player token is being throttled; wait a few minutes "
+                        "and run again, or lower max_tracks for this run.",
+                    )
+                self._rate_limit_wait += retry_after
+                log.warning(
+                    "Spotify rate limit (429) — waiting %.0fs before retry %d/%d",
+                    retry_after, attempt + 2, _MAX_RETRIES,
+                )
+                time.sleep(retry_after)
                 continue
             if resp.status_code >= 500:
-                if attempt == 3:
-                    raise RuntimeError(f"Spotify HTTP {resp.status_code}")
-                time.sleep(2 ** attempt)
+                if attempt == _MAX_RETRIES - 1:
+                    raise RuntimeError(
+                        f"Spotify HTTP {resp.status_code} after {_MAX_RETRIES} tries"
+                    )
+                time.sleep(min(2 ** attempt, 30))
                 continue
             if resp.status_code == 401 and _retry_auth:
                 self._access_token = ""
@@ -488,7 +533,9 @@ class SpotifyClient:
             return []
         tracks: list[Track] = []
         path = f"playlists/{playlist_id}/tracks"
-        page_size = min(100, max_tracks) if max_tracks else 100
+        # Smaller pages spread requests over time: the web-player token is
+        # rate limited per rolling window, so big pages of 100 trip 429s.
+        page_size = min(_PAGE_SIZE, max_tracks) if max_tracks else _PAGE_SIZE
         params: dict[str, Any] = {
             "limit": page_size,
             "fields": (
@@ -496,8 +543,22 @@ class SpotifyClient:
                 "duration_ms,external_ids(isrc),uri,popularity)),next"
             ),
         }
+        offset = 0
         while True:
-            data = self._request("GET", path, params=params)
+            try:
+                data = self._request("GET", path, params=params)
+            except RateLimited:
+                if not tracks:
+                    raise
+                # Keep what we already have instead of losing the whole read.
+                log.error(
+                    "Spotify rate limit after %d tracks of playlist %s — using the "
+                    "partial result; the rest will be picked up on the next run",
+                    len(tracks), playlist_id,
+                )
+                self.partial_read = True
+                break
+            self._pace()
             for item in data.get("items", []):
                 if max_tracks is not None and len(tracks) >= max_tracks:
                     break
@@ -524,6 +585,15 @@ class SpotifyClient:
             next_url = data.get("next")
             if not next_url:
                 break
+            offset += len(data.get("items", []))
+            if max_tracks is not None:
+                # `next` is not in our field mask when limiting — page by offset.
+                params = {
+                    "limit": page_size,
+                    "offset": offset,
+                    "fields": params.get("fields", ""),
+                }
+                continue
             path = next_url
             params = {}
         return tracks

@@ -93,6 +93,7 @@ tests/                # offline tests
   ```
   එතකොට 2 keys = **16,000 units/දවසකට = 160 search** (adds 40ක් සමඟ). Key එකක් ඉවර උනාම code එක ඉබේම ඊළඟ key එකට මාරු වෙනවා (403 `quotaExceeded` ආවත් run එක නවත්තන්නේ නෑ). Keys 3ක් = 240 search/දවස.
 - එකම project එකේ keys 2ක් දැම්මොත් quota **වැඩි වෙන්නේ නෑ** — project එකට 10,000 තමයි. ඒ නිසා key එකකට එක project එකක්. [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
+- Spotify rate limit (429) ආවොත්: code එක pages 50 බැගින්, පොඩි pause එකක් එක්ක ඉල්ලනවා; 6 වතාවක් retry කරනවා. ඒත් 429 ආවොත් ඒ වෙනකොට කියවලා තියෙන tracks වලින් වැඩේ කරනවා (නැති කරන්නේ නෑ) — විනාඩි 5ක් ඉඳලා ආයේ run කරන්න.
 - Spotify cookie එක password එකක් වගේ — GitHub Secrets වල විතරක් තියාගන්න, expire උනොත් refresh කරන්න.
 - පුද්ගලික භාවිතය සඳහා පමණයි.
 
