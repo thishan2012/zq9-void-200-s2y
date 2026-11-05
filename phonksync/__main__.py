@@ -98,14 +98,32 @@ def cmd_check(args: argparse.Namespace) -> int:
                 "`python -m phonksync cookie-fix --show` locally and paste that value "
                 "as SPOTIFY_COOKIE."
             )
-    from .spotify import proxy_enabled
+    from .spotify import _with_proxy, proxy_headers
 
     proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip() or cfg.spotify_proxy_url
-    if proxy_enabled() or proxy:
-        print(f"🔗 Spotify route: proxy {proxy or '(config value)'} "
-              f"({'armed' if proxy_enabled() else 'from config'})")
+    if proxy:
+        mode = "header mode (x-proxy-secret)" if proxy_headers() else "query mode"
+        print(f"🔗 Spotify route: proxy {proxy} — {mode}")
+        # Non-fatal probe so the log *shows* whether the proxy is really used.
+        try:
+            import requests as _requests
+
+            probe = _requests.get(
+                _with_proxy(proxy, "https://open.spotify.com/", None),
+                headers=proxy_headers(),
+                timeout=15,
+            )
+            print(
+                f"✅ Proxy reachable (HTTP {probe.status_code}, "
+                f"{len(probe.text)} bytes of open.spotify.com)"
+            )
+        except Exception as exc:
+            print(
+                f"⚠️  Proxy not reachable from here ({str(exc).splitlines()[0][:120]}) — "
+                "sync will automatically fall back to a direct connection"
+            )
     else:
-        print("🔗 Spotify route: direct (set SPOTIFY_PROXY_URL to use your CORS proxy)")
+        print("🔗 Spotify route: direct (set SPOTIFY_PROXY_URL / spotify_proxy_url to use a proxy)")
 
     if secrets.telegram_bot_token and secrets.telegram_chat_id:
         print("✅ Telegram secrets present")
