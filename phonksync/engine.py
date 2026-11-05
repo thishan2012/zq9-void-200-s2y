@@ -151,6 +151,8 @@ class SyncEngine:
         self.state = StateDB(config.state_path)
         if "REQUEST_DELAY_SECONDS" not in os.environ:
             os.environ["REQUEST_DELAY_SECONDS"] = str(config.spotify_request_delay_seconds)
+        if config.spotify_proxy_url and "SPOTIFY_PROXY_URL" not in os.environ:
+            os.environ["SPOTIFY_PROXY_URL"] = config.spotify_proxy_url
         self.spotify = SpotifyClient(
             secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
         )
@@ -258,6 +260,11 @@ class SyncEngine:
             report.errors.append(str(exc))
             report.spotify_throttled = True
             report.quota_reason = str(exc)
+            # Remember the block: the next run then skips instantly instead of
+            # burning another six retries into the same window.
+            blocked_until = getattr(self.spotify, "blocked_until", 0.0)
+            if blocked_until:
+                self.state.set_spotify_cooldown(blocked_until, "Spotify 429")
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return report

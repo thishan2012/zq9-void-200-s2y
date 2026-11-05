@@ -1,4 +1,6 @@
 """End-to-end engine tests with fake Spotify/YouTube/Telegram (no network)."""
+import time
+
 import pytest
 from conftest import FakeYouTube, make_candidate, make_track
 
@@ -505,3 +507,63 @@ def test_web_fallback_failure_falls_back_to_cache(monkeypatch, cfg):
     assert report.web_reads == 0
     assert report.cached_sources >= 1
     assert report.added == 2
+
+
+def test_rate_limited_run_records_a_cooldown(monkeypatch, cfg):
+    """A run that dies on 429 must leave a cooldown so the next run skips fast."""
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.blocked_until = 0.0
+
+    def boom(playlist_id, max_tracks=None):
+        raise RateLimited(600, "Spotify is throttling the token endpoint (HTTP 429)")
+
+    spotify.playlist_tracks = boom
+    spotify.playlist_track_ids = lambda *a, **k: set()
+    engine = build_engine(monkeypatch, cfg, spotify, FakeYouTube())
+
+    # Pretend the token call parked the client for 10 minutes and then failed.
+    def collect(report):
+        engine.spotify.blocked_until = time.time() + 600
+        raise RateLimited(600, "Spotify is throttling the token endpoint (HTTP 429)")
+
+    monkeypatch.setattr(engine, "_collect_source_tracks", collect)
+    report = engine.run()
+    assert report.spotify_throttled
+    assert engine.state.spotify_cooldown_until() > time.time() + 500
+
+
+def test_main_returns_success_when_run_only_hit_a_cooldown(cfg, monkeypatch, tmp_path, capsys):
+    """A 429 cooldown is expected behaviour — do not fail the Actions job."""
+    import phonksync.__main__ as main
+    from phonksync.engine import RunReport
+
+    class FakeEngine:
+        def __init__(self, *a, **kw):
+            pass
+
+        def run(self):
+            return RunReport(
+                started_at="now", dry_run=False, spotify_throttled=True,
+                quota_reason="Spotify cooldown — 25m remaining",
+            )
+
+    class FakeConfig(Config):
+        @classmethod
+        def load(cls, path):
+            c = Config()
+            c.spotify_source_playlists = ["src111111111111111111111"]
+            c.spotify_target_playlist = "target"
+            c.state_path = str(tmp_path / "state.json")
+            c.overrides_path = str(tmp_path / "overrides.json")
+            c.cache_path = str(tmp_path / "cache.json")
+            return c
+
+    monkeypatch.setenv("SPOTIFY_COOKIE", "sp_dc=" + "a" * 60)
+    monkeypatch.delenv("YOUTUBE_ENABLED", raising=False)
+    monkeypatch.setattr(main, "Config", FakeConfig)
+    monkeypatch.setattr(main, "SyncEngine", FakeEngine, raising=False)
+    import phonksync.engine as engine_mod
+
+    monkeypatch.setattr(engine_mod, "SyncEngine", FakeEngine)
+    assert main.main(["sync"]) == 0
+    assert "Nothing was lost" in capsys.readouterr().err

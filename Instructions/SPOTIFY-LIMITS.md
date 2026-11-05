@@ -19,11 +19,48 @@ to stay out of the window, and a 2,689-track playlist still finishes in a few
 minutes thanks to the caches below.
 
 ```
-429 → backoff_seconds(Retry-After) → retry (up to 6x)
+429 → backoff_seconds(Retry-After) → retry (up to 6x) → 30-min cooldown, run exits 0
 ```
 Every retry path uses `backoff_seconds()` (`phonksync/spotify.py`):
 `Retry-After` (seconds *or* HTTP-date) → exponential `2**attempt` → +jitter,
 capped. A 429 therefore **never fails the run**; it slows it down.
+
+### The token endpoint is throttled too
+
+The *first* call of every run is the web-player token request, and Spotify
+rate-limits that too. It is now handled like any other 429: short windows are
+waited out, long ones park the run for 30 minutes, and a throttled token is
+**never** reported as a broken cookie. The job also ends with exit code `0` when
+the only reason it stopped was a cooldown — a red ✗ in Actions meant "throttled",
+not "broken".
+
+## Routing through your own CORS proxy (clean egress IP)
+
+A token-level block follows the cookie, so a proxy is not a magic reset. It *is*
+useful for two real things: your proxy's egress (Vercel) is not a shared GitHub
+runner IP, and the public-page read works from it too.
+
+```bash
+export SPOTIFY_PROXY_URL=https://corsly-proxy2.camdvr.org   # or vars/secret in Actions
+export SPOTIFY_PROXY_SECRET=...        # only if your proxy checks a header
+python -m phonksync proxy-test --playlist <public-playlist-id>
+```
+
+* **Query mode** (default): URL becomes `<proxy>?url=<encoded spotify url>` —
+  the corsproxy.io / allorigins / most-Vercel-proxy convention.
+* **Header mode** (`SPOTIFY_PROXY_SECRET` set): URL becomes
+  `<proxy>/<absolute url>` and `x-proxy-secret` is sent, so the proxy can
+  forward headers **including `Authorization` and `Cookie`** untouched.
+* The first `429` on a request **switches route** (proxy ⇄ direct) before any
+  waiting, because a different egress sometimes gets a different answer.
+* When the proxy fails (network error/5xx) the request falls back to direct —
+  a broken proxy never breaks a run.
+* `Authorization`, `Cookie` and query params are preserved; the proxy must not
+  rewrite headers in query mode (it cannot: it only sees the URL).
+
+In GitHub Actions set the repository **variable** `SPOTIFY_PROXY_URL` (or the
+secret of the same name) and the run picks it up automatically; `config.json`
+also accepts `spotify_proxy_url`.
 
 ## When the API is throttled anyway — read the public page
 
