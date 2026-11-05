@@ -95,7 +95,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         try:
             sp = SpotifyClient(secrets.spotify_cookie)
             user = sp.current_user_id()
-            print(f"✅ Spotify cookie valid (user: {user})")
+            print(f"✅ Spotify cookie valid (user: {user}, web-player token w/ TOTP)")
         except Exception as exc:
             problems.append(f"Spotify live check: {exc}")
         if cfg.youtube_enabled:

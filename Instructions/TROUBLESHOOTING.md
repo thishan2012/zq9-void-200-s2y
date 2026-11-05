@@ -54,6 +54,26 @@ Then store **only** the printed `AQ...` value as `SPOTIFY_COOKIE`. The value is 
 
 If `sp_dc` is in the list but parsing still failed, the value itself was empty/truncated — copy it again from a **200 OK** request to `open.spotify.com`.
 
+## "Spotify token endpoint returned 403" / `invalid token`
+Since March 2025 `open.spotify.com/get_access_token` rejects a bare `sp_dc`
+cookie: the web player also sends a **TOTP** code. The syncer handles this
+automatically (secret → XOR unscramble → base32 → RFC 6238, then
+`GET /api/token?totp=…&totpServer=…&totpVer=…`, with `init` retry and the legacy
+endpoint as fallbacks).
+
+If it still fails:
+1. The cookie is stale → copy a fresh `Cookie:` header from a logged-in
+   open.spotify.com tab (private window recommended) and update `SPOTIFY_COOKIE`.
+2. Spotify rotated the TOTP secret → the newest version is fetched from the
+   community mirror on each run; set `SPOTIFY_TOTP_REMOTE=1` to force a refresh,
+   or pin a version explicitly:
+   ```text
+   SPOTIFY_TOTP_VER=62
+   SPOTIFY_TOTP_CIPHER=12,34,56,...
+   ```
+   (byte values from https://github.com/xyloflake/spot-secrets-go `secretDict.json`).
+3. `python -m phonksync check --live` prints which endpoints were tried and why.
+
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.
 Fix: log into open.spotify.com again, copy the full Cookie header fresh, update `SPOTIFY_COOKIE`. Avoid logging out of that browser profile.
