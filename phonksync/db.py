@@ -114,6 +114,47 @@ class StateDB:
     def clear_manual(self) -> None:
         self.spotify.pop("manual", None)
 
+    # ------------------------------------------------------------ collection
+
+    @property
+    def collection(self) -> dict[str, Any]:
+        self.data.setdefault("collection", {"playlists": {}})
+        self.data["collection"].setdefault("playlists", {})
+        return self.data["collection"]
+
+    def set_collection(self, playlist_id: str, tracks: list[Track], source: str) -> None:
+        self.collection["playlists"][playlist_id] = {
+            "captured_at": _now(),
+            "source": source,
+            "tracks": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "artists": list(t.artists),
+                    "album": t.album,
+                    "duration_ms": t.duration_ms,
+                    "isrc": t.isrc,
+                    "uri": t.uri,
+                    "popularity": t.popularity,
+                }
+                for t in tracks
+            ],
+        }
+
+    def get_collection(self, playlist_id: str) -> list[Track]:
+        entry = self.collection["playlists"].get(playlist_id) or {}
+        return [Track(**t) for t in entry.get("tracks") or []]
+
+    def collection_summary(self) -> dict[str, Any]:
+        return {
+            pid: {
+                "captured_at": entry.get("captured_at", ""),
+                "source": entry.get("source", ""),
+                "tracks": len(entry.get("tracks") or []),
+            }
+            for pid, entry in self.collection["playlists"].items()
+        }
+
     def set_resume_point(self, track_id: str, name: str, artists: list[str], until: float) -> None:
         self.spotify["resume"] = {
             "track_id": track_id,

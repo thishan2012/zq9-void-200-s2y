@@ -25,6 +25,35 @@ Every retry path uses `backoff_seconds()` (`phonksync/spotify.py`):
 `Retry-After` (seconds *or* HTTP-date) → exponential `2**attempt` → +jitter,
 capped. A 429 therefore **never fails the run**; it slows it down.
 
+## When the API is throttled anyway — read the public page
+
+A **public** playlist can be read without any token, so a 429 on the API no
+longer stops a run:
+
+1. **Public page fallback (automatic).** `GET https://open.spotify.com/playlist/<id>`
+   with the web player's render header returns the whole track list server side.
+   The syncer parses it and uses it exactly like an API read
+   (`🌐 Read … from the public page — no API quota used`).
+2. **Collection (manual, always works).** Capture once and replay forever:
+
+   ```bash
+   python -m phonksync collect --from-web <playlist-url>     # or:
+   python -m phonksync collect <playlist-url> < page.html    # Ctrl+U → save → pipe
+   python -m phonksync collect --show
+   ```
+
+   Saved in `data/sync-state.json` (`collection.playlists`) and used when both the
+   API and the public page fail. This is the "copy the playlist once" trick, minus
+   the copy/paste.
+3. **Source cache** — last good read, reused for the rest of the run.
+
+Only *writes* need the API. If writes are throttled the track goes to the manual
+bucket (`data/manual-queue.txt`, `phonksync manual --apply`).
+
+> Scope note: this is a plain public-page read (no auth bypass, no private data).
+> If a playlist is private the fallback cannot read it — use a spare account
+> cookie (`SPOTIFY_COOKIE_2`) or wait out the window.
+
 ## The four defences (all automatic)
 
 | # | Defence | What it saves |

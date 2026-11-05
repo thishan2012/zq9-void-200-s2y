@@ -9,11 +9,13 @@ never added twice.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .cache import SearchCache, SourceCache
@@ -23,7 +25,7 @@ from .matcher import Matcher
 from .models import Track
 from .overrides import Overrides
 from .settings import Config, ConfigError, Secrets
-from .spotify import SpotifyClient
+from .spotify import PublicPlaylistReader, SpotifyClient
 from .telegram import TelegramLogger, escape
 from .youtube import YouTubeClient
 
@@ -62,6 +64,7 @@ class RunReport:
     queued_flushes: int = 0
     manual_queued: int = 0
     skipped: int = 0
+    web_reads: int = 0
     rate_limited_skips: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -105,6 +108,8 @@ class RunReport:
                 f"📋 Manual bucket: {self.manual_queued} tracks in "
                 "data/manual-queue.txt (Spotify was cooling down)"
             )
+        if self.web_reads:
+            lines.append(f"🌐 Public-page reads (API throttled): {self.web_reads}")
         if self.cached_sources:
             lines.append(f"♻️ Cached playlist reads reused: {self.cached_sources}")
         if self.spotify_throttled:
@@ -149,6 +154,7 @@ class SyncEngine:
         self.spotify = SpotifyClient(
             secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
         )
+        self.public_spotify = PublicPlaylistReader() if config.spotify_web_fallback else None
         self.source_cache = SourceCache(
             config.source_cache_path, ttl_hours=config.source_cache_ttl_hours
         )
@@ -224,13 +230,20 @@ class SyncEngine:
                 )
             except RateLimited:
                 # Target playlist is usually ours/small; a 429 here must not
-                # kill the run — treating it as empty only risks a duplicate
-                # "already there" add, which Spotify ignores.
-                log.warning("Could not read the target playlist (429) — continuing")
+                # kill the run. Try the public page, else trust our state file.
                 report.spotify_throttled = True
-                target_spotify_ids = {
-                    k for k, v in self.state.data["synced"].items() if v.get("spotify_added")
-                }
+                target_spotify_ids = set()
+                web_target = self._read_public_playlist(
+                    cfg.spotify_target_playlist, report
+                )
+                if web_target:
+                    target_spotify_ids = {t.id for t in web_target}
+                else:
+                    log.warning("Could not read the target playlist (429) — using state")
+                    target_spotify_ids = {
+                        k for k, v in self.state.data["synced"].items()
+                        if v.get("spotify_added")
+                    }
             target_youtube_ids = (
                 self.youtube.playlist_video_ids(cfg.youtube_target_playlist)
                 if cfg.youtube_enabled
@@ -417,14 +430,27 @@ class SyncEngine:
                 except Exception as exc:  # cache is best-effort
                     log.debug("Could not write source cache: %s", exc)
             except RateLimited:
+                report.spotify_throttled = True
+                # 1) read the public page (no API, no token, no quota)
+                web_tracks = self._read_public_playlist(playlist_id, report)
+                if web_tracks:
+                    self._merge_tracks(seen, web_tracks, playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
+                # 2) last good cache
                 if cached is not None:
                     self.telegram.warn(
                         f"♻️ Spotify rate limit for <code>{playlist_id}</code> — using the "
                         f"cached read ({len(cached['tracks'])} tracks)"
                     )
                     report.cached_sources += 1
-                    report.spotify_throttled = True
                     self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
+                # 3) collection saved from an earlier run (copy/paste workflow)
+                collection = self._read_collection(cfg.collection_path, playlist_id)
+                if collection:
+                    self._merge_tracks(seen, collection, playlist_id, read_limit)
                     report.sources_read += 1
                     continue
                 raise
@@ -447,6 +473,49 @@ class SyncEngine:
             log.info("Source %s: %d tracks", playlist_id, len(tracks))
         report.unique_tracks = len(seen)
         return list(seen.values())
+
+    def _read_public_playlist(self, playlist_id: str, report: RunReport) -> list[Track]:
+        """Fallback #1: public HTML page (works while the API is throttled)."""
+        if self.public_spotify is None:
+            return []
+        try:
+            tracks = self.public_spotify.playlist_tracks(playlist_id)
+        except Exception as exc:
+            log.warning("Public playlist read failed: %s", exc)
+            return []
+        if not tracks:
+            self.telegram.warn(
+                f"🌐 Could not read <code>{playlist_id}</code> from the public page "
+                f"({self.public_spotify.last_error or 'unknown'}) — is it public?"
+            )
+            return []
+        report.web_reads += 1
+        self.telegram.info(
+            f"🌐 Read <code>{playlist_id}</code> from the public page — "
+            f"{len(tracks)} tracks (no API quota used)"
+        )
+        try:
+            self.source_cache.put(playlist_id, tracks, "")
+        except Exception:
+            pass
+        return tracks
+
+    def _read_collection(self, path: str, playlist_id: str) -> list[Track]:
+        """Fallback #2: tracks captured from a copy/paste (see `phonksync collect`)."""
+        if not path:
+            return []
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        entry = (data.get("playlists") or {}).get(playlist_id) or {}
+        tracks = [Track(**t) for t in entry.get("tracks") or []]
+        if tracks:
+            self.telegram.warn(
+                f"📥 Using the saved collection for <code>{playlist_id}</code> "
+                f"({len(tracks)} tracks)"
+            )
+        return tracks
 
     def _merge_tracks(
         self,
