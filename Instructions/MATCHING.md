@@ -70,4 +70,4 @@ Exceptions (authoritative identity, documented): `MANUAL` (your pinned mapping),
 
 - One shared candidate pool per track; a query is issued at most once per track.
 - Queries and video metadata are cached for 14 days (`.cache/yt-cache.json`, persisted via GitHub Actions cache).
-- A local budget (default 9500 units/day, 80 searches/run) stops the run cleanly; the next scheduled run continues where it stopped.
+- A local budget (default 9500 units/day, 80 searches/run) stops the run cleanly; the next run continues where it stopped.

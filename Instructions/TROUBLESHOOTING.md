@@ -14,7 +14,7 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
 **Reduce load if needed**
-- Increase the cron interval (e.g. daily: `0 3 * * *`).
+- Automatic runs are currently paused. If you re-enable a schedule, use a longer cron interval (e.g. daily: `0 3 * * *`).
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
@@ -26,6 +26,10 @@ Fix: create a playlist you own on Spotify, copy its link, and add the GitHub sec
 This only happens if YouTube sync is enabled (`youtube_enabled: true`). The default Spotify-only mode does not need YouTube secrets.
 Fix: either disable YouTube sync (`youtube_enabled: false`), or follow **Instructions/SECRETS.md §3 Option A** (browser-only OAuth Playground) to get a refresh token and add the GitHub secret `YT_REFRESH_TOKEN`. Make sure `YT_CLIENT_JSON` is the JSON of the same OAuth client you used in the Playground.
 
+## "Could not find sp_dc in SPOTIFY_COOKIE"
+The secret value does not contain the `sp_dc` cookie. The syncer needs the full Cookie header from an authenticated **open.spotify.com** request, and that header must include `sp_dc=...`.
+Common mistakes: pasting a playlist URL, pasting cookies from `accounts.spotify.com`, or copying only `sp_t`/other cookies without `sp_dc`.
+
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.
 Fix: log into open.spotify.com again, copy the full Cookie header fresh, update `SPOTIFY_COOKIE`. Avoid logging out of that browser profile.
@@ -36,7 +40,7 @@ Fix: log into open.spotify.com again, copy the full Cookie header fresh, update 
 
 ## "YouTube API quota exceeded" / run stops early
 Normal on big first syncs. Google's default quota is 10,000 units/day; one search costs 100.
-- The syncer stops cleanly and resumes on the next scheduled run; nothing is lost or re-added.
+- The syncer stops cleanly and resumes on the next run; nothing is lost or re-added.
 - The search cache means later runs cost far less.
 - You can request a quota increase in Google Cloud Console → APIs & Services → YouTube Data API v3 → Quotas.
 - Tune `max_searches_per_run` / `youtube_daily_quota_units` in `config.json`.

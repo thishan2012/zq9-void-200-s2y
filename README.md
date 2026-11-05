@@ -26,7 +26,7 @@ Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRE
    `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`.
    Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` for logs.
    YouTube secrets are **not needed** for the default Spotify-only mode.
-3. Push to GitHub. The **Phonk Sync** workflow runs every 12 hours (and on demand via *Actions → Phonk Sync → Run workflow*). A manual `dry_run` previews only the first 200 source tracks.
+3. Push to GitHub. The **Phonk Sync** workflow is currently **paused for automatic runs**; it only runs when you manually trigger it via *Actions → Phonk Sync → Run workflow*. A manual `dry_run` previews only the first 200 source tracks.
 4. Watch Telegram. ✅
 
 ## 🧪 Local usage
@@ -75,7 +75,7 @@ data/
   sync-state.json     # the database — what was added, by which method
   track-overrides.json# your manual mappings (MANUAL method)
 Instructions/         # setup, secrets, matching, troubleshooting docs
-.github/workflows/    # scheduled sync + tests
+.github/workflows/    # manual sync (paused schedule) + tests
 tests/                # offline test suite (fake APIs, no network)
 ```
 
