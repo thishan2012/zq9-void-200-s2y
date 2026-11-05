@@ -1,50 +1,51 @@
-# 🎧 Phonk Playlist Syncer
+# 🎧 Phonk Playlist Syncer — පුද්ගලික භාවිතය සඳහා
 
-Sync from **many Spotify playlists** → **one Spotify playlist**, running automatically on GitHub Actions with Telegram logs.
+> ⚠️ **මෙය පුද්ගලික සින්ක් ටූල් එකක් පමණයි. කරුණාකර Google / Search Engine වල Index නොකරන්න.**
+> `noindex, nofollow` — මෙම repository එක public වුවත් minutes සීමාව නිසා private කිරීමට නොහැක.
 
-Reads every track from your source Spotify playlists (20, 30, any number) and copies the exact same tracks into your target Spotify playlist. A JSON database committed to this repo guarantees a song is **never added twice**.
+මෙම ටූල් එකෙන් **Spotify playlists ගොඩක් → එක Spotify playlist එකකට** auto copy වෙනවා. GitHub Actions + Telegram log එක්ක වැඩ කරනවා.
 
-> YouTube sync has been removed from the default setup. The syncer now runs **Spotify-only** unless you explicitly enable YouTube.
-> All repository content is in English by design (public repo).
+ඔබේ source playlists වල තියෙන හැම track එකක්ම target playlist එකට copy කරනවා. `data/sync-state.json` එක repo එකේම save වෙන නිසා එකම සිංදුව දෙපාරක් add වෙන්නේ නෑ.
 
-## ✨ Features
+> Default එක **Spotify-only**. YouTube sync ඕන නම් `YOUTUBE_ENABLED=true` දාන්න ඕන.
 
-- **Many sources → one Spotify target.** Any number of Spotify source playlists; one Spotify target playlist.
-- **Cookie-based Spotify auth.** Paste the whole browser `Cookie` header into a secret — no Spotify app registration needed.
-- **Telegram logs.** Per-track ✅ messages and a run summary.
-- **No duplicates.** `data/sync-state.json` is committed back to the repo after every run; ISRC dedup catches the same recording under different Spotify IDs.
-- **Dry-run preview.** Reads only the first 200 source tracks by default and writes nothing.
-- **Optional YouTube sync (disabled).** The old YouTube matching pipeline is still in the codebase but is off by default (`youtube_enabled: false`).
+## ✨ විශේෂාංග
 
-## 🚀 Quick start
+- **Sources ගොඩක් → target එකයි.** Spotify source playlists 20ක් 30ක් උනත් කමක් නෑ.
+- **Cookie වලින් Spotify login.** `sp_dc` cookie එක paste කළාම ඇති — Spotify app එකක් හදන්න ඕන නෑ.
+- **Telegram log.** හැම track එකටම ✅ message + summary.
+- **Duplicate නෑ.** ISRC වලින් එකම recording එක වෙන ID එකකින් තිබ්බත් අඳුරගන්නවා.
+- **Dry-run preview.** default 200 tracks විතරක් කියවලා write නොකර preview කරනවා.
+- **YouTube sync (optional, default off).** ඕන නම් `youtube_enabled: true` කරලා 31-method pipeline එකෙන් YouTube එකටත් add කරනවා.
 
-Full setup guide: **[Instructions/README.md](Instructions/README.md)**
-Secrets guide (required reading): **[Instructions/SECRETS.md](Instructions/SECRETS.md)**
+## 🚀 ඉක්මන් setup
 
-1. Create a Spotify target playlist you own (e.g. `Phonk Sync`).
-2. Add the repository secrets (see [Instructions/SECRETS.md](Instructions/SECRETS.md)):
-   `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`.
-   Optional: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` for logs.
-   YouTube secrets are **not needed** for the default Spotify-only mode.
-3. Push to GitHub. The **Phonk Sync** workflow is currently **paused for automatic runs**; it only runs when you manually trigger it via *Actions → Phonk Sync → Run workflow*. A manual `dry_run` previews only the first 200 source tracks.
-4. Watch Telegram. ✅
+සම්පූර්ණ guide: **[Instructions/README.md](Instructions/README.md)** | Secrets: **[Instructions/SECRETS.md](Instructions/SECRETS.md)**
 
-## 🧪 Local usage
+1. Spotify target playlist එකක් හදන්න (ඔයාගේ account එකේ).
+2. GitHub Secrets දාන්න:
+   `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`
+   Telegram ඕන නම්: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+   YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YT_CLIENT_JSON`, `YT_REFRESH_TOKEN`, `YOUTUBE_TARGET_PLAYLIST`
+3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
+4. Telegram බලන්න. ✅
+
+> Auto schedule pause කරලා තියෙන්නේ. manually run කරන්න විතරයි. `sync.yml` එකේ `schedule:` cron එක ආයේ දැම්මම auto හැදෙනවා.
+
+## 🧪 Local (terminal තියෙනවා නම්)
 
 ```bash
-python -m phonksync check --live      # validate config + credentials
-python -m phonksync sync --dry-run    # preview only, write nothing, first 200 source tracks
+python -m phonksync check --live      # config + cookie check
+python -m phonksync sync --dry-run    # preview only, පළමු 200 tracks
 python -m phonksync sync --max-tracks 5
-python -m phonksync stats             # sync statistics
+python -m phonksync stats             # stats බලන්න
 ```
 
-Local runs can use a `.env` file (git-ignored) instead of exported environment variables.
+Local එකේ `.env` file එකෙන් secrets දාන්න පුළුවන් (git-ignored).
 
-## 🔎 Optional YouTube matching (disabled by default)
+## 🔎 YouTube matching (default off)
 
-YouTube sync is off by default (`youtube_enabled: false`). If you enable it, the old accuracy-first pipeline is used.
-
-Pipeline order (first verified win stops the search):
+`YOUTUBE_ENABLED=true` දැම්මම පරණ accuracy-first pipeline එක වැඩ:
 
 ```
 MANUAL → STRICT → LOOSE → DETAIL → REVERSED → SINGLE → CHANNEL → TOPIC →
@@ -54,33 +55,41 @@ CLEANARTIST → TITLEONLY → SONGTAG → ISRC → DESCTEXT → BROKEN → ALBUM
 PART → POPULAR → TOPRESULT
 ```
 
-- **29 numbered fallback steps + 2 classic methods = 31 search methods**, plus the `DETAIL` metadata search and `MANUAL` overrides (33 pipeline entries).
-- Steps whose condition doesn't hold are recorded as **never tried**; steps that ran but didn't win are kept forever (no pruning).
-- `ISRC` and `LINKED` trust exact recording identity (ISRC code / Spotify track link in the video description). `MANUAL` trusts your pinned mapping.
-- Every other step must pass all three safety checks.
+- 29 numbered steps + 2 classic = 31 methods + DETAIL + MANUAL = 33 pipeline entries.
+- Condition නැති step එක `never tried` ලෙස record වෙනවා.
+- `ISRC` / `LINKED` exact identity විශ්වාස කරනවා. අනිත් හැම එකම safety checks 3න් pass විය යුතුයි.
 
-Full method table: **[Instructions/MATCHING.md](Instructions/MATCHING.md)**
+Table: **[Instructions/MATCHING.md](Instructions/MATCHING.md)**
 
-## 📁 Repository layout
+## 📁 Files
 
 ```
-phonksync/            # the syncer package
-  matcher.py          # 31-method pipeline + 3 safety checks
-  engine.py           # orchestration, dedup, retry policy
+phonksync/            # package එක
+  matcher.py          # 31-method pipeline + safety checks
+  engine.py           # orchestration, dedup, retry
   spotify.py          # cookie-auth Spotify client
-  youtube.py          # OAuth YouTube Data API client + quota budget
-  db.py               # JSON state database (committed to repo)
-  telegram.py         # Telegram bot logger
+  youtube.py          # OAuth YouTube Data API client + quota
+  db.py               # JSON database (repo එකේ commit වෙනවා)
+  telegram.py         # Telegram logger
 data/
-  sync-state.json     # the database — what was added, by which method
-  track-overrides.json# your manual mappings (MANUAL method)
-Instructions/         # setup, secrets, matching, troubleshooting docs
-.github/workflows/    # manual sync (paused schedule) + tests
-tests/                # offline test suite (fake APIs, no network)
+  sync-state.json     # database — මොන සිංදුව add කළාද කියලා
+  track-overrides.json# manual mappings (MANUAL method)
+Instructions/         # setup docs
+.github/workflows/    # manual sync + tests
+tests/                # offline tests
 ```
 
 ## ⚠️ Notes
 
-- Default mode is Spotify-only, so no YouTube API quota is used. If you enable YouTube sync, the YouTube Data API daily quota (10,000 units/day; 1 search = 100 units) applies. See [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md).
-- The Spotify cookie is a session credential: treat it like a password, keep it only in GitHub Secrets, and refresh it if it expires.
-- Intended for personal use with your own accounts and playlists.
+- Default Spotify-only නිසා YouTube quota වැය වෙන්නේ නෑ. YouTube on කළොත් daily quota 10,000 units (1 search = 100 units). [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
+- Spotify cookie එක password එකක් වගේ — GitHub Secrets වල විතරක් තියාගන්න, expire උනොත් refresh කරන්න.
+- පුද්ගලික භාවිතය සඳහා පමණයි.
+
+## 🔒 Privacy / Search
+
+මෙම repo එක public වුවත් පුද්ගලික sync එකක් සඳහා පමණයි. Minutes සීමාව (2000) ඉවර නිසා private කිරීමට නොහැක. කරුණාකර **Google / Bing / Search Engine index නොකරන්න.**
+
+ඔබට මෙම repo එක fork කර ඔබේම private repo එකේ භාවිතා කිරීමට පුළුවන්.
+
+---
+*README සිංහලෙන් ලියා ඇත්තේ public search වලින් වැළකීමටයි. Technical docs ඉංග්‍රීසියෙන් `Instructions/` folder එකේ තියෙනවා.*

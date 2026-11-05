@@ -29,26 +29,60 @@ _UA = (
 
 
 def extract_sp_dc(cookie_header: str) -> str:
-    """Accept a full Cookie header, a bare sp_dc value, or 'sp_dc=...'."""
+    """Accept a full Cookie header, a bare sp_dc value, or 'sp_dc=...'.
+
+    Robust to common copy-paste mistakes:
+      * \"Cookie: \" prefix from DevTools (Copy request headers)
+      * outer quotes around the whole value (\"sp_dc=...; ...\")
+      * quoted sp_dc value (sp_dc=\"AQ...\")
+      * extra whitespace / case differences
+    """
     raw = (cookie_header or "").strip()
     if not raw:
-        raise AuthError("SPOTIFY_COOKIE is empty")
-    # Bare token value (no '=' and no ';').
+        raise AuthError("SPOTIFY_COOKIE is empty — add it to .env or GitHub Secrets")
+
+    # Strip optional \"Cookie:\" prefix (DevTools \"Copy request headers\" includes it).
+    if raw[:7].lower() == "cookie:":
+        raw = raw[7:].strip()
+
+    # Strip outer matching quotes around the entire header (e.g. pasted as \"...\").
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+        raw = raw[1:-1].strip()
+        # Handle double-wrapped case like '\"sp_dc=...\"'
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
+            raw = raw[1:-1].strip()
+
+    # Bare token value (no '=' and no ';') — just the sp_dc value itself.
     if "=" not in raw and ";" not in raw and len(raw) > 40:
-        return raw
+        return raw.strip('"\'').strip()
+
+    # Try SimpleCookie first (handles sp_dc=\"...\" correctly).
     jar = SimpleCookie()
     try:
         jar.load(raw)
     except Exception:
         pass
     if "sp_dc" in jar:
-        return jar["sp_dc"].value
-    m = re.search(r"(?:^|;\s*)sp_dc=([^;]+)", raw)
+        val = jar["sp_dc"].value.strip('"\'').strip()
+        if val:
+            return val
+    # Case-insensitive search that tolerates spaces and optional quotes:
+    #   sp_dc = \"AQ...\"  /  SP_DC=AQ...;  /  sp_dc=\"AQ...\"
+    m = re.search(r"sp_dc\s*=\s*\"?([^;\"\s]+)\"?", raw, re.IGNORECASE)
     if m:
-        return m.group(1).strip()
+        return m.group(1).strip().strip('"\'').strip()
+
+    # Diagnostic hint without leaking the secret: show length + preview.
+    preview = raw[:60].replace("\n", " ") if raw else ""
+    has_sp_dc = "sp_dc" in raw.lower()
+    hint = (
+        f" Got {len(raw)} chars starting with {preview!r}."
+        + (" It contains 'sp_dc' but parsing failed — check for stray quotes or newlines." if has_sp_dc else " It does not appear to contain 'sp_dc'.")
+    )
     raise AuthError(
         "Could not find sp_dc in SPOTIFY_COOKIE. Paste the full Cookie header "
-        "from an authenticated open.spotify.com request."
+        "from an authenticated open.spotify.com request (e.g. 'sp_t=...; sp_dc=AQ...; ...')."
+        + hint
     )
 
 
