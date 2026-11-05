@@ -10,13 +10,14 @@ never added twice.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .cache import SearchCache
+from .cache import SearchCache, SourceCache
 from .db import StateDB
-from .errors import AuthError, QuotaExceeded
+from .errors import AuthError, QuotaExceeded, RateLimited
 from .matcher import Matcher
 from .models import Track
 from .overrides import Overrides
@@ -24,6 +25,17 @@ from .settings import Config, ConfigError, Secrets
 from .spotify import SpotifyClient
 from .telegram import TelegramLogger, escape
 from .youtube import YouTubeClient
+
+
+def _human_wait(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +56,10 @@ class RunReport:
     quota_stopped: bool = False
     quota_reason: str = ""
     partial_sources: int = 0
+    cached_sources: int = 0
+    queued: int = 0
+    queued_flushes: int = 0
+    manual_queued: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
     inserted: int = 0
@@ -69,6 +85,18 @@ class RunReport:
             lines.append(
                 f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
             )
+        if self.queued:
+            lines.append(
+                f"🧺 Spotify writes via queue: {self.queued} tracks "
+                f"({self.queued_flushes} batch save(s))"
+            )
+        if self.manual_queued:
+            lines.append(
+                f"📋 Manual bucket: {self.manual_queued} tracks in "
+                "data/manual-queue.txt (Spotify was cooling down)"
+            )
+        if self.cached_sources:
+            lines.append(f"♻️ Cached playlist reads reused: {self.cached_sources}")
         if self.spotify_throttled:
             lines.append(
                 "⚠️ Spotify rate limited (429): used the tracks read so far — "
@@ -106,7 +134,12 @@ class SyncEngine:
             secrets.telegram_bot_token, secrets.telegram_chat_id
         )
         self.state = StateDB(config.state_path)
-        self.spotify = SpotifyClient(secrets.spotify_cookie)
+        self.spotify = SpotifyClient(
+            secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
+        )
+        self.source_cache = SourceCache(
+            config.source_cache_path, ttl_hours=config.source_cache_ttl_hours
+        )
 
         # YouTube sync is optional and disabled by default (Spotify-only mode).
         self.youtube = None
@@ -160,6 +193,17 @@ class SyncEngine:
             f"Mode: {mode}"
         )
 
+        cooldown_left = self.state.spotify_cooldown_until() - time.time()
+        if cooldown_left > 0 and not cfg.dry_run:
+            report.spotify_throttled = True
+            report.quota_reason = (
+                f"Spotify cooldown — {_human_wait(cooldown_left)} remaining; "
+                "this run was skipped on purpose (state is safe)"
+            )
+            self.telegram.warn(escape(report.quota_reason))
+            report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            return report
+
         try:
             tracks = self._collect_source_tracks(report)
             target_spotify_ids = self.spotify.playlist_track_ids(cfg.spotify_target_playlist)
@@ -171,6 +215,13 @@ class SyncEngine:
         except (AuthError, ConfigError) as exc:
             report.errors.append(str(exc))
             self.telegram.error(f"Setup failed: {escape(str(exc))}")
+            report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            return report
+        except RateLimited as exc:
+            report.errors.append(str(exc))
+            report.spotify_throttled = True
+            report.quota_reason = str(exc)
+            self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return report
 
@@ -218,6 +269,22 @@ class SyncEngine:
                 log.exception("Track %s failed", track.id)
                 report.errors.append(f"{track.display()}: {exc}")
 
+        blocked_until = getattr(self.spotify, "blocked_until", 0.0)
+        if blocked_until:
+            report.spotify_throttled = True
+            self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
+            report.quota_reason = (
+                "Spotify cooldown until "
+                + datetime.fromtimestamp(blocked_until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            )
+            self.telegram.warn(escape(report.quota_reason))
+
+        if not cfg.dry_run:
+            self._flush_queue()
+            self._retry_pending_queue()
+            if report.manual_queued:
+                self.state.write_manual_queue(cfg.manual_queue_path)
+
         # Record method statistics for every method that was exercised.
         self.state.record_run()
         if cfg.youtube_enabled:
@@ -231,6 +298,7 @@ class SyncEngine:
             self.state.save()
         if self.cache is not None:
             self.cache.save()
+        self.source_cache.save()
 
         self.telegram.flush_tracks()
         self.telegram.send(report.summary_text())
@@ -251,8 +319,56 @@ class SyncEngine:
             if read_limit and len(seen) >= read_limit:
                 break
             remaining = read_limit - len(seen) if read_limit else None
+            cached = self.source_cache.get(playlist_id)
+            snapshot = ""
+            if cached is not None:
+                # One cheap call instead of N pages: reuse the cached read while
+                # the playlist has not changed (this is what keeps us under the
+                # Spotify rate limit on repeat runs).
+                snapshot_fn = getattr(self.spotify, "playlist_snapshot", None)
+                try:
+                    snapshot = snapshot_fn(playlist_id) if snapshot_fn else ""
+                except Exception:
+                    snapshot = ""
+                if cached["snapshot"] and snapshot == cached["snapshot"]:
+                    tracks = cached["tracks"]
+                    self.telegram.info(
+                        f"♻️ Using cached read of <code>{playlist_id}</code> "
+                        f"({len(tracks)} tracks, playlist unchanged)"
+                    )
+                    report.cached_sources += 1
+                    self._merge_tracks(seen, tracks, playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
+                if not snapshot and self.source_cache.fresh(playlist_id):
+                    # Snapshot unknown (blocked?) but the cache is fresh: prefer
+                    # the cache over hammering Spotify again.
+                    self.telegram.warn(
+                        f"♻️ Spotify snapshot unavailable for <code>{playlist_id}</code> — "
+                        f"using the cached read ({len(cached['tracks'])} tracks)"
+                    )
+                    report.cached_sources += 1
+                    self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
             try:
                 tracks = self.spotify.playlist_tracks(playlist_id, max_tracks=remaining)
+                try:
+                    self.source_cache.put(playlist_id, tracks, snapshot)
+                except Exception as exc:  # cache is best-effort
+                    log.debug("Could not write source cache: %s", exc)
+            except RateLimited:
+                if cached is not None:
+                    self.telegram.warn(
+                        f"♻️ Spotify rate limit for <code>{playlist_id}</code> — using the "
+                        f"cached read ({len(cached['tracks'])} tracks)"
+                    )
+                    report.cached_sources += 1
+                    report.spotify_throttled = True
+                    self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
+                raise
             except Exception as exc:
                 report.errors.append(f"Source {playlist_id}: {exc}")
                 self.telegram.warn(f"Could not read source <code>{playlist_id}</code>: {escape(str(exc))}")
@@ -272,6 +388,83 @@ class SyncEngine:
             log.info("Source %s: %d tracks", playlist_id, len(tracks))
         report.unique_tracks = len(seen)
         return list(seen.values())
+
+    def _merge_tracks(
+        self,
+        seen: dict[str, Track],
+        tracks: list[Track],
+        playlist_id: str,
+        read_limit: int | None,
+    ) -> None:
+        for track in tracks:
+            if read_limit and len(seen) >= read_limit:
+                break
+            if track.id in seen:
+                seen[track.id].sources.append(playlist_id)
+            else:
+                seen[track.id] = Track(
+                    id=track.id, name=track.name, artists=list(track.artists),
+                    album=track.album, duration_ms=track.duration_ms, isrc=track.isrc,
+                    uri=track.uri, popularity=track.popularity, sources=[playlist_id],
+                )
+
+    # ------------------------------------------------------- spotify writes
+
+    def _add_spotify(self, track: Track, target_ids: set[str], report: RunReport) -> None:
+        """Add one track to the Spotify target, cheaply.
+
+        In ``queue`` mode (default) the track is parked in the player queue and
+        the queue is flushed into the playlist in batches: Spotify then
+        de-duplicates server side, so a 200-track run costs ~5 calls instead of
+        200. Any queue failure falls back to a normal add, so nothing is lost.
+        """
+        cfg = self.config
+        if cfg.spotify_write_mode == "queue" and getattr(
+            self.spotify, "queue_supported", False
+        ):
+            try:
+                if self.spotify.queue_track(track.uri):
+                    target_ids.add(track.id)
+                    report.queued += 1
+                    if self.spotify.queued >= cfg.spotify_queue_flush_size:
+                        sent = self.spotify.save_queue_to_playlist(
+                            cfg.spotify_target_playlist
+                        )
+                        report.queued_flushes += 1
+                        log.info("Saved %d queued tracks into the target playlist", sent)
+                    return
+            except Exception as exc:
+                log.warning(
+                    "Queue add failed (%s) — switching this run to direct adds", exc
+                )
+                self.spotify.queue_supported = False
+                self._flush_queue()
+        self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
+        target_ids.add(track.id)
+
+    def _retry_pending_queue(self) -> None:
+        """A previous run could not save its queue — try again now."""
+        pending = self.state.get_pending_queue()
+        if not pending:
+            return
+        try:
+            self.spotify.add_tracks(self.config.spotify_target_playlist, pending)
+            self.state.clear_pending_queue()
+            log.info("Saved %d tracks left over from the previous run", len(pending))
+        except Exception as exc:
+            log.warning("Still could not save %d pending tracks: %s", len(pending), exc)
+
+    def _flush_queue(self) -> int:
+        """Save anything left in the queue (also used at the end of a run)."""
+        cfg = self.config
+        if not getattr(self.spotify, "queued", 0):
+            return 0
+        try:
+            return self.spotify.save_queue_to_playlist(cfg.spotify_target_playlist)
+        except Exception as exc:
+            log.error("Could not save the queued tracks: %s", exc)
+            self.state.set_pending_queue(getattr(self.spotify, "_queued", []))
+            return 0
 
     def _deferred(self, track: Track) -> bool:
         tries = self.state.unmatched_tries(track.id)
@@ -319,8 +512,7 @@ class SyncEngine:
                     return
                 # Spotify side is exact (same track ID) — still add it.
                 if not spotify_done and not cfg.dry_run:
-                    self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
-                    target_spotify_ids.add(track.id)
+                    self._add_spotify(track, target_spotify_ids, report)
                 if not cfg.dry_run:
                     self.state.mark_synced(track, "", "", True, False)
                 return
@@ -340,8 +532,7 @@ class SyncEngine:
             return
 
         if not spotify_done:
-            self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
-            target_spotify_ids.add(track.id)
+            self._add_spotify(track, target_spotify_ids, report)
         if video_id and not youtube_done:
             if getattr(self.youtube, "can_write", True):
                 self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
@@ -386,8 +577,7 @@ class SyncEngine:
             self.telegram.info(f"🧪 Would add to Spotify: {escape(track.display())}")
             return
 
-        self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
-        target_spotify_ids.add(track.id)
+        self._add_spotify(track, target_spotify_ids, report)
         self.state.mark_synced(track, "", "", True, False)
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())

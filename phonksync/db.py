@@ -33,6 +33,7 @@ class StateDB:
             "unmatched": {},
             "stats": {"methods": {}, "runs": 0, "total_added": 0},
             "quota": {},
+            "spotify": {},
         }
         self._load()
 
@@ -59,6 +60,68 @@ class StateDB:
 
     def save_quota(self, quota: QuotaState) -> None:
         self.data["quota"] = quota.to_dict()
+
+    # --------------------------------------------------------------- spotify
+
+    @property
+    def spotify(self) -> dict[str, Any]:
+        self.data.setdefault("spotify", {})
+        return self.data["spotify"]
+
+    def spotify_cooldown_until(self) -> float:
+        try:
+            return float(self.spotify.get("cooldown_until", 0) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def set_spotify_cooldown(self, until: float, reason: str = "") -> None:
+        self.spotify["cooldown_until"] = float(until)
+        self.spotify["cooldown_reason"] = reason
+        self.spotify["cooldown_set_at"] = _now()
+
+    def clear_spotify_cooldown(self) -> None:
+        if self.spotify.pop("cooldown_until", None) is not None:
+            self.spotify["cooldown_cleared_at"] = _now()
+
+    def add_manual(self, track: Track) -> None:
+        bucket = self.spotify.setdefault("manual", {})
+        bucket[track.id] = {
+            "name": track.name,
+            "artists": track.artists,
+            "uri": track.uri or f"spotify:track:{track.id}",
+            "queued_at": _now(),
+        }
+
+    def write_manual_queue(self, path: str | Path) -> int:
+        """Dump the manual bucket as spotify:track: URIs (copy-paste friendly)."""
+        items = self.spotify.get("manual") or {}
+        if not items:
+            return 0
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f"# {len(items)} tracks that could not be added automatically "
+            f"({_now()})."
+        ]
+        lines.append("# Paste these into the target playlist (or run "
+                     "`python -m phonksync manual --apply`).")
+        for entry in items.values():
+            lines.append(f"{entry.get('uri', '')}  # {', '.join(entry.get('artists', []))} "
+                         f"- {entry.get('name', '')}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return len(items)
+
+    def clear_manual(self) -> None:
+        self.spotify.pop("manual", None)
+
+    def set_pending_queue(self, uris: list[str]) -> None:
+        self.spotify["pending_queue"] = list(uris)
+
+    def get_pending_queue(self) -> list[str]:
+        return list(self.spotify.get("pending_queue") or [])
+
+    def clear_pending_queue(self) -> None:
+        self.spotify.pop("pending_queue", None)
 
     # ---------------------------------------------------------------- synced
 

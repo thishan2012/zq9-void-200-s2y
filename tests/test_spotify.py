@@ -1,4 +1,6 @@
 """Spotify client pagination + cookie parsing tests (no network)."""
+import time
+
 import pytest
 
 from phonksync.errors import AuthError, RateLimited
@@ -395,3 +397,109 @@ def test_partial_playlist_survives_rate_limit(monkeypatch):
     tracks = client.playlist_tracks("x")
     assert len(tracks) == 5
     assert client.partial_read is True
+
+
+# ------------------------------------------------- cookie pool + queue mode
+
+
+def test_spare_cookies_rotate_on_long_block(monkeypatch):
+    """A long Retry-After on cookie #1 switches to cookie #2 instead of dying."""
+    import phonksync.spotify as sp
+
+    class Resp:
+        def __init__(self, code, headers=None, payload=None):
+            self.status_code = code
+            self.headers = headers or {}
+            self.text = "{}"
+            self._p = payload or {"items": [], "next": None}
+
+        def json(self):
+            return self._p
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.cookie_seen = []
+
+        def request(self, method, url, params=None, json=None, headers=None, timeout=None):
+            auth = (headers or {}).get("Authorization", "")
+            self.cookie_seen.append(auth)
+            if len(self.cookie_seen) == 1:
+                return Resp(429, {"Retry-After": "76000"})
+            return Resp(200)
+
+    monkeypatch.setattr(sp, "_refresh_totp_secrets", lambda *a, **k: None)
+    monkeypatch.setattr(sp, "SpotifyClient", sp.SpotifyClient)
+    session = Session()
+    client = sp.SpotifyClient(
+        "sp_dc=" + "a" * 60,
+        session=session,
+        extra_cookies=["sp_dc=" + "b" * 60],
+    )
+    client._access_token = "t1"
+    client._access_expiry = time.time() + 600
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "token")
+    client.playlist_tracks("x", max_tracks=1)
+    assert client.cookie_count == 2
+    assert client.cookie_switches == 1
+    assert client.blocked_until == 0.0
+
+
+def test_queue_track_then_save_batches_calls(monkeypatch):
+    import phonksync.spotify as sp
+
+    calls = []
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def request(self, method, url, params=None, json=None, headers=None, timeout=None):
+            calls.append((method, url, dict(params or {}), json))
+
+            class R:
+                status_code = 204
+                headers = {}
+                text = ""
+
+                def json(self):
+                    return {}
+
+            return R()
+
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
+    assert client.queue_track("spotify:track:one") is True
+    assert client.queue_track("spotify:track:two") is True
+    assert client.queued == 2
+    sent = client.save_queue_to_playlist("PLTARGET")
+    assert sent == 2
+    assert calls[-1][1].endswith("/playlists/PLTARGET/tracks")
+    assert calls[-1][3] == {"uris": ["spotify:track:one", "spotify:track:two"]}
+    assert client.queued == 0 and client.queue_saves == 1
+
+
+def test_queue_stops_at_max_items():
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.n = 0
+
+        def request(self, *a, **kw):
+            self.n += 1
+
+            class R:
+                status_code = 204
+                headers = {}
+                text = ""
+
+            return R()
+
+    client = __import__("phonksync.spotify", fromlist=["SpotifyClient"]).SpotifyClient(
+        "sp_dc=" + "a" * 60, session=Session()
+    )
+    client._access_token = "t"
+    client._access_expiry = time.time() + 600
+    for i in range(3):
+        assert client.queue_track(f"spotify:track:{i}", max_items=3) is True
+    assert client.queue_track("spotify:track:overflow", max_items=3) is False

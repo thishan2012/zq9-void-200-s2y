@@ -89,3 +89,93 @@ class SearchCache:
         now = time.time()
         for cand in candidates:
             self._videos[cand.video_id] = {"ts": now, "data": asdict(cand)}
+
+
+class SourceCache:
+    """Cache of Spotify playlist reads (1 snapshot call instead of N pages).
+
+    The Web API is what gets rate limited, so on repeat runs we ask for one
+    page (``total`` + ``snapshot_id``) and reuse the cached track list when the
+    playlist has not changed. A stale cache is still better than a 429 block:
+    when Spotify is unreachable we fall back to it and say so in the log.
+    """
+
+    def __init__(self, path: str | Path, ttl_hours: int = 12, max_playlists: int = 50):
+        self.path = Path(path)
+        self.ttl = max(1, ttl_hours) * 3600
+        self.max_playlists = max_playlists
+        self._items: dict[str, dict[str, Any]] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        self._items = data.get("playlists") or {}
+
+    def fresh(self, playlist_id: str) -> bool:
+        entry = self._items.get(playlist_id)
+        return bool(entry) and time.time() - entry.get("ts", 0) <= self.ttl
+
+    def get(self, playlist_id: str) -> dict[str, Any] | None:
+        """Return {"snapshot": str, "tracks": [Track], "fresh": bool} or None."""
+        entry = self._items.get(playlist_id)
+        if not entry:
+            return None
+        from .models import Track
+
+        tracks = [
+            Track(
+                id=t["id"],
+                name=t.get("name", ""),
+                artists=list(t.get("artists") or []),
+                album=t.get("album", ""),
+                duration_ms=int(t.get("duration_ms") or 0),
+                isrc=t.get("isrc", ""),
+                uri=t.get("uri", ""),
+                popularity=int(t.get("popularity") or 0),
+                sources=list(t.get("sources") or [playlist_id]),
+            )
+            for t in entry.get("tracks", [])
+        ]
+        return {
+            "snapshot": entry.get("snapshot", ""),
+            "tracks": tracks,
+            "fresh": self.fresh(playlist_id),
+        }
+
+    def put(self, playlist_id: str, tracks: list[Any], snapshot: str = "") -> None:
+        self._items[playlist_id] = {
+            "ts": time.time(),
+            "snapshot": snapshot,
+            "tracks": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "artists": list(t.artists),
+                    "album": t.album,
+                    "duration_ms": t.duration_ms,
+                    "isrc": t.isrc,
+                    "uri": t.uri,
+                    "popularity": t.popularity,
+                    "sources": list(t.sources),
+                }
+                for t in tracks
+            ],
+        }
+        if len(self._items) > self.max_playlists:
+            oldest = sorted(self._items.items(), key=lambda kv: kv[1].get("ts", 0))
+            for key, _ in oldest[: len(self._items) - self.max_playlists]:
+                del self._items[key]
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"playlists": self._items}, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        tmp.replace(self.path)

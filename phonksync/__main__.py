@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 
 from .errors import AuthError, ConfigError, PhonkSyncError
 from .settings import Config, Secrets, load_dotenv
@@ -148,6 +149,66 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_manual(args: argparse.Namespace) -> int:
+    """Inspect or flush the manual bucket written when Spotify was cooling down."""
+    from .db import StateDB
+    from .spotify import SpotifyClient
+
+    cfg = Config.load(args.config)
+    db = StateDB(cfg.state_path)
+    items = db.spotify.get("manual") or {}
+    if not items:
+        print("✅ Manual bucket is empty.")
+        return 0
+    if args.apply:
+        secrets = Secrets.from_env()
+        if not secrets.spotify_cookie:
+            print("❌ SPOTIFY_COOKIE is required to apply the bucket.", file=sys.stderr)
+            return 2
+        uris = [e.get("uri", "") for e in items.values() if e.get("uri")]
+        client = SpotifyClient(secrets.spotify_cookie)
+        for i in range(0, len(uris), 100):
+            client.add_tracks(cfg.spotify_target_playlist, uris[i : i + 100])
+        db.clear_manual()
+        db.save()
+        print(f"✅ Added {len(uris)} tracks to {cfg.spotify_target_playlist} and emptied the bucket.")
+        return 0
+    count = db.write_manual_queue(cfg.manual_queue_path)
+    print(f"📋 {count} tracks waiting in {cfg.manual_queue_path}")
+    print("   Apply them with: python -m phonksync manual --apply")
+    for entry in list(items.values())[:10]:
+        print(f"   • {', '.join(entry.get('artists', []))} — {entry.get('name', '')}")
+    if count > 10:
+        print(f"   … and {count - 10} more")
+    return 0
+
+
+def cmd_cooldown(args: argparse.Namespace) -> int:
+    """Show or clear the persisted Spotify cooldown."""
+    from datetime import datetime, timezone
+
+    from .db import StateDB
+
+    cfg = Config.load(args.config)
+    db = StateDB(cfg.state_path)
+    until = db.spotify_cooldown_until()
+    now = time.time()
+    if args.clear:
+        db.clear_spotify_cooldown()
+        db.save()
+        print("✅ Spotify cooldown cleared — the next run will read playlists again.")
+        return 0
+    if until <= now:
+        print("✅ No active Spotify cooldown.")
+        return 0
+    left = int(until - now)
+    when = datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    print(f"⏳ Spotify cooldown: {left // 3600}h {(left % 3600) // 60}m left (until {when})")
+    print(f"   reason: {db.spotify.get('cooldown_reason', 'n/a')}")
+    print("   Live runs skip until then: `python -m phonksync cooldown --clear` to override.")
+    return 0
+
+
 def cmd_cookie_fix(args: argparse.Namespace) -> int:
     """Extract sp_dc from a pasted cookie dump (prints it masked by default)."""
     from .spotify import extract_sp_dc
@@ -209,6 +270,17 @@ def main(argv: list[str] | None = None) -> int:
     p_stats = sub.add_parser("stats", help="Show sync state statistics")
     p_stats.add_argument("--json", action="store_true", help="Dump full state JSON")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_manual = sub.add_parser(
+        "manual", help="Show/apply tracks parked while Spotify was rate limited"
+    )
+    p_manual.add_argument("--apply", action="store_true",
+                          help="Add the parked tracks to the target playlist now")
+    p_manual.set_defaults(func=cmd_manual)
+
+    p_cd = sub.add_parser("cooldown", help="Show/clear the Spotify rate-limit cooldown")
+    p_cd.add_argument("--clear", action="store_true", help="Clear the stored cooldown")
+    p_cd.set_defaults(func=cmd_cooldown)
 
     p_fix = sub.add_parser(
         "cookie-fix",
