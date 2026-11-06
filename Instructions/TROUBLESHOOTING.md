@@ -242,6 +242,11 @@ target playlist), and every call is paced 2s apart. A 429 ends Web API spending
 for the rest of the run — the remaining sources are read through the web-player
 route instead of retrying into a growing block.
 
+**A long block is never retried.** A `Retry-After` of hours is an answer, not an
+obstacle — the run stops spending Web API calls immediately instead of sleeping
+(one real run waited 45+13+45+14 = 117s for a 24-hour block). Short values that
+keep flapping back stop after the *second* answer.
+
 **No cooldown is ever stored, and no run skips itself.** A 429 only affects the
 run it happened in:
 

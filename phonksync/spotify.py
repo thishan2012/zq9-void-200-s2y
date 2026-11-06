@@ -51,6 +51,9 @@ _CLIENT_TOKEN_URL = "https://clienttoken.spotify.com/v1/clienttoken"
 _APP_VERSION = "1.3.8.461.g274622d4ef7d"
 _WEB_CLIENT_ID = os.environ.get("SPOTIFY_WEB_CLIENT_ID", "d8a5ed958d274c2e8ee717e6a4b0971d")
 _MAX_RETRIES = 6
+# A long Retry-After is an answer, not an obstacle: retrying into a 24h block
+# only burns minutes (4 retries = 117s wasted in one real run). Read it first.
+_LONG_BLOCK = 600.0
 _PAGE_SIZE = 50
 # Delay between every API request. 2s by default (REQUEST_DELAY_SECONDS env
 # overrides) — the single cheapest way to stay under the rolling window.
@@ -1248,6 +1251,22 @@ class SpotifyClient:
         self._access_expiry = (expires_ms / 1000) if expires_ms else time.time() + 3000
         return self._access_token
 
+    def _park_or_rotate(self, retry_after: float) -> None:
+        """A long Retry-After: use a spare account, or stop this run at once.
+
+        Retrying into a multi-hour block is pure loss (one real run waited 117s
+        for a 24h block). Nothing is slept, nothing is stored.
+        """
+        if self._cookie_index + 1 < len(self._cookie_pool):
+            return  # the caller retries with the next account's cookie
+        self.blocked_until = time.time() + retry_after
+        raise RateLimited(
+            retry_after,
+            f"Spotify blocked this account for ~{_human_duration(retry_after)} "
+            "(Retry-After). Nothing was retried: a block this long is an answer, so "
+            "this run continues on the web-player route (no Web API calls).",
+        )
+
     def _rotate_cookie(self) -> bool:
         """Switch to the next spare account's cookie. True if one was left."""
         if self._cookie_index + 1 >= len(self._cookie_pool):
@@ -1344,6 +1363,16 @@ class SpotifyClient:
                 retry_after = _retry_after_seconds(resp.headers, attempt)
                 raw_retry = _header_seconds(resp.headers)
                 self._pace_debt += 3.0
+                if raw_retry >= _LONG_BLOCK:
+                    # Do not sleep, do not retry: a multi-hour block is final.
+                    rotated = self._cookie_index + 1 < len(self._cookie_pool)
+                    self._park_or_rotate(raw_retry)
+                    if rotated:
+                        self._rotate_cookie()
+                        return self._request(
+                            method, path, params=params, json_body=json_body,
+                            _retry_auth=_retry_auth, allow_404=allow_404,
+                        )
                 if self.proxy_url and attempt == 0:
                     # First 429: try the other egress before waiting.
                     use_proxy = not use_proxy
@@ -1353,32 +1382,28 @@ class SpotifyClient:
                     )
                     continue
                 if raw_retry and raw_retry > _MAX_INLINE_WAIT:
-                    if self._rotate_cookie():
+                    # 2–10 minutes: too long to sleep through, too short to give
+                    # up on the account — try a spare cookie, else park the run.
+                    if self._cookie_index + 1 < len(self._cookie_pool):
+                        self._rotate_cookie()
                         return self._request(
                             method, path, params=params, json_body=json_body,
                             _retry_auth=_retry_auth, allow_404=allow_404,
                         )
-                    self.blocked_until = time.time() + raw_retry
-                    raise RateLimited(
-                        raw_retry,
-                        f"Spotify blocked this session for ~{_human_duration(raw_retry)} "
-                        "(Retry-After). This is a cooldown, not a bug — nothing was lost. "
-                        "Runs stay paused until then; add a spare cookie "
-                        "(SPOTIFY_COOKIE_2) to keep going on another account.",
-                    )
-                if attempt == _MAX_RETRIES - 1:
-                    # Persistent 429 with short Retry-After values: treat it as a
-                    # cooldown (30 min) instead of a hard failure. The run then
-                    # ends cleanly and the next one resumes from the same spot.
+                    self._park_or_rotate(raw_retry)
+                if attempt >= 1:
+                    # Persistent 429 with short Retry-After values (Spotify
+                    # re-arms the window on every knock): stop at the second
+                    # answer instead of waiting ~2 minutes to learn it again.
                     cooldown = _SHORT_BLOCK_COOLDOWN
                     self.blocked_until = time.time() + cooldown
                     raise RateLimited(
                         cooldown,
-                        f"Spotify kept answering 429 after {_MAX_RETRIES} tries "
-                        f"(~{int(self._rate_limit_wait)}s of waiting) — parking the run "
-                        f"for {_human_duration(cooldown)}. Nothing was lost: the next run "
-                        "resumes here. Use an unused account cookie (SPOTIFY_COOKIE_2) or "
-                        "wait for the window to clear.",
+                        f"Spotify kept answering 429 (Retry-After keeps flapping back "
+                        f"to a few seconds, ~{int(self._rate_limit_wait)}s waited) — "
+                        f"stopping early for {_human_duration(cooldown)} instead of "
+                        "knocking for two more minutes. Nothing was lost: this run "
+                        "continues on the web-player route.",
                     )
                 self._rate_limit_wait += retry_after
                 log.warning(
