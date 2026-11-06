@@ -215,16 +215,28 @@ class StateDB:
 
     # ------------------------------------------------------------- unmatched
 
-    def mark_unmatched(self, track: Track, tried_methods: list[str]) -> None:
+    def mark_unmatched(
+        self, track: Track, tried_methods: list[str], budget_exhausted: bool = False
+    ) -> None:
+        """Remember a track YouTube could not be matched for.
+
+        ``budget_exhausted`` means the search budget ran out mid-pipeline: the
+        track was never really tried, so it does **not** count as a failed try
+        (otherwise the retry policy hides it for ``retry_unmatched_after_days``).
+        """
         prev = self.data["unmatched"].get(track.id, {})
-        self.data["unmatched"][track.id] = {
+        entry = {
             "spotify_id": track.id,
             "name": track.name,
             "artists": track.artists,
             "last_try": _now(),
-            "tries": int(prev.get("tries", 0)) + 1,
+            "tries": int(prev.get("tries", 0)) + (0 if budget_exhausted else 1),
             "tried_methods": tried_methods,
         }
+        if budget_exhausted:
+            entry["budget_skipped_at"] = _now()
+            entry["tries"] = int(prev.get("tries", 0))  # unchanged: not a real try
+        self.data["unmatched"][track.id] = entry
 
     def unmatched_tries(self, track_id: str) -> int:
         return int(self.data["unmatched"].get(track_id, {}).get("tries", 0))

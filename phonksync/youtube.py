@@ -34,6 +34,13 @@ from .models import Candidate
 log = logging.getLogger(__name__)
 
 _API = "https://www.googleapis.com/youtube/v3"
+# A browser UA: YouTube's public results page answers bots with a consent/JS shell.
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+# videoId entries in the results page's JSON (watch?v= links also match).
+_FREE_ID_RE = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
 _SCOPE = "https://www.googleapis.com/auth/youtube"
 
 COST_SEARCH = 100
@@ -44,6 +51,37 @@ COST_PLAYLIST_INSERT = 50
 _ISO_DURATION = re.compile(
     r"^P(?:(?P<d>\d+)D)?T?(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+)S)?$"
 )
+
+
+def _candidate_from_watch_page(video_id: str, html: str) -> Candidate | None:
+    """Pull title/channel/duration/description out of a watch page (free)."""
+    marker = "ytInitialPlayerResponse"
+    at = html.find(marker)
+    if at == -1:
+        return None
+    brace = html.find("{", at)
+    if brace == -1:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(html[brace:])
+    except ValueError:
+        return None
+    details = data.get("videoDetails") or {}
+    if not details.get("title"):
+        return None
+    duration_s = 0
+    try:
+        duration_s = int(details.get("lengthSeconds") or 0)
+    except (TypeError, ValueError):
+        duration_s = 0
+    return Candidate(
+        video_id=details.get("videoId") or video_id,
+        title=details.get("title", ""),
+        channel=details.get("author", ""),
+        description=(details.get("shortDescription") or "")[:5000],
+        duration_s=duration_s,
+        views=int(details.get("viewCount") or 0),
+    )
 
 
 def parse_iso_duration(value: str) -> int:
@@ -134,6 +172,9 @@ class YouTubeClient:
         quota_state: QuotaState | None = None,
         region_code: str = "US",
         session: requests.Session | None = None,
+        free_search: bool = True,
+        free_search_pause: float = 1.0,
+        web_session: requests.Session | None = None,
     ) -> None:
         raw_keys: list[str] = []
         if isinstance(api_key, str):
@@ -191,6 +232,14 @@ class YouTubeClient:
         self.max_searches_per_day = max_searches_per_day
         self.max_inserts_per_day = max_inserts_per_day
         self.searches_this_run = 0
+        # Free tier: YouTube's public search page costs no API quota, so the
+        # 100-unit API search is only spent when the free pass finds nothing.
+        self.free_search = free_search
+        self.free_search_pause = max(0.0, free_search_pause)
+        self.free_searches_this_run = 0
+        # The public web pages must not go through the API session (different
+        # auth, different error handling, and tests inject a fake API session).
+        self.web_session = web_session or requests.Session()
         self.quota = quota_state or QuotaState()
         self.quota.rollover()
         self.region_code = region_code
@@ -408,7 +457,46 @@ class YouTubeClient:
 
     # ------------------------------------------------------------- endpoints
 
+    def free_search_ids(self, query: str, max_results: int = 10) -> list[str]:
+        """Search YouTube's public results page: no API key, no quota.
+
+        Used before every API search so the 100-unit queries are spent only on
+        tracks the free pass could not resolve. Returns [] on any failure (the
+        caller then just uses the API).
+        """
+        if not self.free_search:
+            return []
+        try:
+            resp = self.web_session.get(
+                "https://www.youtube.com/results",
+                params={"search_query": query, "hl": "en", "gl": self.region_code},
+                headers={
+                    "User-Agent": _UA,
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                timeout=20,
+            )
+            if resp.status_code != 200:
+                log.debug("Free search HTTP %s for %r", resp.status_code, query)
+                return []
+            ids = _FREE_ID_RE.findall(resp.text)
+        except requests.RequestException as exc:
+            log.debug("Free search failed for %r: %s", query, exc)
+            return []
+        seen: list[str] = []
+        for video_id in ids:
+            if video_id not in seen:
+                seen.append(video_id)
+        self.free_searches_this_run += 1
+        if self.free_search_pause:
+            time.sleep(self.free_search_pause)
+        return seen[:max_results]
+
     def search(self, query: str, max_results: int = 10) -> list[str]:
+        if self.free_search:
+            free = self.free_search_ids(query, max_results=max_results)
+            if free:
+                return free
         params = {
             "part": "snippet",
             "q": query,
@@ -426,8 +514,41 @@ class YouTubeClient:
             if item.get("id", {}).get("videoId")
         ]
 
+    def free_videos(self, video_ids: list[str]) -> list[Candidate]:
+        """Metadata for free: each watch page's embedded player response.
+
+        No API key and no quota. Enough for the matcher (title, channel,
+        duration, description), so a result set from the free search never
+        costs a single unit unless the real API key search is needed.
+        """
+        out: list[Candidate] = []
+        for video_id in video_ids:
+            try:
+                resp = self.web_session.get(
+                    "https://www.youtube.com/watch",
+                    params={"v": video_id, "hl": "en"},
+                    headers={
+                        "User-Agent": _UA,
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                    timeout=20,
+                )
+                if resp.status_code != 200:
+                    continue
+                candidate = _candidate_from_watch_page(video_id, resp.text)
+            except requests.RequestException as exc:
+                log.debug("Free video fetch failed for %s: %s", video_id, exc)
+                continue
+            if candidate:
+                out.append(candidate)
+            if self.free_search_pause:
+                time.sleep(min(self.free_search_pause, 0.5))
+        return out
+
     def videos(self, video_ids: list[str]) -> list[Candidate]:
         out: list[Candidate] = []
+        if self.free_search and video_ids and not self.api_keys:
+            return self.free_videos(video_ids)
         for i in range(0, len(video_ids), 50):
             chunk = video_ids[i : i + 50]
             data = self._request(

@@ -65,8 +65,10 @@ class Config:
 
     max_tracks_per_run: int = 0  # 0 = unlimited
     dry_run_track_limit: int = 200  # dry-run only: max source tracks to read (0 = unlimited)
-    max_searches_per_run: int = 80
-    youtube_max_searches_per_day: int = 80  # 80 x 100 = 8000 units; hard Google cap is 10000/day
+    max_searches_per_run: int = 200  # free searches do not count; paid ones are budgeted
+    youtube_max_searches_per_day: int = 0  # 0 = no app cap; per-key units still enforced
+    youtube_free_search: bool = True  # search youtube.com first: 0 API units
+    youtube_free_search_pause: float = 1.0  # politeness gap between free page loads
     youtube_max_inserts_per_day: int = 40  # 40 x 50 = 2000 units -> 8000 + 2000 = 10000 exactly
     youtube_daily_quota_units: int = 9800
     search_cache_ttl_days: int = 14
@@ -125,6 +127,10 @@ class Config:
             cfg.dry_run = True
         if os.environ.get("MAX_SEARCHES_PER_RUN"):
             cfg.max_searches_per_run = int(os.environ["MAX_SEARCHES_PER_RUN"])
+        if "YOUTUBE_FREE_SEARCH" in os.environ:
+            cfg.youtube_free_search = os.environ["YOUTUBE_FREE_SEARCH"].strip().lower() in {
+                "1", "true", "yes",
+            }
         if os.environ.get("MAX_INSERTS_PER_DAY"):
             cfg.youtube_max_inserts_per_day = int(os.environ["MAX_INSERTS_PER_DAY"])
         if os.environ.get("MAX_TRACKS_PER_RUN"):

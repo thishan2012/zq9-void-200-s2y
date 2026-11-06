@@ -188,7 +188,7 @@ If Google doesn't return a refresh token: revoke the grant at https://myaccount.
 
 | Action | Units | App cap | Units used |
 |---|---|---|---|
-| `search.list` | 100 | 80 / day (`max_searches_per_run`, `youtube_max_searches_per_day`) | 8,000 per key |
+| `search.list` | 100 | only when the free page search misses (`youtube_free_search`) | up to 10,000 per key |
 | `playlistItems.insert` | 50 | 40 / day (`youtube_max_inserts_per_day`) | 2,000 |
 | `videos.list` / `playlistItems.list` | 1 | — | ~100 |
 

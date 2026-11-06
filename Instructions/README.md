@@ -72,7 +72,8 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 | `dry_run_track_limit` | `200` | dry-run only: max source tracks to read (0 = unlimited) |
 | `telegram_per_track` | `true` | per-track Telegram messages |
 | `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track (YouTube mode) |
-| `max_searches_per_run` | `80` | YouTube only: cap on searches per run |
+| `max_searches_per_run` | `200` | YouTube only: cap on **paid** searches per run (free page searches do not count) |
+| `youtube_free_search` | `true` | search youtube.com first: 0 API units (see `Instructions/YOUTUBE-BUDGET.md`) |
 | `youtube_max_searches_per_day` | `80` | YouTube only: cap on searches per UTC day (80 x 100 = 8,000 units) |
 | `youtube_max_inserts_per_day` | `40` | YouTube only: cap on playlist adds per UTC day (40 x 50 = 2,000 units) |
 | `youtube_daily_quota_units` | `9800` | YouTube only: overall local quota budget |

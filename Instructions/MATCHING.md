@@ -70,4 +70,7 @@ Exceptions (authoritative identity, documented): `MANUAL` (your pinned mapping),
 
 - One shared candidate pool per track; a query is issued at most once per track.
 - Queries and video metadata are cached for 14 days (`.cache/yt-cache.json`, persisted via GitHub Actions cache).
-- A local budget (default 9500 units/day, 80 searches/run) stops the run cleanly; the next run continues where it stopped.
+- Searches go through YouTube's free results page first (`youtube_free_search`), so
+  only unresolved tracks spend the 100-unit API search. The local budget still
+  stops a run cleanly and the next run continues where it stopped — see
+  `Instructions/YOUTUBE-BUDGET.md`.

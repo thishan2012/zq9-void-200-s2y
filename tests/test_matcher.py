@@ -177,3 +177,62 @@ def test_duration_picks_closest_version(cache, overrides):
     assert result is not None
     # STRICT takes the first verified; both pass title, so ranking order wins.
     assert result.candidate.video_id in {"vid00000010", "vid00000011"}
+
+
+# --------------------------------------------------------------- free tier
+class FreeFakeYouTube(FakeYouTube):
+    """YouTube with the zero-quota public page in front of the metered API."""
+
+    def __init__(self, catalog=None, search_map=None, free_map=None):
+        super().__init__(catalog=catalog, search_map=search_map)
+        self.free_map = free_map or {}
+        self.free_searches = 0
+
+    def free_search_ids(self, query, max_results=10):
+        self.free_searches += 1
+        return self.free_map.get(" ".join(query.lower().split()), [])[:max_results]
+
+    def free_videos(self, video_ids):
+        return self.videos(video_ids)
+
+
+def test_free_search_matches_without_spending_api_quota(cache, overrides):
+    track = make_track()
+    good = make_candidate("vid00000001", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    yt = FreeFakeYouTube(
+        catalog={"vid00000001": good},
+        free_map={"nulteex montagem miau": ["vid00000001"]},
+    )
+    m = build_matcher(yt, cache, overrides)
+    result = m.match(track)
+    assert result is not None and result.method == "STRICT" and result.free is True
+    assert yt.free_searches == 1
+    assert yt.searches == []          # the 100-unit API search was never used
+
+
+def test_free_pass_miss_falls_back_to_the_api(cache, overrides):
+    track = make_track()
+    good = make_candidate("vid00000002", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    yt = FreeFakeYouTube(
+        catalog={"vid00000002": good},
+        free_map={},  # free page finds nothing
+        search_map={"nulteex montagem miau": ["vid00000002"]},
+    )
+    m = build_matcher(yt, cache, overrides)
+    result = m.match(track)
+    assert result is not None and result.free is False
+    assert yt.searches == ["nulteex montagem miau"]
+
+
+def test_free_pass_does_not_reuse_a_suspect_result(cache, overrides):
+    """A free hit that fails verification must not short-circuit the pipeline."""
+    track = make_track(name="MONTAGEM MIAU")
+    slowed = make_candidate("vid00000003", "Nulteex - MONTAGEM MIAU (Slowed)",
+                            channel="Nulteex - Topic")
+    yt = FreeFakeYouTube(
+        catalog={"vid00000003": slowed},
+        free_map={"nulteex montagem miau": ["vid00000003"]},
+        search_map={},
+    )
+    m = build_matcher(yt, cache, overrides)
+    assert m.match(track) is None

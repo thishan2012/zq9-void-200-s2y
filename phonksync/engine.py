@@ -52,6 +52,7 @@ class RunReport:
     already_synced: int = 0
     added: int = 0
     unmatched: int = 0
+    budget_skips: int = 0
     deferred: int = 0
     duplicates: int = 0
     errors: list[str] = field(default_factory=list)
@@ -68,6 +69,8 @@ class RunReport:
     stale_reads: int = 0
     backend: str = ""
     rate_limited_skips: int = 0
+    free_searches: int = 0
+    free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
     inserted: int = 0
@@ -86,9 +89,19 @@ class RunReport:
             f"⏭ Deferred (retry later): {self.deferred}",
             f"♻️ Duplicates skipped: {self.duplicates}",
         ]
+        if self.budget_skips:
+            lines.append(
+                f"⏸ Search budget ran out for {self.budget_skips} track(s) — they were "
+                "NOT tried properly and are not marked unmatched; the next run continues"
+            )
         if self.method_wins:
             wins = ", ".join(f"{k}={v}" for k, v in sorted(self.method_wins.items()))
             lines.append(f"🏆 Methods: {wins}")
+        if self.free_matches or self.free_searches:
+            lines.append(
+                f"🆓 Free YouTube searches: {self.free_searches} "
+                f"(0 quota), matches: {self.free_matches}"
+            )
         if self.searches_used:
             lines.append(
                 f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
@@ -170,6 +183,7 @@ class SyncEngine:
         self.spotify = SpotifyClient(
             secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
         )
+        self._free_matches = 0
         self.public_spotify = PublicPlaylistReader() if config.spotify_web_fallback else None
         self.source_cache = SourceCache(
             config.source_cache_path,
@@ -192,6 +206,8 @@ class SyncEngine:
                 token_json=secrets.youtube_token_json,
                 api_key=secrets.youtube_api_key,
                 daily_quota_units=config.youtube_daily_quota_units,
+                free_search=config.youtube_free_search,
+                free_search_pause=config.youtube_free_search_pause,
                 max_searches_per_run=config.max_searches_per_run,
                 max_searches_per_day=config.youtube_max_searches_per_day,
                 max_inserts_per_day=config.youtube_max_inserts_per_day,
@@ -390,6 +406,8 @@ class SyncEngine:
         self.state.record_run()
         if cfg.youtube_enabled:
             report.searches_used = int(getattr(self.youtube, "searches_this_run", 0) or 0)
+            report.free_searches = int(getattr(self.youtube, "free_searches_this_run", 0) or 0)
+            report.free_matches = int(getattr(self, "_free_matches", 0) or 0)
             report.inserted = int(getattr(self.youtube.quota, "inserts", 0) or 0)
             report.search_mode = getattr(self.youtube, "search_mode", "")
             self.state.save_quota(self.youtube.quota)
@@ -746,6 +764,17 @@ class SyncEngine:
         self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
         return True
 
+    def _search_budget_exhausted(self) -> bool:
+        """True when the run (or the day) ran out of YouTube search budget."""
+        yt = self.youtube
+        if yt is None:
+            return False
+        if getattr(yt, "searches_this_run", 0) >= getattr(yt, "max_searches_per_run", 0) > 0:
+            return True
+        daily = getattr(yt, "max_searches_per_day", 0)
+        quota = getattr(yt, "quota", None)
+        return bool(daily and quota is not None and quota.searches >= daily)
+
     def _deferred(self, track: Track) -> bool:
         tries = self.state.unmatched_tries(track.id)
         if tries == 0:
@@ -784,8 +813,18 @@ class SyncEngine:
             for code in self.matcher.last_tried:
                 self.state.record_method(code, tried=True, won=(code == won))
             if result is None:
-                self.state.mark_unmatched(track, self.matcher.last_tried)
-                report.unmatched += 1
+                # "unmatched" and "we ran out of search budget" are different:
+                # the first means the song is probably not on YouTube, the second
+                # means it was never really tried. Do not mark it unmatched —
+                # otherwise the retry policy defers it for days.
+                budget_hit = self._search_budget_exhausted()
+                self.state.mark_unmatched(
+                    track, self.matcher.last_tried, budget_exhausted=budget_hit
+                )
+                if budget_hit:
+                    report.budget_skips += 1
+                else:
+                    report.unmatched += 1
                 if cfg.telegram_per_track:
                     self.telegram.track_unmatched(track.display(), len(self.matcher.last_tried))
                 if cfg.require_youtube_match_for_spotify:
@@ -796,6 +835,8 @@ class SyncEngine:
                 if not cfg.dry_run:
                     self.state.mark_synced(track, "", "", True, False)
                 return
+            if getattr(result, "free", False):
+                self._free_matches += 1
             video_id = result.candidate.video_id
             method = result.method
             report.method_wins[method] = report.method_wins.get(method, 0) + 1
