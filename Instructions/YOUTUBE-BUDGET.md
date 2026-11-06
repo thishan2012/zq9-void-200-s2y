@@ -89,3 +89,18 @@ hide the track). It is counted separately:
 ⏸ Search budget ran out for 2 track(s) — they were NOT tried properly and are
   not marked unmatched; the next run continues
 ```
+
+## Writes off = nothing lost
+
+If YouTube writes are not authorised yet (`YT_REFRESH_TOKEN` missing), a run is
+still useful:
+
+- matches are found and **stored** (`synced[...].youtube_video_id`, `youtube_added: false`)
+- the summary says
+  `📝 YouTube writes OFF: 42 match(es) remembered, not added (they go in automatically once YT_REFRESH_TOKEN exists)`
+- the first run **after** you add the token adds up to 50 of them per run,
+  **without any new searches** (`✍️ Added 21 previously matched video(s) …`)
+- `phonksync check` also shows the backlog: `📝 21 matched video(s) waiting for YouTube auth`
+
+So you can run today, sort the token out later, and nothing is re-searched or
+re-matched.

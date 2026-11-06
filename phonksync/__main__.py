@@ -136,6 +136,22 @@ def cmd_check(args: argparse.Namespace) -> int:
     else:
         print("🔗 Spotify route: direct (set SPOTIFY_PROXY_URL / spotify_proxy_url to use a proxy)")
 
+    try:
+        from .db import StateDB
+
+        db = StateDB(cfg.state_path)
+        pending = db.pending_youtube_count()
+        if pending:
+            print(
+                f"📝 {pending} matched video(s) waiting for YouTube auth — they are added "
+                "automatically once YT_REFRESH_TOKEN is set"
+            )
+        skipped = len(db.skipped_tracks())
+        if skipped:
+            print(f"🙅 {skipped} track(s) skipped by choice (see `phonksync skip --show`)")
+    except Exception as exc:  # never let a stats line break `check`
+        print(f"ℹ️  Could not read state: {exc}")
+
     if secrets.telegram_bot_token and secrets.telegram_chat_id:
         print("✅ Telegram secrets present")
     else:

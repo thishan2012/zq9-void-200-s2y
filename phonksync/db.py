@@ -189,6 +189,17 @@ class StateDB:
     def get_synced(self, track_id: str) -> dict[str, Any] | None:
         return self.data["synced"].get(track_id)
 
+    def pending_youtube(self) -> list[dict[str, Any]]:
+        """"Matched, but not added to YouTube yet" (writes were off at the time)."""
+        return [
+            entry
+            for entry in self.data["synced"].values()
+            if entry.get("youtube_video_id") and not entry.get("youtube_added")
+        ]
+
+    def pending_youtube_count(self) -> int:
+        return len(self.pending_youtube())
+
     def mark_synced(
         self,
         track: Track,
