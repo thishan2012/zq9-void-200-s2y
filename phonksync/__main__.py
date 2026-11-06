@@ -261,6 +261,57 @@ def cmd_proxy_test(args: argparse.Namespace) -> int:
     return 0 if ok else 3
 
 
+def cmd_diag(args: argparse.Namespace) -> int:
+    """Answer one question: which Spotify routes work from *this* machine?"""
+    from .settings import Config as _Cfg
+    from .spotify import (
+        PublicPlaylistReader,
+        SpotifyClient,
+        client_token,
+        pathfinder_playlist,
+    )
+
+    cfg = _Cfg.load(args.config)
+    playlist = args.playlist or (cfg.spotify_source_playlists or [""])[0]
+    print(f"🎯 playlist: {playlist or '(none configured)'}")
+
+    # 1) the Web API token (needs the cookie)
+    secrets = Secrets.from_env()
+    if secrets.spotify_cookie:
+        try:
+            client = SpotifyClient(secrets.spotify_cookie)
+            client._ensure_token()
+            print("1️⃣  Web API token : ✅")
+        except Exception as exc:
+            first = str(exc).splitlines()[0][:150]
+            print(f"1️⃣  Web API token : ❌ {first}")
+    else:
+        print("1️⃣  Web API token : skipped (no SPOTIFY_COOKIE)")
+
+    # 2) client token + pathfinder (no login, no Web API)
+    token = client_token()
+    print(f"2️⃣  client token  : {'✅' if token else '❌'} ({len(token)} chars)")
+    if playlist:
+        try:
+            tracks = pathfinder_playlist(playlist, client_token=token, max_tracks=5)
+            print(f"3️⃣  pathfinder    : {'✅' if tracks else '❌'} {len(tracks)} track(s) "
+                  f"read without the Web API")
+            if tracks:
+                print(f"    e.g. {tracks[0].display()}")
+        except Exception as exc:
+            print(f"3️⃣  pathfinder    : ❌ {str(exc)[:180]}")
+
+    # 3) the public HTML page
+    if playlist:
+        reader = PublicPlaylistReader(client_token=token)
+        page = reader._payload(playlist)
+        print(
+            "4️⃣  public page   : "
+            + ("✅ payload found" if page else f"❌ {reader.last_error or 'no payload'}")
+        )
+    return 0
+
+
 def cmd_collect(args: argparse.Namespace) -> int:
     """Save a playlist's tracks into state so a blocked API never stops a run.
 
@@ -453,6 +504,12 @@ def main(argv: list[str] | None = None) -> int:
     p_proxy.add_argument("--url", default="", help="Proxy base URL (overrides the env var)")
     p_proxy.add_argument("--playlist", default="", help="Optional public playlist ID to read")
     p_proxy.set_defaults(func=cmd_proxy_test)
+
+    p_diag = sub.add_parser(
+        "diag", help="Show which Spotify routes work right now (token / client token / pathfinder / page)"
+    )
+    p_diag.add_argument("--playlist", default="", help="Playlist to test (default: first source)")
+    p_diag.set_defaults(func=cmd_diag)
 
     p_collect = sub.add_parser(
         "collect",

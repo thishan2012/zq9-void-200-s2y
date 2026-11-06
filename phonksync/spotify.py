@@ -41,6 +41,14 @@ _LEGACY_TOKEN_URL = (
     "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
 )
 _SERVER_TIME_URL = "https://open.spotify.com/"
+# The endpoint the actual web player uses for playlist data. It does NOT go
+# through the Web API (api.spotify.com answers 429 to web-player tokens), so a
+# throttled Web API does not block it.
+_PATHFINDER_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
+_CLIENT_TOKEN_URL = "https://clienttoken.spotify.com/v1/clienttoken"
+# Used by the web player itself; overridable in case Spotify bumps it.
+_APP_VERSION = "1.3.8.461.g274622d4ef7d"
+_WEB_CLIENT_ID = os.environ.get("SPOTIFY_WEB_CLIENT_ID", "d8a5ed958d274c2e8ee717e6a4b0971d")
 _MAX_RETRIES = 6
 _PAGE_SIZE = 50
 # Delay between every API request. 2s by default (REQUEST_DELAY_SECONDS env
@@ -452,6 +460,15 @@ _HTML_UA = (
 )
 
 
+_JS_BUNDLE_RE = re.compile(
+    r"(?:https://open\.spotifycdn\.com)?/cdn/build/web-player/web-player\.[0-9a-f]+\.js"
+)
+_HASH_RE_TEMPLATE = r'"{op}"\s*,\s*"query"\s*,\s*"([0-9a-f]{{64}})"'
+# Known-good hash for fetchPlaylist (2026-11). Reddit/Spyt/Spotifly all use it;
+# refreshed automatically from the web-player bundle when Spotify rotates it.
+_KNOWN_PLAYLIST_HASH = "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf"
+
+
 class PublicPlaylistReader:
     """Read a **public** playlist without any Spotify credentials.
 
@@ -465,10 +482,18 @@ class PublicPlaylistReader:
     change, odd CDN response) so the caller can fall back to the cache.
     """
 
-    def __init__(self, session: requests.Session | None = None):
+    def __init__(self, session: requests.Session | None = None, client_token: str = ""):
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": _HTML_UA})
         self.last_error = ""
+        self._client_token = client_token
+        self._token_tried = bool(client_token)
+
+    def token(self) -> str:
+        if not self._token_tried:
+            self._client_token = client_token()
+            self._token_tried = True
+        return self._client_token
 
     def _payload(self, playlist_id: str) -> dict[str, Any] | None:
         url = f"{_OPEN_HOST}/playlist/{playlist_id}"
@@ -492,7 +517,41 @@ class PublicPlaylistReader:
         if resp.status_code != 200:
             self.last_error = f"HTTP {resp.status_code}"
             return None
-        return _find_playlist_payload(resp.text)
+        data = _find_playlist_payload(resp.text)
+        if data:
+            return data
+        # The HTML page only inlines the payload for some renders. The web
+        # player normally uses api-partner instead — try that before giving up.
+        fallback = self._pathfinder(playlist_id)
+        if fallback:
+            return fallback
+        if not self.last_error:
+            self.last_error = "payload not found in HTML"
+        return None
+
+    def _pathfinder(self, playlist_id: str) -> dict[str, Any] | None:
+        token = self.token()
+        try:
+            tracks = pathfinder_playlist(playlist_id, client_token=token)
+        except Exception as exc:
+            log.warning("pathfinder read failed: %s", exc)
+            if not self.last_error:
+                self.last_error = f"pathfinder: {exc}"
+            return None
+        if not tracks:
+            self.last_error = "payload not found in HTML (pathfinder returned no tracks)"
+            return None
+        items = [
+            {"itemV2": {"data": {
+                "uri": t.uri, "name": t.name,
+                "artists": {"items": [{"profile": {"name": a}} for a in t.artists]},
+                "albumOfTrack": {"name": t.album},
+                "trackDuration": {"totalMilliseconds": t.duration_ms},
+            }}}
+            for t in tracks
+        ]
+        self.last_error = ""
+        return {"playlistV2": {"content": {"items": items, "totalCount": len(items)}}}
 
     def snapshot(self, playlist_id: str) -> str:
         data = self._payload(playlist_id)
@@ -501,7 +560,7 @@ class PublicPlaylistReader:
         items = ((data.get("playlistV2") or {}).get("content") or {}).get("items") or []
         return f"{len(items)}:{data.get('snapshotId', '')}"
 
-    def playlist_tracks(self, playlist_id: str) -> list[Track]:
+    def playlist_tracks(self, playlist_id: str, max_tracks: int = 0) -> list[Track]:
         data = self._payload(playlist_id)
         if not data:
             if not self.last_error:
@@ -518,6 +577,185 @@ class PublicPlaylistReader:
         if not tracks:
             self.last_error = "no tracks in payload"
         return tracks
+
+
+def _proxy_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> str:
+    """POST ``payload`` to ``url``, optionally through SPOTIFY_PROXY_URL.
+
+    Returns the response text. Raises ``requests.RequestException`` on network
+    errors and ``_ProxyUnavailable`` when the proxy itself fails, so the caller
+    can decide to go direct.
+    """
+    proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip()
+    if not proxy:
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        return resp.text
+    proxied = _with_proxy(proxy, url, None)
+    try:
+        resp = requests.post(
+            proxied, json=payload, headers={**headers, **proxy_headers()}, timeout=30
+        )
+    except requests.RequestException as exc:
+        log.warning("Proxy POST failed (%s) — using a direct connection", exc)
+        return requests.post(url, json=payload, headers=headers, timeout=30).text
+    if resp.status_code >= 400:
+        log.warning(
+            "Proxy POST returned HTTP %s — using a direct connection", resp.status_code
+        )
+        return requests.post(url, json=payload, headers=headers, timeout=30).text
+    try:
+        json.loads(resp.text)
+    except ValueError:
+        # Many CORS proxies only forward GET; their HTML error page is not JSON.
+        log.warning("Proxy POST returned non-JSON — using a direct connection")
+        return requests.post(url, json=payload, headers=headers, timeout=30).text
+    return resp.text
+
+
+class _ProxyUnavailable(RuntimeError):
+    """The CORS proxy could not serve the request (fall back to direct)."""
+
+
+def _discover_persisted_hashes(ops: list[str]) -> dict[str, str]:
+    """Read persisted-query hashes from the live web-player bundle.
+
+    Spotify rotates these; they are constants inside the JS bundle, so reading
+    the bundle keeps the reader working without a code change.
+    """
+    found: dict[str, str] = {}
+    try:
+        home = requests.get(
+            _SERVER_TIME_URL,
+            headers={"User-Agent": _HTML_UA, "Accept": "text/html,application/xhtml+xml"},
+            timeout=30,
+        )
+        match = _JS_BUNDLE_RE.search(home.text)
+        if not match:
+            return found
+        bundle_url = match.group(0)
+        if bundle_url.startswith("/"):
+            bundle_url = "https://open.spotifycdn.com" + bundle_url
+        bundle = requests.get(
+            bundle_url,
+            headers={"User-Agent": _HTML_UA, "Accept": "*/*", "Accept-Encoding": "gzip"},
+            timeout=60,
+        )
+        for op in ops:
+            hit = re.search(_HASH_RE_TEMPLATE.format(op=op), bundle.text)
+            if hit:
+                found[op] = hit.group(1)
+    except Exception as exc:  # discovery is best-effort
+        log.debug("Could not read persisted-query hashes: %s", exc)
+    return found
+
+
+_PLAY_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json;charset=UTF-8",
+    "Referer": "https://open.spotify.com/",
+    "Origin": "https://open.spotify.com",
+    "app-platform": "WebPlayer",
+    "spotify-app-version": _APP_VERSION,
+}
+
+
+def pathfinder_playlist(
+    playlist_id: str,
+    client_token: str = "",
+    page_size: int = 250,
+    max_tracks: int = 0,
+    fetcher: Any = None,
+) -> list[Track]:
+    """Read a playlist through api-partner (the web player's own endpoint).
+
+    No login cookie needed: the *client token* is enough, which is exactly what
+    open.spotify.com gets for a logged-out visitor. This path is not the Web API,
+    so the account/API 429 does not apply to it.
+    """
+    fetch = fetcher or _proxy_post
+    hashes = {"fetchPlaylist": _KNOWN_PLAYLIST_HASH, "fetchPlaylistContents": _KNOWN_PLAYLIST_HASH}
+    tracks: dict[str, Track] = {}
+    offset = 0
+    total = None
+    op = "fetchPlaylist"
+    while True:
+        payload = {
+            "variables": {
+                "uri": f"spotify:playlist:{playlist_id}",
+                "offset": offset,
+                "limit": page_size,
+                "enableWatchFeedEntrypoint": True,
+                "includeEpisodeContentRatingsV2": True,
+            },
+            "operationName": op,
+            "extensions": {"persistedQuery": {"version": 1, "sha256Hash": hashes[op]}},
+        }
+        headers = dict(_PLAY_HEADERS)
+        headers["User-Agent"] = _HTML_UA
+        if client_token:
+            headers["client-token"] = client_token
+        text = fetch(_PATHFINDER_URL, payload, headers)
+        try:
+            data = json.loads(text)
+        except ValueError:
+            raise RuntimeError(f"pathfinder returned non-JSON ({text[:120]!r})")
+        if data.get("errors"):
+            message = json.dumps(data["errors"])[:200]
+            if "persisted" in message.lower():
+                fresh = _discover_persisted_hashes(["fetchPlaylist", "fetchPlaylistContents"])
+                if op in fresh and fresh[op] != hashes[op]:
+                    hashes[op] = fresh[op]
+                    continue
+            raise RuntimeError(f"pathfinder error: {message}")
+        body = (data.get("data") or {}).get("playlistV2") or {}
+        if not body:
+            break
+        content = body.get("content") or {}
+        items = content.get("items") or []
+        if total is None:
+            try:
+                total = int(content.get("totalCount") or 0) or None
+            except (TypeError, ValueError):
+                total = None
+        for item in items:
+            track = _track_from_item(item)
+            if track:
+                tracks.setdefault(track.id, track)
+        offset += len(items)
+        if not items or (total and offset >= total) or len(items) < page_size:
+            break
+        if max_tracks and len(tracks) >= max_tracks:
+            break
+        time.sleep(request_delay_seconds())
+    for track in tracks.values():
+        track.sources = [playlist_id]
+    return list(tracks.values())
+
+
+def client_token() -> str:
+    """A web-player *client token* (no login needed), or "" when refused."""
+    payload = {
+        "client_data": {
+            "client_version": _APP_VERSION,
+            "client_id": _WEB_CLIENT_ID,
+            "js_sdk_data": {
+                "device_brand": "unknown",
+                "device_model": "unknown",
+                "os": "windows",
+                "os_version": "10",
+                "device_id": os.urandom(16).hex(),
+                "device_type": "computer",
+            },
+        }
+    }
+    try:
+        text = _proxy_post(_CLIENT_TOKEN_URL, payload, {"User-Agent": _HTML_UA, **_PLAY_HEADERS})
+        granted = (json.loads(text).get("granted_token") or {})
+        token = granted.get("token")
+        return token if isinstance(token, str) else ""
+    except (requests.RequestException, ValueError, _ProxyUnavailable) as exc:
+        log.debug("No client token: %s", exc)
+        return ""
 
 
 def playlist_tracks_from_html(html: str, playlist_id: str = "") -> list[Track]:

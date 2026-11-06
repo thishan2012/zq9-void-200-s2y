@@ -567,3 +567,48 @@ def test_main_returns_success_when_run_only_hit_a_cooldown(cfg, monkeypatch, tmp
     monkeypatch.setattr(engine_mod, "SyncEngine", FakeEngine)
     assert main.main(["sync"]) == 0
     assert "Nothing was lost" in capsys.readouterr().err
+
+
+def test_a_parked_spotify_run_still_finishes(monkeypatch, cfg):
+    """429 on writes must park the rest, not kill the run."""
+    track_a = make_track(id="track000000000000000001", name="A")
+    track_b = make_track(id="track000000000000000002", name="B")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track_a, track_b]})
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    def boom(*a, **kw):
+        engine.spotify.blocked_until = time.time() + 1800
+        raise RateLimited(1800, "Spotify kept answering 429")
+
+    monkeypatch.setattr(engine, "_add_spotify", boom)
+    monkeypatch.setattr(engine, "_flush_queue", lambda: None)
+    monkeypatch.setattr(engine, "_retry_pending_queue", lambda: None)
+    report = engine.run()
+    # the run completed and reported, instead of raising out of run()
+    assert report.finished_at
+    assert report.spotify_throttled
+    assert report.manual_queued >= 1          # nothing lost: parked
+    assert engine.state.spotify_cooldown_until() > time.time() + 1000
+
+
+def test_pathfinder_is_used_when_spotify_already_parked(monkeypatch, cfg):
+    """A parked run reads playlists without the Web API instead of retrying."""
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.blocked_until = time.time() + 1800
+
+    def never(playlist_id, max_tracks=None):
+        raise AssertionError("the Web API must not be called while parked")
+
+    spotify.playlist_tracks = never
+    youtube = EngineYouTube()
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+
+    reached = []
+    monkeypatch.setattr(
+        engine, "_read_pathfinder",
+        lambda pid, report: reached.append(pid) or [track],
+    )
+    report = engine.run()
+    assert reached == [cfg.spotify_source_playlists[0]]
+    assert report.spotify_throttled

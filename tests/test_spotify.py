@@ -619,12 +619,84 @@ def test_public_reader_parses_playlist_page():
     assert "Authorization" not in session.calls[0]["headers"]
 
 
-def test_public_reader_reports_private_playlist():
+def test_public_reader_reports_private_playlist(monkeypatch):
     import phonksync.spotify as sp
 
+    # No pathfinder fallback in this test: it is a network call.
+    monkeypatch.setattr(sp, "pathfinder_playlist", lambda *a, **k: [])
+    monkeypatch.setattr(sp, "client_token", lambda: "")
     reader = sp.PublicPlaylistReader(_HtmlSession("<html>nope</html>"))
     assert reader.playlist_tracks("x") == []
     assert "payload not found" in reader.last_error
+
+
+def test_pathfinder_reader_parses_pages(monkeypatch):
+    """The web player's own endpoint is the answer to a Web-API 429."""
+    import json as _json
+
+    import phonksync.spotify as sp
+
+    pages = [
+        {"data": {"playlistV2": {"content": {"totalCount": 3, "items": [
+            _v2_item("aaa", "One", "A"), _v2_item("bbb", "Two", "B"),
+        ]}}}},
+        {"data": {"playlistV2": {"content": {"totalCount": 3, "items": [
+            _v2_item("ccc", "Three", "C"),
+        ]}}}},
+    ]
+    calls = []
+
+    def fake_fetch(url, payload, headers):
+        calls.append((url, payload, headers))
+        return _json.dumps(pages[len(calls) - 1])
+
+    monkeypatch.setattr(sp, "request_delay_seconds", lambda: 0)
+    tracks = sp.pathfinder_playlist("PL123", client_token="ct", page_size=2, fetcher=fake_fetch)
+    assert [t.name for t in tracks] == ["One", "Two", "Three"]
+    assert calls[0][0] == "https://api-partner.spotify.com/pathfinder/v2/query"
+    assert calls[0][2]["client-token"] == "ct"
+    assert calls[0][1]["operationName"] == "fetchPlaylist"
+    assert calls[0][1]["variables"]["uri"] == "spotify:playlist:PL123"
+    assert calls[0][1]["extensions"]["persistedQuery"]["sha256Hash"] == sp._KNOWN_PLAYLIST_HASH
+    assert calls[1][1]["variables"]["offset"] == 2
+
+
+def test_pathfinder_reader_refreshes_a_stale_hash(monkeypatch):
+    import json as _json
+
+    import phonksync.spotify as sp
+
+    new_hash = "b" * 64
+    state = {"n": 0}
+
+    def fake_fetch(url, payload, headers):
+        state["n"] += 1
+        if state["n"] == 1:
+            return _json.dumps({"errors": [{"message": "PersistedQueryNotFound"}]})
+        return _json.dumps({"data": {"playlistV2": {"content": {"totalCount": 1, "items": [
+            _v2_item("aaa", "One", "A")]}}}})
+
+    monkeypatch.setattr(sp, "_discover_persisted_hashes", lambda ops: {"fetchPlaylist": new_hash})
+    monkeypatch.setattr(sp, "request_delay_seconds", lambda: 0)
+    tracks = sp.pathfinder_playlist("PL1", client_token="ct", page_size=10, fetcher=fake_fetch)
+    assert [t.name for t in tracks] == ["One"]
+    assert state["n"] == 2
+
+
+def test_public_reader_falls_back_to_pathfinder(monkeypatch):
+    import phonksync.spotify as sp
+    from phonksync.models import Track as _Track
+
+    monkeypatch.setattr(
+        sp, "pathfinder_playlist",
+        lambda pid, client_token="": [_Track(id="tid1", name="Via Pathfinder",
+                                             artists=["X"], album="Al", duration_ms=1000,
+                                             uri="spotify:track:tid1")],
+    )
+    reader = sp.PublicPlaylistReader(_HtmlSession("<html>no payload</html>"), client_token="ct")
+    tracks = reader.playlist_tracks("PL1")
+    assert [t.name for t in tracks] == ["Via Pathfinder"]
+    assert reader.last_error == ""
 
 
 def test_public_reader_handles_http_errors():
@@ -895,3 +967,37 @@ def test_token_429_with_long_retry_after_parks_immediately(monkeypatch):
         client._ensure_token()
     assert session.calls == 1
     assert client.blocked_until > time.time() + 7100
+
+
+def test_proxy_post_falls_back_to_direct_on_html_error(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://p.example")
+    calls = []
+
+    class Resp:
+        def __init__(self, text, code=200):
+            self.text = text
+            self.status_code = code
+
+    def fake_post(url, **kw):
+        calls.append(url)
+        if "p.example" in url:
+            return Resp("<html>cors proxy says no</html>")
+        return Resp('{"data": {}}')
+
+    monkeypatch.setattr(sp.requests, "post", fake_post)
+    text = sp._proxy_post("https://api-partner.spotify.com/x", {"a": 1}, {})
+    assert text == '{"data": {}}'
+    assert len(calls) == 2 and "p.example" in calls[0]
+
+
+def test_diag_command_reports_routes(monkeypatch, capsys, tmp_path):
+    import phonksync.__main__ as main
+
+    monkeypatch.delenv("SPOTIFY_COOKIE", raising=False)
+    monkeypatch.setattr(main, "client_token", lambda: "ct", raising=False)
+    args = main.main(["diag", "--playlist", "PL1"])
+    out = capsys.readouterr().out
+    assert "client token" in out and "pathfinder" in out
+    assert args == 0
