@@ -635,3 +635,120 @@ def test_web_player_read_does_not_also_warn_about_the_public_page(monkeypatch, c
     report = engine.run()
     assert report.sources_read == 1
     assert not any("public page" in w for w in warnings)
+
+
+# ---------------------------------------------------------------- caching
+def _cache_with(monkeypatch, cfg, tracks, age_hours=0.0, snapshot=""):
+    import json as _json
+    import time as _time
+    from pathlib import Path
+
+    path = Path(cfg.source_cache_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps({"playlists": {cfg.spotify_source_playlists[0]: {
+        "ts": _time.time() - age_hours * 3600,
+        "snapshot": snapshot,
+        "tracks": [{
+            "id": t.id, "name": t.name, "artists": t.artists, "album": t.album,
+            "duration_ms": t.duration_ms, "isrc": t.isrc, "uri": t.uri,
+            "popularity": t.popularity, "sources": t.sources,
+        } for t in tracks],
+    }}}), encoding="utf-8")
+
+
+def test_stale_cache_is_replayed_when_spotify_is_parked(monkeypatch, cfg):
+    """A 10-day-old read beats a 429: zero calls, full track list."""
+    track = make_track(id="track000000000000000009")
+    _cache_with(monkeypatch, cfg, [track], age_hours=240)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.blocked_until = time.time() + 1800
+    spotify.playlist_tracks = lambda *a, **k: (_ for _ in ()).throw(AssertionError("no API"))
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda pid, report: [])
+    monkeypatch.setattr(engine, "_read_public_playlist", lambda pid, report, **kw: [])
+    report = engine.run()
+    assert report.stale_reads == 1
+    assert report.sources_read == 1
+
+
+def test_expired_cache_is_not_used(monkeypatch, cfg):
+    track = make_track(id="track000000000000000010")
+    cfg.spotify_cache_max_age_days = 1
+    _cache_with(monkeypatch, cfg, [track], age_hours=24 * 5)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.blocked_until = time.time() + 1800
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda pid, report: [])
+    monkeypatch.setattr(engine, "_read_public_playlist", lambda pid, report, **kw: [])
+    report = engine.run()
+    assert report.stale_reads == 0
+    assert report.sources_read == 0
+
+
+def test_cache_can_be_disabled(monkeypatch, cfg):
+    track = make_track(id="track000000000000000011")
+    cfg.spotify_cache_allow_stale = False
+    _cache_with(monkeypatch, cfg, [track], age_hours=240)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.blocked_until = time.time() + 1800
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda pid, report: [])
+    monkeypatch.setattr(engine, "_read_public_playlist", lambda pid, report, **kw: [])
+    report = engine.run()
+    assert report.stale_reads == 0
+
+
+def test_cache_fill_stores_tracks_without_the_web_api(tmp_path, monkeypatch, capsys):
+    import phonksync.__main__ as main
+    from phonksync import spotify as sp
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    cache_path = tmp_path / "source-cache.json"
+
+    class Cfg(Config):
+        @classmethod
+        def load(cls, path):
+            c = Config()
+            c.spotify_source_playlists = ["src111111111111111111111"]
+            c.source_cache_path = str(cache_path)
+            c.spotify_cache_allow_stale = True
+            c.spotify_cache_max_age_days = 30
+            return c
+
+    track = make_track(id="track000000000000000099", name="Cached One")
+    monkeypatch.setattr(main, "Config", Cfg)
+    monkeypatch.setattr(sp, "SpotifyClient", lambda *a, **kw: type(
+        "C", (), {"_pathfinder_tracks": lambda self, pid: [track]})())
+    monkeypatch.setenv("SPOTIFY_COOKIE", "sp_dc=" + "a" * 60)
+    assert main.main(["cache-fill"]) == 0
+    import json
+
+    saved = json.loads(cache_path.read_text(encoding="utf-8"))
+    ids = list(saved["playlists"]["src111111111111111111111"]["tracks"])
+    assert [t["name"] for t in ids] == ["Cached One"]
+    assert "stored" in capsys.readouterr().out
+
+
+def test_cache_command_lists_stored_playlists(monkeypatch, tmp_path, capsys):
+    import json
+
+    import phonksync.__main__ as main
+
+    cache_path = tmp_path / "source-cache.json"
+    cache_path.write_text(json.dumps({"playlists": {
+        "src111111111111111111111": {"ts": time.time(), "snapshot": "", "tracks": [{"id": "a", "name": "n"}]}
+    }}), encoding="utf-8")
+
+    class Cfg(Config):
+        @classmethod
+        def load(cls, path):
+            c = Config()
+            c.spotify_source_playlists = ["src111111111111111111111"]
+            c.source_cache_path = str(cache_path)
+            return c
+
+    monkeypatch.setattr(main, "Config", Cfg)
+    assert main.main(["cache"]) == 0
+    out = capsys.readouterr().out
+    assert "1 playlist(s)" in out and "src111111111111111111111" in out and "fresh" in out

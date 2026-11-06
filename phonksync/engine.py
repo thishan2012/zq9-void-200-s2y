@@ -65,6 +65,7 @@ class RunReport:
     manual_queued: int = 0
     skipped: int = 0
     web_reads: int = 0
+    stale_reads: int = 0
     backend: str = ""
     rate_limited_skips: int = 0
     spotify_throttled: bool = False
@@ -115,6 +116,11 @@ class RunReport:
             lines.append(f"🌐 Reads without the Web API (throttled): {self.web_reads}")
         if self.cached_sources:
             lines.append(f"♻️ Cached playlist reads reused: {self.cached_sources}")
+        if self.stale_reads:
+            lines.append(
+                f"🗄 Stale cache reads replayed: {self.stale_reads} "
+                "(no Spotify calls used — refresh by running with a clear cache)"
+            )
         if self.spotify_throttled and not self.inserted and not self.added:
             lines.append(
                 "⚠️ Spotify's Web API was throttled (429) — the run used the web "
@@ -166,7 +172,10 @@ class SyncEngine:
         )
         self.public_spotify = PublicPlaylistReader() if config.spotify_web_fallback else None
         self.source_cache = SourceCache(
-            config.source_cache_path, ttl_hours=config.source_cache_ttl_hours
+            config.source_cache_path,
+            ttl_hours=config.source_cache_ttl_hours,
+            allow_stale=config.spotify_cache_allow_stale,
+            stale_days=config.spotify_cache_max_age_days,
         )
 
         # YouTube sync is optional and disabled by default (Spotify-only mode).
@@ -432,6 +441,20 @@ class SyncEngine:
                     self._merge_tracks(seen, tracks, playlist_id, read_limit)
                     report.sources_read += 1
                     continue
+                usable = self.source_cache.fresh(playlist_id) or (
+                    self.source_cache.allow_stale and bool(cached)
+                )
+                if not snapshot and usable and not self.source_cache.fresh(playlist_id):
+                    age = self.source_cache.age_hours(playlist_id)
+                    self.telegram.warn(
+                        f"♻️ Spotify did not answer for <code>{playlist_id}</code> — replaying "
+                        f"the cached read ({len(cached['tracks'])} tracks, {age:.0f}h old)"
+                    )
+                    report.cached_sources += 1
+                    report.stale_reads += 1
+                    self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
+                    report.sources_read += 1
+                    continue
                 if not snapshot and self.source_cache.fresh(playlist_id):
                     # Snapshot unknown (blocked?) but the cache is fresh: prefer
                     # the cache over hammering Spotify again.
@@ -454,8 +477,12 @@ class SyncEngine:
                     report.sources_read += 1
                     report.spotify_throttled = True
                     continue
-                if cached is not None:
+                if cached is not None and (
+                    self.source_cache.fresh(playlist_id) or self.source_cache.allow_stale
+                ):
                     report.cached_sources += 1
+                    if not self.source_cache.fresh(playlist_id):
+                        report.stale_reads += 1
                     self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
                     report.sources_read += 1
                     report.spotify_throttled = True

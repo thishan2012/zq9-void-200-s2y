@@ -34,6 +34,38 @@ waited out, long ones park the run for 30 minutes, and a throttled token is
 the only reason it stopped was a cooldown — a red ✗ in Actions meant "throttled",
 not "broken".
 
+## The cache is the real budget saver
+
+Two caches, both on disk and now **committed with the state** so they survive
+between GitHub Actions runs (`.cache/` never did — that directory is git-ignored):
+
+| file | what it holds |
+|---|---|
+| `data/source-cache.json` | the last read of every source playlist (tracks + snapshot) |
+| `data/yt-cache.json` | YouTube searches and video metadata (extras keep the quota) |
+
+```text
+spotify_source_cache_ttl_hours = 12     # "unchanged playlist → reuse, 1 snapshot call"
+spotify_cache_allow_stale      = true   # replay an old read instead of calling Spotify
+spotify_cache_max_age_days     = 30     # how old a replayed read may be
+```
+
+A run that hits 429 now walks: web player → public page → **fresh cache** →
+**stale cache (≤30 days, zero calls)** → collection. So a throttled day costs
+nothing: the same 164 tracks are replayed from disk and the YouTube side carries
+on. The summary says so: `🗄 Stale cache reads replayed: 1`.
+
+Fill it deliberately when Spotify is answering:
+
+```bash
+python -m phonksync cache-fill     # read every source once, store it, no writes
+python -m phonksync cache --search # age/track count of everything stored
+python -m phonksync cache --clear  # start over
+```
+
+In Actions: **Run workflow → `fill_cache: true`** does just that (no sync, no
+writes), and every later run restores the file from the checkout.
+
 ## Routing through your own CORS proxy (clean egress IP)
 
 A token-level block follows the cookie, so a proxy is not a magic reset. It *is*
