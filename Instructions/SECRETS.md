@@ -145,6 +145,31 @@ Notes:
 - Your OAuth consent screen must include your Google account as a **Test user**, or the app must be published. Otherwise authorization can fail.
 - If no refresh token appears, revoke the app grant at https://myaccount.google.com/permissions and repeat the Playground authorization.
 
+### Access token vs refresh token (this is the "expires in 2 minutes" trap)
+
+Google hands out **two different tokens**, and only one of them is useful here:
+
+| token | lifetime | what it is |
+|---|---|---|
+| **access token** (`ya29.…`) | ~1 hour (often shown as "expires in 3599 s") | what every API call uses *right now* |
+| **refresh token** (`1//0g…`) | **does not expire** — until you revoke the app, change the account password, or leave the OAuth app in "Testing" for 7+ days | the long-lived secret you store in `YT_REFRESH_TOKEN` |
+
+The syncer stores the **refresh token** and mints a fresh access token on every
+run (`grant_type=refresh_token`), which is why it keeps working for months.
+If you paste an **access token** instead it will die within the hour — that is
+expected, and it is exactly what "expires in 2 minutes" looks like.
+
+If you only want to test writes **once** right now, a pasted access token is
+supported (it is never treated as a refresh token):
+
+```bash
+# temporary — dies with the token (~1h)
+YT_ACCESS_TOKEN=ya29.a0Af...     # GitHub secret or .env
+```
+
+The run summary then says
+`✍️ YouTube writes: manual access token (expires in ~1h, not renewable)`.
+
 ### Option B — Local helper (needs a terminal)
 
 On your own computer:
@@ -158,10 +183,38 @@ python -m phonksync youtube-auth --client-json client_secret.json
 
 1. A browser tab opens (or copy the printed URL).
 2. Choose your Google account → click through the "unverified app" warning if shown → **Allow**.
-3. The terminal prints `✅ Success!` and the refresh token.
+3. The terminal prints `✅ Success!` and the refresh token **plus a one-line
+   `YT_CLIENT_JSON`** you can paste as-is.
 4. Create the secret `YT_REFRESH_TOKEN` with that value.
 
 If Google doesn't return a refresh token: revoke the grant at https://myaccount.google.com/permissions and run the command again (it forces `prompt=consent`).
+
+#### If the redirect URI is rejected (`redirect_uri_mismatch` / "invalid request")
+
+Three ways out, in order of least effort:
+
+```bash
+# 1) no redirect URI at all — Google shows a code, you paste it on their page
+python -m phonksync youtube-auth --client-json client_secret.json --device
+
+# 2) print the consent URL for a redirect URI you registered yourself
+python -m phonksync youtube-auth --client-json client_secret.json \
+    --auth-url --redirect-uri http://127.0.0.1:8765/callback
+
+# 3) turn the `code=` you got back into a refresh token
+python -m phonksync youtube-auth --client-json client_secret.json \
+    --code 4/0AX4Xf... --redirect-uri http://127.0.0.1:8765/callback
+```
+
+Notes that save a round trip:
+- For a **Desktop app** client the loopback redirect is `http://127.0.0.1:8765/callback`
+  — Google accepts **`127.0.0.1`**, not `localhost`, for this (2026 change), and
+  it does not need to be registered at all for desktop clients.
+- For a **Web application** client the URI must be registered exactly, character
+  for character.
+- `--device` needs a client of type **"TVs and Limited Input devices"**; Google
+  refuses the device flow for other client types.
+- The authorization code is single-use and good for ~10 minutes.
 
 > Alternative: if you already have a token JSON containing `refresh_token`, `client_id`, and `client_secret`, you can store it as a single secret `YT_TOKEN_JSON` instead of the two secrets above.
 

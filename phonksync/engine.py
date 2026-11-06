@@ -76,6 +76,7 @@ class RunReport:
     searches_used: int = 0
     inserted: int = 0
     search_mode: str = ""
+    write_mode: str = ""
     dry_run: bool = False
     source_read_limit: int = 0
 
@@ -108,6 +109,8 @@ class RunReport:
                 f"🆓 Free YouTube searches: {self.free_searches} "
                 f"(0 quota), matches: {self.free_matches}"
             )
+        if self.write_mode:
+            lines.append(f"✍️ YouTube writes: {self.write_mode}")
         if self.searches_used:
             lines.append(
                 f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
@@ -214,6 +217,7 @@ class SyncEngine:
                 daily_quota_units=config.youtube_daily_quota_units,
                 free_search=config.youtube_free_search,
                 free_search_pause=config.youtube_free_search_pause,
+                access_token=secrets.youtube_access_token,
                 max_searches_per_run=config.max_searches_per_run,
                 max_searches_per_day=config.youtube_max_searches_per_day,
                 max_inserts_per_day=config.youtube_max_inserts_per_day,
@@ -241,10 +245,12 @@ class SyncEngine:
         if cfg.dry_run and cfg.dry_run_track_limit:
             mode += f" (first {cfg.dry_run_track_limit} source tracks)"
         targets = "Spotify + YouTube" if cfg.youtube_enabled else "Spotify only"
-        if cfg.youtube_enabled and self.youtube is not None and not getattr(
-            self.youtube, "can_write", True
-        ):
-            targets += " (read-only API key: search works, playlist adds need OAuth)"
+        if cfg.youtube_enabled and self.youtube is not None:
+            mode = getattr(self.youtube, "write_mode", "")
+            if not getattr(self.youtube, "can_write", True) and not mode.startswith("manual"):
+                targets += " (read-only API key: search works, playlist adds need OAuth)"
+            elif mode.startswith("manual"):
+                targets += f" ({mode})"
         self.telegram.info(
             f"🎧 <b>Phonk sync started</b>\n"
             f"Sources: {len(cfg.spotify_source_playlists)} playlists\n"
@@ -421,6 +427,7 @@ class SyncEngine:
             report.free_matches = int(getattr(self, "_free_matches", 0) or 0)
             report.inserted = int(getattr(self.youtube.quota, "inserts", 0) or 0)
             report.search_mode = getattr(self.youtube, "search_mode", "")
+            report.write_mode = getattr(self.youtube, "write_mode", "")
             self.state.save_quota(self.youtube.quota)
         report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
