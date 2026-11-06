@@ -7,6 +7,7 @@ variables / GitHub Secrets only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from typing import Any
 
 from .errors import ConfigError  # noqa: F401  (re-exported for convenience)
 
+
+log = logging.getLogger(__name__)
 
 _SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
 
@@ -54,6 +57,24 @@ def parse_youtube_playlist_id(value: str) -> str:
 
 def _split_ids(raw: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\n,;]+", raw or "") if p.strip()]
+
+
+def _env_number(name: str, low: float, high: float) -> float | None:
+    """Read a numeric env var, clamped; None when unset, empty or invalid.
+
+    Workflow inputs are strings and are very often empty ("" = use config.json),
+    so an empty or garbled value must fall back silently instead of crashing a
+    run that would otherwise work.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        log.warning("Ignoring invalid %s=%r", name, raw)
+        return None
+    return max(low, min(high, value))
 
 
 @dataclass
@@ -134,6 +155,12 @@ class Config:
             cfg.dry_run = True
         if os.environ.get("MAX_SEARCHES_PER_RUN"):
             cfg.max_searches_per_run = int(os.environ["MAX_SEARCHES_PER_RUN"])
+        pause = _env_number("YOUTUBE_FREE_SEARCH_PAUSE", 0.0, 10.0)
+        if pause is not None:
+            cfg.youtube_free_search_pause = pause
+        per_query = _env_number("SEARCH_RESULTS_PER_QUERY", 1, 50)
+        if per_query is not None:
+            cfg.search_results_per_query = int(per_query)
         if "YOUTUBE_FREE_SEARCH" in os.environ:
             cfg.youtube_free_search = os.environ["YOUTUBE_FREE_SEARCH"].strip().lower() in {
                 "1", "true", "yes",
