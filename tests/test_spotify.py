@@ -1070,8 +1070,6 @@ def test_write_falls_back_to_pathfinder_when_the_api_429s(monkeypatch):
 
 
 def test_write_does_not_fall_back_when_pathfinder_unproven(monkeypatch):
-    import phonksync.spotify as sp
-
     client, seen = _pf_client(monkeypatch, [{"data": {}}])
     monkeypatch.setattr(client, "_request", lambda *a, **kw: (_ for _ in ()).throw(RateLimited(30, "429")))
     with pytest.raises(RateLimited):
@@ -1103,3 +1101,40 @@ def test_hash_discovery_caches_success_but_not_failure(monkeypatch):
     assert sp._discover_persisted_hashes(["fetchPlaylist"]) == {"fetchPlaylist": "h" * 64}
     assert len(calls) == 2
     sp._discover_cached.cache_clear()
+
+
+def test_public_reader_names_the_pathfinder_reason(monkeypatch):
+    import phonksync.spotify as sp
+
+    def boom(*a, **k):
+        raise RuntimeError("pathfinder error: PersistedQueryNotFound")
+
+    monkeypatch.setattr(sp, "pathfinder_playlist", boom)
+    monkeypatch.setattr(sp, "client_token", lambda: "ct")
+    reader = sp.PublicPlaylistReader(_HtmlSession("<html>no payload</html>"), client_token="ct")
+    assert reader.playlist_tracks("PL1") == []
+    assert "PersistedQueryNotFound" in reader.last_error
+    assert "payload not found" in reader.last_error
+
+
+def test_public_reader_retry_clears_an_old_error(monkeypatch):
+    import phonksync.spotify as sp  # noqa: F401  (module under test)
+
+    monkeypatch.setattr(
+        sp, "pathfinder_playlist",
+        lambda *a, **k: [sp.Track(id="t1", name="N", artists=[], album="", duration_ms=1,
+                                  uri="spotify:track:t1")],
+    )
+    reader = sp.PublicPlaylistReader(_HtmlSession("<html>no payload</html>"), client_token="ct")
+    reader.last_error = "stale error from an earlier attempt"
+    assert [t.id for t in reader.playlist_tracks("PL1")] == ["t1"]
+    assert reader.last_error == ""
+
+
+def test_hash_can_be_overridden_from_the_environment(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setenv("SPOTIFY_HASH_ADDTOPLAYLIST", "c" * 64)
+    monkeypatch.setenv("SPOTIFY_HASH_FETCHPLAYLIST", "not-a-hash")
+    overrides = sp._hash_overrides()
+    assert overrides == {"addToPlaylist": "c" * 64}

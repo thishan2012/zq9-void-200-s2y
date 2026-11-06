@@ -84,7 +84,21 @@ throttled Web API (and even a stale cookie) no longer stops a read:
 3. Cached read → saved collection.
 
 The persisted-query hash is read from the live web-player bundle when Spotify
-rotates it (a known-good hash is built in as a fallback). Check what works from
+rotates it (a known-good hash is built in as a fallback). Expected log line once the web player route is in use:
+
+```text
+🌐 Read 1G84… from the web player endpoint — 164 tracks (Web API not used)
+```
+
+and **no** "Could not read … from the public page" warning next to it: the public
+page is only attempted, and only reported, when the web player route produced
+nothing. If you ever need to pin a rotated hash yourself:
+
+```bash
+SPOTIFY_HASH_ADDTOPLAYLIST=<64 hex chars>   # or SPOTIFY_HASH_FETCHPLAYLIST
+```
+
+Check what works from
 your runner at any time:
 
 ```bash

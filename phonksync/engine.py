@@ -115,9 +115,14 @@ class RunReport:
             lines.append(f"🌐 Reads without the Web API (throttled): {self.web_reads}")
         if self.cached_sources:
             lines.append(f"♻️ Cached playlist reads reused: {self.cached_sources}")
-        if self.spotify_throttled:
+        if self.spotify_throttled and not self.inserted and not self.added:
             lines.append(
-                "⚠️ Spotify rate limited (429): used the tracks read so far — "
+                "⚠️ Spotify's Web API was throttled (429) — the run used the web "
+                "player route instead. Nothing to fix; the next run continues."
+            )
+        elif self.spotify_throttled:
+            lines.append(
+                "⚠️ Spotify rate limited (429): wrote what it could — "
                 "wait a few minutes and run again to continue"
             )
         if self.quota_stopped:
@@ -238,9 +243,9 @@ class SyncEngine:
                 # kill the run. Try the public page, else trust our state file.
                 report.spotify_throttled = True
                 target_spotify_ids = set()
-                web_target = self._read_public_playlist(
+                web_target = self._read_pathfinder(
                     cfg.spotify_target_playlist, report
-                ) or self._read_pathfinder(cfg.spotify_target_playlist, report)
+                ) or self._read_public_playlist(cfg.spotify_target_playlist, report, quiet=True)
                 if web_target:
                     target_spotify_ids = {t.id for t in web_target}
                 else:
@@ -470,10 +475,11 @@ class SyncEngine:
                         str(exc).splitlines()[0][:120],
                     )
                 report.spotify_throttled = True
-                # 1) read the public page (no API, no token, no quota)
-                web_tracks = self._read_public_playlist(playlist_id, report)
+                # 1) web player endpoint first (the route that actually works),
+                #    then the public page — and only complain if both fail.
+                web_tracks = self._read_pathfinder(playlist_id, report)
                 if not web_tracks:
-                    web_tracks = self._read_pathfinder(playlist_id, report)
+                    web_tracks = self._read_public_playlist(playlist_id, report, quiet=True)
                 if web_tracks:
                     self._merge_tracks(seen, web_tracks, playlist_id, read_limit)
                     report.sources_read += 1
@@ -564,8 +570,10 @@ class SyncEngine:
             log.debug("Could not cache the pathfinder read: %s", exc)
         return tracks
 
-    def _read_public_playlist(self, playlist_id: str, report: RunReport) -> list[Track]:
-        """Fallback #1: public HTML page (works while the API is throttled)."""
+    def _read_public_playlist(
+        self, playlist_id: str, report: RunReport, quiet: bool = False
+    ) -> list[Track]:
+        """Fallback #2: public HTML page (works while the API is throttled)."""
         if self.public_spotify is None:
             return []
         try:
@@ -574,10 +582,11 @@ class SyncEngine:
             log.warning("Public playlist read failed: %s", exc)
             return []
         if not tracks:
-            self.telegram.warn(
-                f"🌐 Could not read <code>{playlist_id}</code> from the public page "
-                f"({self.public_spotify.last_error or 'unknown'}) — is it public?"
-            )
+            if not quiet:
+                self.telegram.warn(
+                    f"🌐 Could not read <code>{playlist_id}</code> from the public page "
+                    f"({self.public_spotify.last_error or 'unknown'}) — is it public?"
+                )
             return []
         report.web_reads += 1
         self.telegram.info(
