@@ -288,6 +288,20 @@ def cmd_diag(args: argparse.Namespace) -> int:
     else:
         print("1️⃣  Web API token : skipped (no SPOTIFY_COOKIE)")
 
+    # 2) the web player backend with the account's bearer (the route that works)
+    if secrets.spotify_cookie:
+        try:
+            client = SpotifyClient(secrets.spotify_cookie)
+            if playlist:
+                tracks = client._pathfinder_tracks(playlist)
+                print(f"1️⃣b web player    : {'✅' if tracks else '❌'} "
+                      f"{len(tracks)} track(s) via fetchPlaylistContents")
+                client.pathfinder_ok = bool(tracks)
+            if client.pathfinder_ok:
+                print("    backend: web-player (REST will only be used as a fallback)")
+        except Exception as exc:
+            print(f"1️⃣b web player    : ❌ {str(exc)[:180]}")
+
     # 2) client token + pathfinder (no login, no Web API)
     token = client_token()
     print(f"2️⃣  client token  : {'✅' if token else '❌'} ({len(token)} chars)")
