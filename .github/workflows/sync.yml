@@ -17,6 +17,10 @@ on:
         description: "Seconds to wait between Spotify API calls (empty = config.json, 2s)"
         type: string
         default: ""
+      fill_cache:
+        description: "Only store the source playlists for later runs (no sync, no writes)"
+        type: boolean
+        default: false
       backend:
         description: "Spotify backend: auto (default) or web-player"
         type: string
@@ -85,7 +89,19 @@ jobs:
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
         run: python -m phonksync diag
 
+      - name: Fill source cache
+        if: ${{ inputs.fill_cache }}
+        env:
+          SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
+          SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+          SPOTIFY_BACKEND: ${{ inputs.backend }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
+        run: python -m phonksync cache-fill
+
       - name: Run sync
+        if: ${{ !inputs.fill_cache }}
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -123,6 +139,8 @@ jobs:
             git add data/sync-state.json
             [ -f data/manual-queue.txt ] && git add data/manual-queue.txt
             [ -f data/collection.json ] && git add data/collection.json
+            [ -f data/source-cache.json ] && git add data/source-cache.json
+            [ -f data/yt-cache.json ] && git add data/yt-cache.json
             if git diff --cached --quiet; then
               echo "No state changes to commit."
             else

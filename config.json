@@ -22,13 +22,15 @@
   "spotify_queue_flush_size": 40,
   "spotify_request_delay_seconds": 2,
   "spotify_proxy_url": "",
-  "source_cache_path": ".cache/source-tracks.json",
+  "source_cache_path": "data/source-cache.json",
   "source_cache_ttl_hours": 12,
+  "spotify_cache_allow_stale": true,
+  "spotify_cache_max_age_days": 30,
   "spotify_web_fallback": true,
   "spotify_collection_fallback": true,
   "collection_path": "data/collection.json",
   "manual_queue_path": "data/manual-queue.txt",
   "state_path": "data/sync-state.json",
   "overrides_path": "data/track-overrides.json",
-  "cache_path": ".cache/yt-cache.json"
+  "cache_path": "data/yt-cache.json"
 }

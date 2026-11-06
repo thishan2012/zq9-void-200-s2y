@@ -81,17 +81,18 @@ class Config:
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
     spotify_proxy_url: str = ""  # CORS proxy for Spotify calls (clean egress IP)
-    spotify_proxy_url: str = ""  # CORS proxy for Spotify calls (clean egress IP)
     spotify_web_fallback: bool = True  # read public playlists from the HTML page on 429
     spotify_collection_fallback: bool = True  # use a saved collection when the API is blocked
     spotify_queue_flush_size: int = 40
     manual_queue_path: str = "data/manual-queue.txt"
     collection_path: str = "data/collection.json"
-    source_cache_path: str = ".cache/source-tracks.json"
+    source_cache_path: str = "data/source-cache.json"
     source_cache_ttl_hours: int = 12  # reuse a playlist read while it is unchanged
+    spotify_cache_allow_stale: bool = True  # replay an old read instead of calling Spotify
+    spotify_cache_max_age_days: int = 30  # how old a replayed read may be
     state_path: str = "data/sync-state.json"
     overrides_path: str = "data/track-overrides.json"
-    cache_path: str = ".cache/yt-cache.json"
+    cache_path: str = "data/yt-cache.json"
 
     @classmethod
     def load(cls, path: str | Path = "config.json") -> "Config":

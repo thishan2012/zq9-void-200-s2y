@@ -57,6 +57,9 @@ class SearchCache:
         )
         tmp.replace(self.path)
 
+    def size(self) -> int:
+        return len(self._queries)
+
     @staticmethod
     def query_key(query: str, max_results: int, region: str) -> str:
         return f"{region}|{max_results}|{' '.join(query.lower().split())}"
@@ -100,11 +103,23 @@ class SourceCache:
     when Spotify is unreachable we fall back to it and say so in the log.
     """
 
-    def __init__(self, path: str | Path, ttl_hours: int = 12, max_playlists: int = 50):
+    def __init__(
+        self,
+        path: str | Path,
+        ttl_hours: int = 12,
+        max_playlists: int = 50,
+        allow_stale: bool = True,
+        stale_days: int = 30,
+    ):
         self.path = Path(path)
         self.ttl = max(1, ttl_hours) * 3600
         self.max_playlists = max_playlists
+        # A stale read is still a read: while Spotify is throttling, replaying a
+        # 30-day-old playlist costs zero API calls.
+        self.allow_stale = allow_stale
+        self.stale_ttl = max(1, stale_days) * 86400
         self._items: dict[str, dict[str, Any]] = {}
+        self._trimmed = 0
         self._load()
 
     def _load(self) -> None:
@@ -114,7 +129,12 @@ class SourceCache:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return
-        self._items = data.get("playlists") or {}
+        now = time.time()
+        for pid, entry in (data.get("playlists") or {}).items():
+            if now - entry.get("ts", 0) <= self.stale_ttl:
+                self._items[pid] = entry
+            else:
+                self._trimmed += 1
 
     def fresh(self, playlist_id: str) -> bool:
         entry = self._items.get(playlist_id)
@@ -146,6 +166,29 @@ class SourceCache:
             "tracks": tracks,
             "fresh": self.fresh(playlist_id),
         }
+
+    def age_hours(self, playlist_id: str) -> float:
+        entry = self._items.get(playlist_id)
+        if not entry:
+            return 0.0
+        return (time.time() - entry.get("ts", 0)) / 3600
+
+    def sources(self) -> list[dict[str, Any]]:
+        """Every cached playlist: id, track count, age, freshness."""
+        now = time.time()
+        out: list[dict[str, Any]] = []
+        for pid, entry in self._items.items():
+            age = now - entry.get("ts", 0)
+            out.append(
+                {
+                    "playlist": pid,
+                    "tracks": len(entry.get("tracks") or []),
+                    "age_hours": age / 3600,
+                    "fresh": age <= self.ttl,
+                    "usable": self.allow_stale or age <= self.ttl,
+                }
+            )
+        return sorted(out, key=lambda row: row["age_hours"])
 
     def put(self, playlist_id: str, tracks: list[Any], snapshot: str = "") -> None:
         self._items[playlist_id] = {

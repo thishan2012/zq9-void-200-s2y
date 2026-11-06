@@ -326,6 +326,91 @@ def cmd_diag(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cache(args: argparse.Namespace) -> int:
+    """Show (or clear) the disk caches the sync relies on."""
+    from .cache import SearchCache, SourceCache
+
+    cfg = Config.load(args.config)
+    sources = SourceCache(
+        cfg.source_cache_path,
+        ttl_hours=cfg.source_cache_ttl_hours,
+        allow_stale=cfg.spotify_cache_allow_stale,
+        stale_days=cfg.spotify_cache_max_age_days,
+    )
+    rows = sources.sources()
+    print(f"🗄 Source cache: {cfg.source_cache_path} ({len(rows)} playlist(s))")
+    for row in rows:
+        mark = "fresh" if row["fresh"] else ("stale — replayed when needed" if row["usable"] else "expired")
+        print(f"   {row['playlist']}  {row['tracks']:>5} tracks  {row['age_hours']:>6.1f}h  {mark}")
+    if not rows:
+        print("   (empty — run `phonksync cache-fill` while Spotify is answering)")
+    if args.clear:
+        for suffix in ("", ".tmp"):
+            path = Path(cfg.source_cache_path + suffix)
+            if path.exists():
+                path.unlink()
+        print("🧹 Source cache cleared")
+    if args.clear_search:
+        path = Path(cfg.cache_path)
+        if path.exists():
+            path.unlink()
+        print("🧹 Search cache cleared")
+    searches = SearchCache(cfg.cache_path, ttl_days=cfg.search_cache_ttl_days) if args.search else None
+    if searches is not None:
+        print(f"🔎 Search cache: {cfg.cache_path} — {searches.size()} queries")
+    return 0
+
+
+def cmd_cache_fill(args: argparse.Namespace) -> int:
+    """Read every source playlist once and store it, so later runs need 0 calls.
+
+    Run this while Spotify is answering normally (a good first run of the day).
+    Afterwards a throttled run can replay the stored reads and still produce a
+    full track list — including for the YouTube side, which needs no quota here.
+    """
+    from .cache import SourceCache
+    from .spotify import PublicPlaylistReader, SpotifyClient, pathfinder_playlist
+
+    cfg = Config.load(args.config)
+    secrets = Secrets.from_env()
+    sources = SourceCache(
+        cfg.source_cache_path,
+        ttl_hours=cfg.source_cache_ttl_hours,
+        allow_stale=cfg.spotify_cache_allow_stale,
+        stale_days=cfg.spotify_cache_max_age_days,
+    )
+    playlists = args.playlist or list(cfg.spotify_source_playlists)
+    if not playlists:
+        print("❌ No source playlists configured", file=sys.stderr)
+        return 2
+    client = SpotifyClient(secrets.spotify_cookie) if secrets.spotify_cookie else None
+    reader = PublicPlaylistReader()
+    saved = 0
+    for playlist_id in playlists:
+        tracks = []
+        if client is not None:
+            try:
+                tracks = client._pathfinder_tracks(playlist_id)
+            except Exception as exc:
+                print(f"   {playlist_id}: web player read failed ({str(exc)[:90]})")
+        if not tracks:
+            try:
+                tracks = pathfinder_playlist(playlist_id)
+            except Exception:
+                tracks = []
+        if not tracks and reader is not None:
+            tracks = reader.playlist_tracks(playlist_id)
+        if not tracks:
+            print(f"❌ {playlist_id}: nothing readable right now")
+            continue
+        sources.put(playlist_id, tracks, "")
+        saved += 1
+        print(f"✅ {playlist_id}: {len(tracks)} tracks stored")
+    sources.save()
+    print(f"🗄 Saved {saved} playlist(s) to {cfg.source_cache_path}")
+    return 0 if saved else 1
+
+
 def cmd_collect(args: argparse.Namespace) -> int:
     """Save a playlist's tracks into state so a blocked API never stops a run.
 
@@ -518,6 +603,18 @@ def main(argv: list[str] | None = None) -> int:
     p_proxy.add_argument("--url", default="", help="Proxy base URL (overrides the env var)")
     p_proxy.add_argument("--playlist", default="", help="Optional public playlist ID to read")
     p_proxy.set_defaults(func=cmd_proxy_test)
+
+    p_cache = sub.add_parser("cache", help="Show/clear the source + search caches")
+    p_cache.add_argument("--clear", action="store_true", help="Delete the source cache")
+    p_cache.add_argument("--clear-search", action="store_true", help="Delete the search cache")
+    p_cache.add_argument("--search", action="store_true", help="Also show search-cache stats")
+    p_cache.set_defaults(func=cmd_cache)
+
+    p_fill = sub.add_parser(
+        "cache-fill", help="Read every source playlist now and store it for later runs"
+    )
+    p_fill.add_argument("playlist", nargs="*", default=[], help="Playlist IDs (default: sources)")
+    p_fill.set_defaults(func=cmd_cache_fill)
 
     p_diag = sub.add_parser(
         "diag", help="Show which Spotify routes work right now (token / client token / pathfinder / page)"
