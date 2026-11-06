@@ -715,3 +715,97 @@ def test_diag_never_reprints_the_cookie_name_or_value():
     diag = yt.cookie_diag()
     assert "__Secure-3PAPISID" not in diag  # the old text got mangled into "**Secure"
     assert "no usable SAPISID" in diag
+
+
+# ------------------------------------------------------- free-page speed
+class _Resp:
+    def __init__(self, text="", status=200, elapsed=0.0):
+        self.text = text
+        self.status_code = status
+        self.elapsed = _Elapsed(elapsed)
+
+
+class _Elapsed:
+    def __init__(self, seconds):
+        self._s = seconds
+
+    def total_seconds(self):
+        return self._s
+
+
+class _Session:
+    """Counts page loads; every page is a fixed-latency fake."""
+
+    def __init__(self, latency=0.4, ids=None):
+        self.latency = latency
+        self.calls = []
+        self.ids = ids or []
+
+    def mount(self, *a, **kw):
+        pass
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append((url, (params or {}).get("v") or (params or {}).get("search_query")))
+        text = ""
+        if "results" in url:
+            text = "".join(f'"videoId":"vid{i:08d}"' for i in range(len(self.ids)))
+        else:
+            vid = (params or {}).get("v") or ""
+            text = 'ytInitialPlayerResponse = ' + json.dumps(
+                {
+                    "videoDetails": {
+                        "videoId": vid,
+                        "title": "Nulteex - MONTAGEM MIAU",
+                        "author": "Nulteex - Topic",
+                        "lengthSeconds": "120",
+                    }
+                }
+            )
+        return _Resp(text=text, elapsed=self.latency)
+
+
+def _client(session, pause=1.0):
+    from phonksync.youtube import YouTubeClient
+
+    return YouTubeClient(
+        cookie="SID=a; __Secure-3PAPISID=b",
+        free_search=True,
+        free_search_pause=pause,
+        web_session=session,
+    )
+
+
+def test_a_video_page_is_never_downloaded_twice():
+    ids = [f"vid{i:08d}" for i in range(3)]
+    session = _Session(ids=ids)
+    yt = _client(session, pause=0.0)
+    yt.free_videos(ids)
+    first = len(session.calls)
+    yt.free_videos(ids)  # the next pipeline step asks for the same ids
+    assert len(session.calls) == first  # 0 extra page loads
+    assert yt.free_pages_this_run == 3
+
+
+def test_page_gap_counts_the_time_the_page_already_took(monkeypatch):
+    """A 0.9s page + 1.0s gap must not become 1.9s of waiting."""
+    slept = []
+    monkeypatch.setattr("phonksync.youtube.time.sleep", lambda s: slept.append(s))
+    session = _Session(latency=0.9, ids=["vid00000000"])
+    yt = _client(session, pause=1.0)
+    yt.free_search_ids("nulteex montagem miau")
+    assert slept and abs(slept[0] - 0.1) < 1e-6
+
+
+def test_video_pages_are_paced_lighter_than_searches(monkeypatch):
+    slept = []
+    monkeypatch.setattr("phonksync.youtube.time.sleep", lambda s: slept.append(s))
+    session = _Session(latency=0.0, ids=[])
+    yt = _client(session, pause=1.0)
+    yt.free_videos(["vid00000001", "vid00000002"])
+    assert all(s <= 0.25 for s in slept), slept
+
+
+def test_keepalive_adapter_is_mounted_once():
+    session = _Session()
+    yt = _client(session, pause=0.0)
+    assert yt.web_session is session

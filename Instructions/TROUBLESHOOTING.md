@@ -238,14 +238,46 @@ dry run always previewed `dry_run_track_limit` (default 200). Now:
 - the summary says which one won: `🧪 DRY RUN — previewed 30 track(s) (your limit: 30)`.
 
 **The 429.** A dry run still *reads* Spotify (one call per ~100 tracks plus the
-target playlist), and every call is paced 2s apart. Now a 429 ends Web API
-spending for the rest of the run — the remaining sources are read through the
-web-player route instead of retrying into a growing block:
+target playlist), and every call is paced 2s apart. A 429 ends Web API spending
+for the rest of the run — the remaining sources are read through the web-player
+route instead of retrying into a growing block.
+
+**No cooldown is ever stored, and no run skips itself.** A 429 only affects the
+run it happened in:
 
 ```
-⚠️ Spotify cooldown until 2026-11-06 04:27 UTC
-🌐 Reads without the Web API (throttled): 1
+⚠️ Spotify asked to slow down until 2026-11-06 04:27 UTC — this run only, nothing is stored
+⏩ Spotify asked to slow down (25m left) — reading through the web-player route, no Web API calls this run
 ```
+
+The second line is what a later run prints if it starts while the old window is
+still open: it runs anyway, it just avoids the Web API for that run.
+
+## A run is slower than "2s per request" — where do the minutes go?
+
+Read the timing lines in the summary:
+
+```
+🆓 Free YouTube: 10 search(es) + 47 video pages (0 quota), matches: 5
+⏱ Took 4m 12s for 5 track(s) (50s per track)
+```
+
+A track that no method can match costs **up to 7 searches** (the 31 steps reuse
+the same candidate pool, but each *new* query is a new page load). Old builds
+also paused a full second after every search plus half a second after **each**
+watch page, and re-downloaded pages a later step had already seen — that is
+where "5 songs = 5 minutes" came from.
+
+Now:
+
+* the gap after a page counts the time the page itself took (`.elapsed`), so a
+  900ms page no longer waits another full second;
+* watch pages are paused 0.25s and cached for the rest of the process — a page
+  is downloaded once, not once per step;
+* all free page loads share one keep-alive connection (no TLS handshake each).
+
+If you still want it faster, lower `search_results_per_query` (10 → 5 halves
+the page fetches) or `youtube_free_search_pause` (1.0 → 0.3).
 
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.

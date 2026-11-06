@@ -47,6 +47,18 @@ _UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 # videoId entries in the results page's JSON (watch?v= links also match).
+def _elapsed(resp: Any) -> float:
+    """How long the request behind ``resp`` took (0 when unknown)."""
+    check = getattr(resp, "elapsed", None)
+    total = getattr(check, "total_seconds", None)
+    if callable(total):
+        try:
+            return max(0.0, float(total()))
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
 _FREE_ID_RE = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
 _SCOPE = "https://www.googleapis.com/auth/youtube"
 _YTM_API = "https://music.youtube.com/youtubei/v1/"
@@ -274,6 +286,18 @@ class YouTubeClient:
         # The public web pages must not go through the API session (different
         # auth, different error handling, and tests inject a fake API session).
         self.web_session = web_session or requests.Session()
+        # One keep-alive connection for every free page load: a fresh TLS
+        # handshake per watch page was the biggest hidden cost of a run.
+        try:
+            adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=8)
+            self.web_session.mount("https://", adapter)
+            self.web_session.mount("http://", adapter)
+        except AttributeError:
+            pass  # a test double, not a real session
+        # Metadata already seen (per process): the 31 steps re-ask for the same
+        # candidate set, and a repeated watch-page fetch costs half a second.
+        self._video_memo: dict[str, Candidate] = {}
+        self.free_pages_this_run = 0  # watch pages actually downloaded
         self.quota = quota_state or QuotaState()
         self.quota.rollover()
         self.region_code = region_code
@@ -812,9 +836,19 @@ class YouTubeClient:
             if video_id not in seen:
                 seen.append(video_id)
         self.free_searches_this_run += 1
-        if self.free_search_pause:
-            time.sleep(self.free_search_pause)
+        self._pause_after(resp, self.free_search_pause)
         return seen[:max_results]
+
+    def _pause_after(self, resp: Any, wanted: float) -> None:
+        """Wait *wanted* seconds in total, minus the time the request took.
+
+        A page that already needed 400ms does not need another full second on
+        top: the gap exists to avoid hammering YouTube, not to pad the run.
+        """
+        elapsed = _elapsed(resp)
+        gap = max(0.0, wanted - elapsed)
+        if gap > 0:
+            time.sleep(gap)
 
     def search(self, query: str, max_results: int = 10) -> list[str]:
         if not self.api_keys and self.cookie and self._sapisid():
@@ -924,7 +958,14 @@ class YouTubeClient:
         costs a single unit unless the real API key search is needed.
         """
         out: list[Candidate] = []
+        memo = getattr(self, "_video_memo", None)
+        if memo is None:
+            memo = self._video_memo = {}
         for video_id in video_ids:
+            if video_id in memo:
+                out.append(memo[video_id])
+                continue
+            self.free_pages_this_run += 1
             try:
                 resp = self.web_session.get(
                     "https://www.youtube.com/watch",
@@ -942,9 +983,12 @@ class YouTubeClient:
                 log.debug("Free video fetch failed for %s: %s", video_id, exc)
                 continue
             if candidate:
+                memo[video_id] = candidate
                 out.append(candidate)
             if self.free_search_pause:
-                time.sleep(min(self.free_search_pause, 0.5))
+                # A page that had to be fetched anyway; 0.25s is enough of a
+                # politeness gap and keeps ~10 candidates under 3s.
+                time.sleep(min(self.free_search_pause, 0.25))
         return out
 
     def videos(self, video_ids: list[str]) -> list[Candidate]:
