@@ -74,6 +74,7 @@ class RunReport:
     youtube_readonly: int = 0
     pending_youtube_flushed: int = 0
     youtube_write_problem: str = ""
+    youtube_inserted: int = 0
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -127,6 +128,13 @@ class RunReport:
             )
         if self.write_mode:
             lines.append(f"✍️ YouTube writes: {self.write_mode}")
+        if self.youtube_inserted:
+            # The proof that the credential can actually write, not just refresh.
+            lines.append(
+                f"✅ YouTube inserts confirmed by Google: {self.youtube_inserted} "
+                f"(daily total {self.inserted})"
+            )
+
         if self.searches_used:
             lines.append(
                 f"🔎 Searches this run: {self.searches_used} (mode: {self.search_mode or 'n/a'})"
@@ -497,6 +505,9 @@ class SyncEngine:
             report.free_searches = int(getattr(self.youtube, "free_searches_this_run", 0) or 0)
             report.free_matches = int(getattr(self, "_free_matches", 0) or 0)
             report.inserted = int(getattr(self.youtube.quota, "inserts", 0) or 0)
+            report.youtube_inserted = int(
+                getattr(self.youtube, "inserts_this_run", 0) or 0
+            )
             report.search_mode = getattr(self.youtube, "search_mode", "")
             report.write_mode = getattr(self.youtube, "write_mode", "")
             self.state.save_quota(self.youtube.quota)

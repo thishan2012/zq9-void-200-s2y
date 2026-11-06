@@ -692,11 +692,22 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
         auth_url,
         client_section,
         cookie_help,
+        cookie_test,
         doctor,
         exchange_code,
         run_device_flow,
         run_oauth_flow,
     )
+
+    if getattr(args, "test_cookie", False):
+        raw = (args.cookie or "").strip()
+        if getattr(args, "cookie_stdin", False) or raw == "-":
+            raw = sys.stdin.read()
+        return cookie_test(
+            playlist=args.playlist or os.environ.get("YOUTUBE_TARGET_PLAYLIST", ""),
+            cookie=raw,
+            authuser=args.authuser or os.environ.get("YT_AUTHUSER", "0"),
+        )
 
     if getattr(args, "cookie_help", False):
         raw = (args.cookie or "").strip()
@@ -872,9 +883,20 @@ def main(argv: list[str] | None = None) -> int:
         "--cookie", default="", help="Cookie header to check with --cookie-help ('-' = stdin)"
     )
     p_auth.add_argument(
+        "--test-cookie",
+        action="store_true",
+        help="Prove the cookie can write: add an existing video, confirm, undo it",
+    )
+    p_auth.add_argument(
+        "--playlist", default="", help="Playlist for --test-cookie (default YOUTUBE_TARGET_PLAYLIST)"
+    )
+    p_auth.add_argument(
+        "--authuser", default="", help="X-Goog-AuthUser for --test-cookie (default YT_AUTHUSER or 0)"
+    )
+    p_auth.add_argument(
         "--cookie-stdin",
         action="store_true",
-        help="Read the pasted Cookie header from stdin (for --cookie-help)",
+        help="Read the pasted Cookie header from stdin (for --cookie-help/--test-cookie)",
     )
     p_auth.set_defaults(func=cmd_youtube_auth)
 

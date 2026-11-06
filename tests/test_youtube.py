@@ -603,3 +603,81 @@ def test_cookie_diag_explains_a_broken_paste_without_leaking_it():
     ok = YouTubeClient(api_key="", cookie=COOKIE, free_search=False).cookie_diag()
     assert "cookie ok" in ok and "full session cookie" in ok
     assert "sapisid-value" not in ok  # never the raw value
+
+
+# ------------------------- proving the cookie really writes (probe command)
+def test_cookie_probe_adds_an_existing_video_and_undoes_the_extra_copy(monkeypatch, capsys):
+    from phonksync import oauth_setup
+
+    state = {"items": [{"video_id": "vidA", "set_video_id": "set1"}]}
+    calls = []
+
+    def post(self, url, json=None, timeout=None, **kw):
+        calls.append(json)
+        action = json["actions"][0]["action"]
+        if action == "ACTION_ADD_VIDEO":
+            state["items"].append({"video_id": json["actions"][0]["addedVideoId"],
+                                   "set_video_id": "set2"})
+        else:
+            state["items"] = [i for i in state["items"] if i["set_video_id"] != "set2"]
+        return FakeResponse(200, {"status": "STATUS_SUCCEEDED"})
+
+    def fake_request(self, endpoint, payload):
+        calls.append(payload)
+        if endpoint == "browse":
+            return {
+                "contents": [
+                    {"playlistItemData": {"videoId": i["video_id"]},
+                     "setVideoId": i["set_video_id"]}
+                    for i in state["items"]
+                ]
+            }
+        action = payload["actions"][0]["action"]
+        if action == "ACTION_ADD_VIDEO":
+            state["items"].append({"video_id": payload["actions"][0]["addedVideoId"],
+                                   "set_video_id": "set2"})
+        else:
+            state["items"] = [i for i in state["items"] if i["set_video_id"] != "set2"]
+        return {"status": "STATUS_SUCCEEDED"}
+
+    monkeypatch.setattr("phonksync.youtube.YouTubeClient._ytm_request", fake_request)
+    rc = oauth_setup.cookie_test(
+        playlist="PLtest000000000000000000000000000", cookie=COOKIE
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Write accepted and confirmed" in out
+    assert "Cookie writes VERIFIED end to end" in out
+    assert "Undone" in out or "already present" in out
+    # the undo left exactly what was there before the probe
+    assert state["items"] == [{"video_id": "vidA", "set_video_id": "set1"}]
+
+
+def test_cookie_probe_refuses_a_broken_cookie(capsys):
+    from phonksync.oauth_setup import cookie_test
+
+    assert cookie_test("PLtest", cookie="SID=a") == 1
+    assert "no __Secure-3PAPISID" in capsys.readouterr().out
+
+
+def test_cookie_probe_explains_a_network_failure(monkeypatch, capsys):
+    from phonksync import oauth_setup
+    from phonksync.errors import RateLimited
+    from phonksync.youtube import YouTubeClient
+
+    def boom(self, endpoint, body):
+        raise RateLimited(message="YouTube Music request failed (SSLError: closed)")
+
+    monkeypatch.setattr(YouTubeClient, "_ytm_request", boom)
+    rc = oauth_setup.cookie_test("PLtest", cookie=COOKIE)
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "no network path" in out
+
+
+def test_run_summary_reports_confirmed_inserts():
+    from phonksync.engine import RunReport
+
+    report = RunReport(youtube_inserted=3, inserted=5, write_mode="browser cookie")
+    text = report.summary_text()
+    assert "YouTube inserts confirmed by Google: 3" in text
