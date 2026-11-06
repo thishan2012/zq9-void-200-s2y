@@ -70,6 +70,7 @@ class RunReport:
     backend: str = ""
     rate_limited_skips: int = 0
     free_searches: int = 0
+    skipped_by_choice: int = 0
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -89,6 +90,11 @@ class RunReport:
             f"⏭ Deferred (retry later): {self.deferred}",
             f"♻️ Duplicates skipped: {self.duplicates}",
         ]
+        if self.skipped_by_choice:
+            lines.append(
+                f"🙅 Skipped by choice: {self.skipped_by_choice} (not on YouTube / not "
+                "wanted — never retried; `phonksync skip --clear <id>` undoes it)"
+            )
         if self.budget_skips:
             lines.append(
                 f"⏸ Search budget ran out for {self.budget_skips} track(s) — they were "
@@ -320,6 +326,11 @@ class SyncEngine:
         for track in tracks:
             if cfg.max_tracks_per_run and processed >= cfg.max_tracks_per_run:
                 break
+
+            # Explicitly skipped by a human: no search, no unmatched record.
+            if self.state.is_skipped(track.id):
+                report.skipped_by_choice += 1
+                continue
 
             entry = self.state.get_synced(track.id) or {}
             spotify_done = bool(entry.get("spotify_added")) or track.id in target_spotify_ids

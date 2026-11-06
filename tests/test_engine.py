@@ -778,3 +778,75 @@ def test_budget_exhaustion_is_reported_separately_from_unmatched(monkeypatch, cf
     assert report.unmatched == 0
     # a budget skip must not start the multi-day "retry later" clock
     assert engine.state.unmatched_tries(tracks[0].id) == 0
+
+
+def test_skipped_tracks_cost_nothing_and_are_not_unmatched(monkeypatch, cfg):
+    keep = make_track(id="track000000000000000021", name="Keep Me")
+    drop = make_track(id="track000000000000000022", name="Not On YouTube")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [keep, drop]})
+    youtube = EngineYouTube()
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    engine.state.skip(drop, "not on YouTube")
+    report = engine.run()
+    assert report.skipped_by_choice == 1
+    assert drop.id not in (engine.state.data.get("unmatched") or {})
+    searched = [" ".join(q.split()) for q in youtube.searches]
+    assert not any("not on youtube" in q for q in searched)
+    assert engine.state.unmatched_tries(drop.id) == 0
+    assert engine.state.is_skipped(drop.id)
+
+
+def test_skip_cli_marks_and_clears(tmp_path, monkeypatch, capsys):
+    import phonksync.__main__ as main
+
+    class Cfg(Config):
+        @classmethod
+        def load(cls, path):
+            c = Config()
+            c.state_path = str(tmp_path / "state.json")
+            return c
+
+    monkeypatch.setattr(main, "Config", Cfg)
+    assert main.main(["skip", "abc123", "--reason", "not on YouTube"]) == 0
+    assert "Skipped abc123" in capsys.readouterr().out
+    assert main.main(["skip", "--show"]) == 0
+    out = capsys.readouterr().out
+    assert "abc123" in out and "not on YouTube" in out
+    assert main.main(["skip", "--clear", "abc123"]) == 0
+    assert "Un-skipped" in capsys.readouterr().out
+
+
+def test_skip_all_unmatched(tmp_path, monkeypatch, capsys):
+    import phonksync.__main__ as main
+    from phonksync.db import StateDB
+
+    class Cfg(Config):
+        @classmethod
+        def load(cls, path):
+            c = Config()
+            c.state_path = str(tmp_path / "state.json")
+            return c
+
+    monkeypatch.setattr(main, "Config", Cfg)
+    db = StateDB(str(tmp_path / "state.json"))
+    db.mark_unmatched(make_track(id="t1", name="Song One"), ["STRICT"])
+    db.mark_unmatched(make_track(id="t2", name="Song Two"), ["STRICT"])
+    db.save()
+    assert main.main(["skip", "--all-unmatched"]) == 0
+    db2 = StateDB(str(tmp_path / "state.json"))
+    assert db2.is_skipped("t1") and db2.is_skipped("t2")
+    assert db2.data["unmatched"] == {}
+
+
+def test_summary_mentions_skips_and_budget(monkeypatch, cfg):
+    from phonksync.engine import RunReport
+
+    report = RunReport(started_at="now", dry_run=False)
+    report.skipped_by_choice = 2
+    report.budget_skips = 1
+    report.free_searches = 40
+    report.free_matches = 30
+    text = report.summary_text()
+    assert "Skipped by choice: 2" in text
+    assert "Search budget ran out for 1" in text
+    assert "Free YouTube searches: 40" in text

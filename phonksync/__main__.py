@@ -326,6 +326,58 @@ def cmd_diag(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skip(args: argparse.Namespace) -> int:
+    """Mark tracks as "do not sync" (they are not on YouTube, or you don't want them)."""
+    from datetime import datetime, timezone
+
+    from .db import StateDB
+
+    cfg = Config.load(args.config)
+    state = StateDB(cfg.state_path)
+    if args.show or (not args.track and not args.all_unmatched and not args.clear):
+        rows = state.skipped_tracks()
+        print(f"🙅 Skipped tracks: {len(rows)}")
+        for row in rows:
+            reason = f" — {row['reason']}" if row.get("reason") else ""
+            print(f"   {row['spotify_id']}  {', '.join(row.get('artists') or [])} — "
+                  f"{row.get('name', '')}{reason}")
+        if args.show:
+            unmatched = state.data.get("unmatched") or {}
+            print(f"\n❓ Unmatched (still retried): {len(unmatched)}")
+            for tid, row in unmatched.items():
+                print(f"   {tid}  {', '.join(row.get('artists') or [])} — {row.get('name', '')}")
+        return 0
+
+    if args.clear:
+        removed = state.unskip(args.clear)
+        state.save()
+        if removed:
+            print(f"↩️ Un-skipped {args.clear} — it will be synced on the next run")
+            return 0
+        print(f"ℹ️ {args.clear} was not in the skipped list", file=sys.stderr)
+        return 1
+
+    targets: list[str] = []
+    if args.all_unmatched:
+        targets = list((state.data.get("unmatched") or {}).keys())
+        if not targets:
+            print("ℹ️ Nothing is unmatched — no skips added")
+            return 0
+    for track_id in list(args.track) + targets:
+        entry = (state.data.get("unmatched") or {}).get(track_id) or {}
+        state.data.setdefault("skipped", {})[track_id] = {
+            "spotify_id": track_id,
+            "name": entry.get("name", ""),
+            "artists": entry.get("artists", []),
+            "reason": args.reason,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        state.data["unmatched"].pop(track_id, None)
+        print(f"🙅 Skipped {track_id} ({entry.get('name', 'unknown track')})")
+    state.save()
+    return 0
+
+
 def cmd_cache(args: argparse.Namespace) -> int:
     """Show (or clear) the disk caches the sync relies on."""
     from .cache import SearchCache, SourceCache
@@ -603,6 +655,17 @@ def main(argv: list[str] | None = None) -> int:
     p_proxy.add_argument("--url", default="", help="Proxy base URL (overrides the env var)")
     p_proxy.add_argument("--playlist", default="", help="Optional public playlist ID to read")
     p_proxy.set_defaults(func=cmd_proxy_test)
+
+    p_skip = sub.add_parser(
+        "skip", help="Never sync a track again (e.g. it is not on YouTube)"
+    )
+    p_skip.add_argument("track", nargs="*", default=[], help="Spotify track IDs")
+    p_skip.add_argument("--all-unmatched", action="store_true",
+                        help="Skip everything currently unmatched")
+    p_skip.add_argument("--reason", default="", help="Why (shown in the summary)")
+    p_skip.add_argument("--clear", default="", help="Un-skip this track ID")
+    p_skip.add_argument("--show", action="store_true", help="List skips + unmatched")
+    p_skip.set_defaults(func=cmd_skip)
 
     p_cache = sub.add_parser("cache", help="Show/clear the source + search caches")
     p_cache.add_argument("--clear", action="store_true", help="Delete the source cache")

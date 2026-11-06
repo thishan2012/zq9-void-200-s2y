@@ -31,6 +31,7 @@ class StateDB:
             "updated_at": _now(),
             "synced": {},
             "unmatched": {},
+            "skipped": {},
             "stats": {"methods": {}, "runs": 0, "total_added": 0},
             "quota": {},
             "spotify": {},
@@ -49,6 +50,7 @@ class StateDB:
             self.data.update(loaded)
         self.data.setdefault("synced", {})
         self.data.setdefault("unmatched", {})
+        self.data.setdefault("skipped", {})
         self.data.setdefault("stats", {"methods": {}, "runs": 0, "total_added": 0})
         self.data["stats"].setdefault("methods", {})
 
@@ -237,6 +239,35 @@ class StateDB:
             entry["budget_skipped_at"] = _now()
             entry["tries"] = int(prev.get("tries", 0))  # unchanged: not a real try
         self.data["unmatched"][track.id] = entry
+
+    def skip(self, track: Track, reason: str = "") -> None:
+        """"Do not sync this track" — an explicit decision, not a failure.
+
+        Skipped tracks are not retried, are not counted as unmatched, and can be
+        un-skipped at any time (`phonksync skip --clear <id>`).
+        """
+        bucket = self.data.setdefault("skipped", {})
+        bucket[track.id] = {
+            "spotify_id": track.id,
+            "name": track.name,
+            "artists": track.artists,
+            "reason": reason,
+            "at": _now(),
+        }
+        # A skipped track must never look like a matching failure.
+        self.data["unmatched"].pop(track.id, None)
+
+    def is_skipped(self, track_id: str) -> bool:
+        return track_id in (self.data.get("skipped") or {})
+
+    def skip_entry(self, track_id: str) -> dict[str, Any]:
+        return (self.data.get("skipped") or {}).get(track_id, {})
+
+    def unskip(self, track_id: str) -> bool:
+        return (self.data.get("skipped") or {}).pop(track_id, None) is not None
+
+    def skipped_tracks(self) -> list[dict[str, Any]]:
+        return list((self.data.get("skipped") or {}).values())
 
     def unmatched_tries(self, track_id: str) -> int:
         return int(self.data["unmatched"].get(track_id, {}).get("tries", 0))
