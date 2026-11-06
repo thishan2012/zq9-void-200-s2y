@@ -1111,3 +1111,44 @@ def test_stale_cooldown_is_cleared_when_the_run_is_not_blocked(monkeypatch, cfg)
     engine.state.set_spotify_cooldown(time.time() + 60, "old block")
     engine.run()
     assert engine.state.spotify_cooldown_until() == 0.0
+
+
+# ------------------------------------------------- workflow knobs (sync.yml)
+def test_free_search_pause_and_results_per_query_come_from_the_environment(
+    tmp_path, monkeypatch
+):
+    """The sync.yml inputs must reach the client: 0.2s pause, 5 results."""
+    from phonksync.settings import Config
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_FREE_SEARCH_PAUSE", "0.2")
+    monkeypatch.setenv("SEARCH_RESULTS_PER_QUERY", "5")
+    cfg = Config.load(cfg_path)
+    assert cfg.youtube_free_search_pause == 0.2
+    assert cfg.search_results_per_query == 5
+
+
+def test_empty_or_bad_pacing_inputs_never_break_a_run(tmp_path, monkeypatch):
+    """An empty workflow input ("") must mean "use config.json", not a crash."""
+    from phonksync.settings import Config
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_FREE_SEARCH_PAUSE", "")
+    monkeypatch.setenv("SEARCH_RESULTS_PER_QUERY", "abc")
+    cfg = Config.load(cfg_path)
+    assert cfg.youtube_free_search_pause == 1.0
+    assert cfg.search_results_per_query == 10
+
+
+def test_pacing_env_values_are_clamped(tmp_path, monkeypatch):
+    from phonksync.settings import Config
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("YOUTUBE_FREE_SEARCH_PAUSE", "-3")
+    monkeypatch.setenv("SEARCH_RESULTS_PER_QUERY", "9999")
+    cfg = Config.load(cfg_path)
+    assert cfg.youtube_free_search_pause == 0.0
+    assert cfg.search_results_per_query == 50

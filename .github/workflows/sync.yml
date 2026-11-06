@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run: preview the first 200 source tracks, write nothing"
+        description: "Dry run: preview only (respects max_tracks), writes nothing"
         type: boolean
         default: false
       max_tracks:
@@ -33,6 +33,14 @@ on:
         description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
         type: string
         default: ""
+      free_search_pause:
+        description: "Seconds between YouTube free page loads (empty = config.json, 1.0; 0.2 = fast)"
+        type: string
+        default: ""
+      results_per_query:
+        description: "Search results per query, i.e. video pages fetched (empty = config.json, 10; 5 = faster)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -52,6 +60,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Start the clock
+        run: echo "SYNC_STARTED=$(date -u +%s)" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -110,6 +121,7 @@ jobs:
 
       - name: Run sync
         if: ${{ !inputs.fill_cache }}
+        id: sync
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -142,7 +154,20 @@ jobs:
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
-        run: python -m phonksync sync
+          YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
+          SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
+        run: python -m phonksync sync 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run time
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "### ⏱ Wall clock"
+            echo ""
+            echo "- started: $(date -u -d @$SYNC_STARTED '+%H:%M:%S') UTC"
+            echo "- finished: $(date -u '+%H:%M:%S') UTC"
+            echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state
         if: ${{ always() && inputs.dry_run != true }}
