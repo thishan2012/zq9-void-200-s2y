@@ -232,6 +232,8 @@ class SyncEngine:
                 free_search=config.youtube_free_search,
                 free_search_pause=config.youtube_free_search_pause,
                 access_token=secrets.youtube_access_token,
+                cookie=secrets.youtube_cookie,
+                authuser=secrets.youtube_authuser,
                 max_searches_per_run=config.max_searches_per_run,
                 max_searches_per_day=config.youtube_max_searches_per_day,
                 max_inserts_per_day=config.youtube_max_inserts_per_day,

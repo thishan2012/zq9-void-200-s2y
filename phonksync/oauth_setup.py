@@ -355,6 +355,67 @@ def run_oauth_flow(client_json_path: str, port: int = 8765, redirect_uri: str = 
     return 0
 
 
+def cookie_help(cookie: str = "") -> int:
+    """Explain (and optionally validate) the cookie route — no Console involved."""
+    cookie = (cookie or os.environ.get("YT_COOKIE", "")).strip()
+    if not cookie:
+        print(
+            "🍪 YouTube writes without OAuth (nothing to register, no Console)\n\n"
+            "1. Open https://music.youtube.com in the browser where you are signed in\n"
+            "   (a VPN is fine — the cookie is issued once, the sync itself does not\n"
+            "   need Google Cloud at all).\n"
+            "2. F12 → Network → reload → click a 'browse?…' request.\n"
+            "3. Right-click → Copy → Copy request headers. Paste the block here:\n\n"
+            "     python -m phonksync youtube-auth --cookie-help --cookie-stdin\n\n"
+            "   or paste just the 'Cookie:' value (must contain __Secure-3PAPISID).\n"
+            "4. Store it as the secret YT_COOKIE (optionally YT_AUTHUSER, default 0).\n\n"
+            "Chromium refuses to copy headers from a devtools *panel*; use the\n"
+            "Network tab, or read document.cookie in the console."
+        )
+        return 0
+
+    from .youtube import YouTubeClient  # local import: no cycle at module load
+
+    client = YouTubeClient(api_key="", cookie=cookie, free_search=False)
+    sapisid = client._sapisid()
+    print(f"🍪 Cookie length: {len(cookie)} characters")
+    if not sapisid:
+        print("❌ No __Secure-3PAPISID in it — signed out, or the header was clipped.")
+        print("   Re-copy the whole Cookie header from a signed-in music.youtube.com tab.")
+        return 1
+    print(f"✅ __Secure-3PAPISID found ({sapisid[:4]}…{sapisid[-4:]})")
+    others = [
+        name
+        for name in ("SID", "HSID", "SSID", "APISID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID")
+        if client._cookie_value(cookie, name)
+    ]
+    print(f"   other cookies present: {', '.join(others) if others else '(none — copy again)'}")
+    print("✅ Writes will use the YouTube Music web endpoint (no OAuth, no Console)")
+    print("\nNext: paste it into the GitHub secret YT_COOKIE, then run `phonksync check`.")
+    return 0 if others else 1
+
+
+def check_token_types(refresh: str, access: str) -> list[str]:
+    """Catch the classic mix-up before Google answers with a cryptic error."""
+    problems = []
+    refresh = (refresh or "").strip()
+    access = (access or "").strip()
+    if refresh.startswith("ya29."):
+        problems.append(
+            "YT_REFRESH_TOKEN holds an access token (ya29…) — that one dies in ~1 hour "
+            "(sometimes minutes). You need the value that starts with 1// ."
+        )
+    elif refresh and not refresh.startswith("1//"):
+        problems.append(
+            f"YT_REFRESH_TOKEN does not look like a Google refresh token (expected 1//…, got {refresh[:6]}…)."
+        )
+    if access.startswith("1//"):
+        problems.append(
+            "YT_ACCESS_TOKEN holds a refresh token (1//…) — put it in YT_REFRESH_TOKEN instead."
+        )
+    return problems
+
+
 def doctor(client_json: str = "", client_id: str = "", client_secret: str = "") -> int:
     """Say exactly what is missing for YouTube writes — and nothing else."""
     print("🩺 YouTube write setup\n")
@@ -365,30 +426,44 @@ def doctor(client_json: str = "", client_id: str = "", client_secret: str = "") 
         except (FileNotFoundError, ValueError) as exc:
             print(f"❌ OAuth client: {exc}")
             return 2
-        kind = "client JSON" if (client_json or "").strip().startswith("{") or "\"installed\"" in (client_json or "") else "client id"
+        kind = (client_json or "").strip().startswith("{") or "\"installed\"" in (client_json or "")
+        kind = "client JSON" if kind and (client_json or "") else "client id"
         print(f"✅ OAuth client: {section['client_id'][:18]}… ({kind})")
         if not section.get("client_secret"):
             print("⚠️  No client secret — the device flow can work without one, but")
             print("   exchanging an authorization code cannot. Console → Credentials →")
             print("   your OAuth client → 'Client secret'.")
             ok = False
-    else:
+    elif not os.environ.get("YT_COOKIE", "").strip():
         print("❌ OAuth client: nothing configured")
         print("   Set YT_CLIENT_ID (…apps.googleusercontent.com) + YT_CLIENT_SECRET,")
-        print("   or YT_CLIENT_JSON with the downloaded file.")
+        print("   or YT_CLIENT_JSON with the downloaded file — or skip OAuth entirely")
+        print("   with YT_COOKIE (see `youtube-auth --cookie-help`).")
         ok = False
 
+    cookie = os.environ.get("YT_COOKIE", "").strip()
     refresh = os.environ.get("YT_REFRESH_TOKEN", "").strip()
     access = os.environ.get("YT_ACCESS_TOKEN", "").strip()
-    if refresh:
+    for problem in check_token_types(refresh, access):
+        print(f"❌ {problem}")
+        ok = False
+    if cookie:
+        from .youtube import YouTubeClient
+
+        if YouTubeClient(api_key="", cookie=cookie, free_search=False)._sapisid():
+            print("✅ Browser cookie: __Secure-3PAPISID present (writes need no OAuth)")
+        else:
+            print("⚠️  YT_COOKIE has no __Secure-3PAPISID — copy the header again")
+            ok = False
+    if refresh.startswith("1//"):
         print(f"✅ Refresh token present ({refresh[:6]}…, never expires)")
     elif access:
         print("⚠️  Only an access token: writes work ~1 hour, then stop.")
-        print("   Run `phonksync youtube-auth --device` once for a refresh token.")
-        ok = False
-    else:
+        print("   Run `phonksync youtube-auth --device`, or use a cookie + YT_AUTHUSER.")
+    elif not cookie:
         print("❌ No refresh token — nothing can be added to the YouTube playlist.")
-        print("   Run `phonksync youtube-auth --device` (needs the OAuth client above).")
+        print("   Run `phonksync youtube-auth --device` (needs the OAuth client above),")
+        print("   or use a browser cookie: `youtube-auth --cookie-help`.")
         ok = False
 
     if os.environ.get("YOUTUBE_TARGET_PLAYLIST", "").strip():

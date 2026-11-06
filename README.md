@@ -27,7 +27,7 @@
    `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`
    Telegram ඕන නම්: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
    YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YOUTUBE_API_KEY`, `YOUTUBE_TARGET_PLAYLIST`
-   (playlist එකට video **දාන්න** නම් අමතරව `YT_CLIENT_JSON` + `YT_REFRESH_TOKEN` — API key එකෙන් write කරන්න බෑ)
+   (playlist එකට video **දාන්න** නම් — API key එකෙන් බෑ. ලේසිම: `YT_COOKIE` (Google Console / OAuth / VPN කිසිවක් ඕන නෑ, `python -m phonksync youtube-auth --cookie-help` බලන්න). දිගුකාලීනව: `YT_REFRESH_TOKEN` + `YT_CLIENT_ID` + `YT_CLIENT_SECRET`)
 3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
 4. Telegram බලන්න. ✅
 
