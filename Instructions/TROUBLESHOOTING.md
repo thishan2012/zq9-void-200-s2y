@@ -277,7 +277,24 @@ Now:
 * all free page loads share one keep-alive connection (no TLS handshake each).
 
 If you still want it faster, lower `search_results_per_query` (10 → 5 halves
-the page fetches) or `youtube_free_search_pause` (1.0 → 0.3).
+the page fetches) or `youtube_free_search_pause` (1.0 → 0.3). Both are also
+workflow inputs now: **Run workflow** → `results_per_query` / `free_search_pause`
+(empty = `config.json`).
+
+`🐌 Slowest: … 41s/25 methods` names the tracks that ate the minutes.
+
+## Where is the log?
+
+Every run keeps two copies of itself:
+
+| where | what |
+|---|---|
+| **Actions → run → job summary** | the exact Telegram text, inputs, and the wall clock (opens on a phone, no scrolling) |
+| `sync-log-<run_number>` artifact | the full `run.log` (INFO, every decision), 14 days |
+| step log / `gh run view <id> --log` | the same, streamed live |
+
+So a run never has to be diagnosed from the Telegram message alone. If a run
+looks wrong, open the job summary first, then the artifact.
 
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.
