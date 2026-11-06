@@ -472,7 +472,8 @@ _KNOWN_PLAYLIST_HASH = "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d739101
 # playlist reads and one for all playlist writes). Healed from the live bundle.
 _OP_HASHES: dict[str, str] = {
     "fetchPlaylist": _KNOWN_PLAYLIST_HASH,
-    "fetchPlaylistContents": _KNOWN_PLAYLIST_HASH,
+    # Seeded from songmirror (working cookie backend); the bundle scrape heals it.
+    "fetchPlaylistContents": "a65e12194ed5fc443a1cdebed5fabe33ca5b07b987185d63c72483867ad13cb4",
     "addToPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
     "removeFromPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
     "searchTracks": "",
@@ -498,6 +499,7 @@ class PublicPlaylistReader:
         self.last_error = ""
         self._client_token = client_token
         self._token_tried = bool(client_token)
+        self._pathfinder_error = ""
 
     def token(self) -> str:
         if not self._token_tried:
@@ -537,19 +539,26 @@ class PublicPlaylistReader:
             return fallback
         if not self.last_error:
             self.last_error = "payload not found in HTML"
+            if self._pathfinder_error:
+                self.last_error += f"; web player: {self._pathfinder_error}"
         return None
 
     def _pathfinder(self, playlist_id: str) -> dict[str, Any] | None:
         token = self.token()
         try:
             tracks = pathfinder_playlist(playlist_id, client_token=token)
+            self._pathfinder_error = ""
         except Exception as exc:
             log.warning("pathfinder read failed: %s", exc)
-            if not self.last_error:
-                self.last_error = f"pathfinder: {exc}"
+            # Keep the reason: "0 tracks" from a rejected hash and "0 tracks"
+            # from an empty playlist look identical from the outside.
+            self._pathfinder_error = str(exc).splitlines()[0][:160]
             return None
         if not tracks:
-            self.last_error = "payload not found in HTML (pathfinder returned no tracks)"
+            self.last_error = (
+                "payload not found in HTML; web player answered 0 tracks "
+                f"({self._pathfinder_error or 'empty playlist?'})"
+            )
             return None
         items = [
             {"itemV2": {"data": {
@@ -571,6 +580,7 @@ class PublicPlaylistReader:
         return f"{len(items)}:{data.get('snapshotId', '')}"
 
     def playlist_tracks(self, playlist_id: str, max_tracks: int = 0) -> list[Track]:
+        self.last_error = ""
         data = self._payload(playlist_id)
         if not data:
             if not self.last_error:
@@ -624,6 +634,22 @@ def _proxy_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> s
 
 class _ProxyUnavailable(RuntimeError):
     """The CORS proxy could not serve the request (fall back to direct)."""
+
+
+def _hash_overrides() -> dict[str, str]:
+    """Per-operation hash overrides (`SPOTIFY_HASH_<OP>` env, else empty).
+
+    When Spotify rotates a hash the bundle scrape normally heals it; this is the
+    escape hatch when the bundle layout changes too:
+    ``SPOTIFY_HASH_ADDTOPLAYLIST=<64 hex chars>`` (also as a repo secret).
+    """
+    found: dict[str, str] = {}
+    for op in list(_OP_HASHES):
+        key = "SPOTIFY_HASH_" + op.upper()
+        value = os.environ.get(key, "").strip()
+        if len(value) == 64 and all(c in "0123456789abcdef" for c in value.lower()):
+            found[op] = value
+    return found
 
 
 @functools.lru_cache(maxsize=4)
@@ -1084,6 +1110,8 @@ class SpotifyClient:
         persisted-query hash is healed once, a 401 re-mints the token once.
         """
         hashes = dict(_OP_HASHES)
+        for name, value in _hash_overrides().items():
+            hashes[name] = value
         refreshed_hash = False
         refreshed_auth = False
         last = ""

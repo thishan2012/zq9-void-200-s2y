@@ -612,3 +612,26 @@ def test_pathfinder_is_used_when_spotify_already_parked(monkeypatch, cfg):
     report = engine.run()
     assert reached == [cfg.spotify_source_playlists[0]]
     assert report.spotify_throttled
+
+
+def test_web_player_read_does_not_also_warn_about_the_public_page(monkeypatch, cfg):
+    """One working route means one message — not a scary warning next to it."""
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.blocked_until = time.time() + 1800
+    spotify.playlist_tracks = lambda *a, **k: (_ for _ in ()).throw(AssertionError("no API"))
+    warnings = []
+
+    class Tel(SilentTelegram):
+        def warn(self, text):
+            warnings.append(text)
+
+        def info(self, text):
+            warnings.append(text)
+
+    monkeypatch.setattr(engine_mod, "TelegramLogger", Tel)
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda pid, report: [track])
+    report = engine.run()
+    assert report.sources_read == 1
+    assert not any("public page" in w for w in warnings)
