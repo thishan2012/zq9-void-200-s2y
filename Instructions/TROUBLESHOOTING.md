@@ -203,3 +203,27 @@ Already in the playlist (untouched): 233 · Deferred: 0 · Duplicates: 0 · Skip
 - the track list is capped at 60 lines (`… and more`); the counts stay exact;
 - only a run with more than ~3900 characters is split (Telegram's hard limit),
   and then the pieces are consecutive, not one per track.
+
+## A run takes 20–60 minutes
+
+The slow part is never the matching — it is **Spotify's Web API**: every call is
+paced `spotify_request_delay_seconds` (default **2s**) apart, and a large source
+playlist needs one call per page. 30 minutes of run = mostly sleeping.
+
+Two budgets now cap that, so pre-work can not eat the whole run:
+
+| config | default | meaning |
+|---|---|---|
+| `spotify_max_requests_per_run` | `40` | after this many Web API calls, the remaining sources are read through the **web-player route** (no pacing, no rate-limit budget) or from the source cache |
+| `startup_time_budget_seconds` | `420` | reads + target-playlist load may not take longer than 7 minutes; the run then continues with what it has |
+
+Make it faster still:
+
+- keep the source playlists cached: a repeat run reuses the read when the
+  playlist has not changed (1 cheap call instead of N pages);
+- raise `spotify_request_delay_seconds` only if you see 429s — lowering it makes
+  the pace faster but risks a block;
+- `max_tracks_per_run` (default `0` = no limit) caps how much work one run does.
+
+The summary reports what happened, so a slow run is visible:
+`🎵 3 playlist(s), 812 tracks read · 720 were already synced`.

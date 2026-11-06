@@ -62,8 +62,9 @@ def test_summary_lists_added_tracks_once_and_never_the_backlog():
         "Beta — TWO <code>[REVERSED]</code>",
     ]
     text = report.summary_text()
-    assert text.count("Alpha — ONE") == 1
-    assert text.count("Beta — TWO") == 1
-    assert "Already in the playlist (untouched): 230" in text
-    # the old chatty per-track verdicts must not come back
+    # counts only for what went in — the playlist is the receipt
+    assert "Added: <b>2</b>" in text
+    assert "Alpha — ONE" not in text
+    assert "Beta — TWO" not in text
+    assert "230 were already synced" in text
     assert "Would add" not in text

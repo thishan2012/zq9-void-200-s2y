@@ -433,7 +433,7 @@ def test_track_error_is_skipped_and_run_continues(monkeypatch, cfg):
     report = eng.run()
     assert report.added == 2          # tracks 1 and 3 went through
     assert report.skipped == 1        # the bad one was skipped, not fatal
-    assert "Skipped (errors): 1" in report.summary_text()
+    assert "Errored: 1" in report.summary_text()
 
 
 def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
@@ -868,7 +868,7 @@ def test_summary_mentions_skips_and_budget(monkeypatch, cfg):
     report.free_matches = 30
     text = report.summary_text()
     assert "Skipped by choice: 2" in text
-    assert "Search budget ran out for 1" in text
+    assert "Out of search budget: 1" in text
     assert "Free YouTube searches: 40" in text
 
 
@@ -985,3 +985,57 @@ def test_a_song_in_the_db_is_never_logged_even_if_the_playlist_repeats_it(monkey
     engine = build_engine(monkeypatch, cfg, spotify, youtube)
     report = engine.run()
     assert sum("LOOP" in line for line in report.added_tracks) <= 1
+
+
+def test_web_api_budget_stops_the_slow_reads(monkeypatch, cfg):
+    """Pre-work must not spend the whole run on 2s-paced Web API calls."""
+    cfg.spotify_max_requests_per_run = 0  # 0 = unlimited for the first read
+    tracks = [make_track(id="track000000000000000061", name="ONE")]
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    youtube = EngineYouTube(catalog={})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    # pretend the Web API already answered a lot of calls
+    spotify.requests_made = 40
+    cfg.spotify_max_requests_per_run = 10
+    engine.state.data["synced"]["track000000000000000061"] = {
+        "spotify_id": "track000000000000000061", "spotify_added": True, "youtube_added": True,
+    }
+    report = engine.run()
+    # the source was NOT read through the slow Web API path
+    assert spotify.read_calls == []
+    assert report.sources_read == 0
+    assert report.skipped_sources == 1  # counted, never silent
+
+
+def test_budget_fallback_is_not_reported_as_a_spotify_block(monkeypatch, cfg):
+    cfg.spotify_max_requests_per_run = 1
+    tracks = [make_track(id="track000000000000000062", name="TWO")]
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    youtube = EngineYouTube(catalog={})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    spotify.requests_made = 5
+    engine.state.data["synced"]["track000000000000000062"] = {
+        "spotify_id": "track000000000000000062", "spotify_added": True, "youtube_added": True,
+    }
+    report = engine.run()
+    # no slowdown call is made, and the fallback is explained as a budget, not a block
+    assert spotify.read_calls == []
+    assert any("Web API budget" in d for d in report.daily_details)
+
+
+def test_summary_shows_counts_and_only_the_unadded_tracks():
+    from phonksync.engine import RunReport
+
+    report = RunReport(
+        added=4, skipped_by_choice=3, unmatched=2,
+        sources_read=2, unique_tracks=100, already_synced=90,
+    )
+    report.failed_tracks = ["Nulteex — hd — no YouTube match"]
+    text = report.summary_text()
+    assert "Added: <b>4</b>" in text
+    assert "Skipped by choice: 3" in text
+    assert "Failed / unmatched: 2" in text
+    assert "<b>Not added</b> (1):" in text
+    assert "Nulteex — hd" in text
+    # no added-song listing at all
+    assert "✅ Added (" not in text
