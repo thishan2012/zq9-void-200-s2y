@@ -62,6 +62,42 @@ In GitHub Actions set the repository **variable** `SPOTIFY_PROXY_URL` (or the
 secret of the same name) and the run picks it up automatically; `config.json`
 also accepts `spotify_proxy_url`.
 
+## The real answer: the Web API is not the only door
+
+Spotify's own web player does **not** read playlists from `api.spotify.com` — that
+API answers `429` to web-player tokens (this is well documented by several
+projects in 2026). The player calls the **Partner GraphQL endpoint**:
+
+```text
+POST https://api-partner.spotify.com/pathfinder/v2/query
+     operationName: fetchPlaylist
+     variables: {uri: spotify:playlist:<id>, offset, limit, ...}
+     headers: client-token: <anonymous client token>   ← no login needed
+```
+
+`clienttoken.spotify.com/v1/clienttoken` hands out that token to anyone, so a
+throttled Web API (and even a stale cookie) no longer stops a read:
+
+1. `fetchPlaylist` / `fetchPlaylistContents` (the web player's own operation),
+   paged 250 at a time.
+2. The public HTML page (kept as a second option).
+3. Cached read → saved collection.
+
+The persisted-query hash is read from the live web-player bundle when Spotify
+rotates it (a known-good hash is built in as a fallback). Check what works from
+your runner at any time:
+
+```bash
+python -m phonksync diag            # token / client token / pathfinder / page
+```
+
+If the Web API is already parked, the run now reads with pathfinder, parks the
+unwritten tracks in `data/manual-queue.txt`, finishes normally and exits `0`
+instead of dying on the first 429.
+
+Note: these endpoints are unofficial and can change; that is why every layer
+falls back to the next one instead of failing the run.
+
 ## When the API is throttled anyway — read the public page
 
 A **public** playlist can be read without any token, so a 429 on the API no

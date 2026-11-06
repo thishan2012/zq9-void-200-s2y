@@ -70,6 +70,15 @@ jobs:
           SPOTIFY_COOKIE_4: ${{ secrets.SPOTIFY_COOKIE_4 }}
         run: python -m phonksync check
 
+      - name: Spotify route check
+        continue-on-error: true
+        env:
+          SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+        run: python -m phonksync diag
+
       - name: Run sync
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}

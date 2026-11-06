@@ -237,7 +237,7 @@ class SyncEngine:
                 target_spotify_ids = set()
                 web_target = self._read_public_playlist(
                     cfg.spotify_target_playlist, report
-                )
+                ) or self._read_pathfinder(cfg.spotify_target_playlist, report)
                 if web_target:
                     target_spotify_ids = {t.id for t in web_target}
                 else:
@@ -335,7 +335,12 @@ class SyncEngine:
                     f"{'resume point saved' if held else 'no resume point'})"
                 )
                 if held:
-                    break  # long cooldown: stop cleanly, resume from here next run
+                    # Writes are parked for the whole window. Do not burn the
+                    # remaining tracks one 429 at a time: stop writing, keep the
+                    # resume point, and let the run finish normally so the
+                    # YouTube side, the state file and the summary still land.
+                    self._park_remaining(tracks[processed:], report)
+                    break
                 continue  # short 429s were already retried: skip this track only
             except Exception as exc:
                 log.exception("Track %s failed", track.id)
@@ -430,16 +435,42 @@ class SyncEngine:
                     self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
                     report.sources_read += 1
                     continue
+            if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+                # Spotify already told us to go away this run: do not spend
+                # 6 retries (and a longer block) re-learning that. Read the
+                # playlist without the Web API instead.
+                web_tracks = self._read_pathfinder(playlist_id, report) or \
+                    self._read_public_playlist(playlist_id, report)
+                if web_tracks:
+                    self._merge_tracks(seen, web_tracks, playlist_id, read_limit)
+                    report.sources_read += 1
+                    report.spotify_throttled = True
+                    continue
+                if cached is not None:
+                    report.cached_sources += 1
+                    self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
+                    report.sources_read += 1
+                    report.spotify_throttled = True
+                    continue
+                report.spotify_throttled = True
+                break
             try:
                 tracks = self.spotify.playlist_tracks(playlist_id, max_tracks=remaining)
                 try:
                     self.source_cache.put(playlist_id, tracks, snapshot)
                 except Exception as exc:  # cache is best-effort
                     log.debug("Could not write source cache: %s", exc)
-            except RateLimited:
+            except RateLimited as exc:
+                if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+                    log.warning(
+                        "Spotify parked this run (%s) — reading the rest without the Web API",
+                        str(exc).splitlines()[0][:120],
+                    )
                 report.spotify_throttled = True
                 # 1) read the public page (no API, no token, no quota)
                 web_tracks = self._read_public_playlist(playlist_id, report)
+                if not web_tracks:
+                    web_tracks = self._read_pathfinder(playlist_id, report)
                 if web_tracks:
                     self._merge_tracks(seen, web_tracks, playlist_id, read_limit)
                     report.sources_read += 1
@@ -480,6 +511,33 @@ class SyncEngine:
             log.info("Source %s: %d tracks", playlist_id, len(tracks))
         report.unique_tracks = len(seen)
         return list(seen.values())
+
+    def _read_pathfinder(self, playlist_id: str, report: RunReport) -> list[Track]:
+        """Fallback #1b: the web player's own endpoint (no login, no Web API).
+
+        api.spotify.com answers 429 to web-player tokens, so the *web player*
+        itself does not use it for playlist contents: it calls api-partner with
+        an anonymous client token. That route has its own budget.
+        """
+        try:
+            from .spotify import client_token, pathfinder_playlist
+
+            tracks = pathfinder_playlist(playlist_id, client_token=client_token())
+        except Exception as exc:
+            log.warning("Pathfinder read failed for %s: %s", playlist_id, exc)
+            return []
+        if not tracks:
+            return []
+        report.web_reads += 1
+        self.telegram.info(
+            f"🌐 Read <code>{playlist_id}</code> from the web player endpoint — "
+            f"{len(tracks)} tracks (Web API not used)"
+        )
+        try:
+            self.source_cache.put(playlist_id, tracks, "")
+        except Exception as exc:  # cache is best-effort
+            log.debug("Could not cache the pathfinder read: %s", exc)
+        return tracks
 
     def _read_public_playlist(self, playlist_id: str, report: RunReport) -> list[Track]:
         """Fallback #1: public HTML page (works while the API is throttled)."""
@@ -606,6 +664,14 @@ class SyncEngine:
             log.error("Could not save the queued tracks: %s", exc)
             self.state.set_pending_queue(getattr(self.spotify, "_queued", []))
             return 0
+
+    def _park_remaining(self, remaining: list[Track], report: RunReport) -> None:
+        """Park the not-yet-processed source tracks in the manual bucket."""
+        for track in remaining:
+            key = self.state.data["synced"].get(track.id) or {}
+            if not key.get("spotify_added"):
+                self.state.add_manual(track)
+                report.manual_queued += 1
 
     def _hold_resume_point(self, track: Track) -> bool:
         """Long cooldown mid-run: remember this track so the next run starts here.
