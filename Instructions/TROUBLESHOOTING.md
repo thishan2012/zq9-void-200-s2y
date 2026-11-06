@@ -100,7 +100,8 @@ Fix: log into open.spotify.com again, copy the full Cookie header fresh, update 
 Google's default quota is 10,000 units/day: **1 search = 100 units** (max 100 searches/day) and **1 playlist add = 50 units**.
 
 The app caps itself below that so several runs in one day can never trip Google's 403:
-- `max_searches_per_run` (default 80) — per run
+- `max_searches_per_run` (default 200) — paid searches per run; free page
+  searches are unlimited (see `Instructions/YOUTUBE-BUDGET.md`)
 - `youtube_max_searches_per_day` (default 80) — per UTC day, ~8,000 units
 - `youtube_max_inserts_per_day` (default 40) — per UTC day, ~2,000 units (adds are only needed once per track)
 

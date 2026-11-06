@@ -71,6 +71,7 @@ class MatchContext:
     first_results: list[str] = field(default_factory=list)
     searched: set[str] = field(default_factory=set)
     searches_used: int = 0
+    free_queries: list[str] = field(default_factory=list)
 
     def add(self, candidates: list[Candidate]) -> None:
         for cand in candidates:
@@ -111,14 +112,21 @@ class Matcher:
         key = self.cache.query_key(query, self.results_per_query, self.yt.region_code)
         ids = self.cache.get_query(key)
         if ids is None:
+            # Metered API search — only after the free pass missed.
             ids = self.yt.search(query, max_results=self.results_per_query)
             self.cache.put_query(key, ids)
             ctx.searches_used += 1
-        found, missing = self.cache.get_videos(ids)
-        if missing:
-            fetched = self.yt.videos(missing)
-            self.cache.put_videos(fetched)
-            found = found + fetched
+            found, missing = self.cache.get_videos(ids)
+            if missing:
+                fetched = self.yt.videos(missing)
+                self.cache.put_videos(fetched)
+                found = found + fetched
+        else:
+            found, missing = self.cache.get_videos(ids)
+            if missing:
+                fetched = self.yt.videos(missing)
+                self.cache.put_videos(fetched)
+                found = found + fetched
         # Preserve search ranking order.
         by_id = {c.video_id: c for c in found}
         ordered = [by_id[vid] for vid in ids if vid in by_id]
@@ -577,10 +585,71 @@ class Matcher:
             ("TOPRESULT", self.m_topresult),
         ]
 
+    def _free_pass(self, ctx: MatchContext) -> MatchResult | None:
+        """Spend nothing first: the same pipeline over zero-quota results.
+
+        YouTube's public search page costs no API units, so its results are put
+        in the pool before any metered search. A match here is exactly as
+        verified as any other (same verifiers), it just costs no quota.
+        """
+        free = getattr(self.yt, "free_search_ids", None)
+        if free is None:
+            return None
+        t = ctx.track
+        query = f"{t.primary_artist} {t.name}".strip()
+        if not query:
+            return None
+        # A separate cache namespace: free-page results must never be mistaken
+        # for a metered API answer.
+        key = self.cache.query_key(query, self.results_per_query, self.yt.region_code) + "|free"
+        ids = self.cache.get_query(key)
+        if ids is None:
+            ids = free(query, max_results=self.results_per_query)
+            if not ids:
+                return None
+            self.cache.put_query(key, ids)
+            ctx.free_queries.append(query)
+        # The results are already in the pool: do not pay 100 units to fetch the
+        # same query again from the API when a method asks for it.
+        ctx.searched.add(query)
+        found, missing = self.cache.get_videos(ids)
+        free_videos = getattr(self.yt, "free_videos", None)
+        if missing and free_videos is not None:
+            fetched = free_videos(missing)
+            self.cache.put_videos(fetched)
+            found = found + fetched
+        if not found:
+            return None
+        by_id = {c.video_id: c for c in found}
+        ordered = [by_id[vid] for vid in ids if vid in by_id]
+        ctx.add(ordered)
+        if not ctx.first_results:
+            ctx.first_results = list(ids)
+        for code, fn in self.pipeline():
+            try:
+                hit = fn(ctx)
+            except NotApplicable:
+                continue
+            except QuotaExceeded:
+                raise
+            except Exception as exc:  # a broken step must not kill the run
+                log.warning("Free method %s failed for %s: %s", code, ctx.track.id, exc)
+                hit = None
+            self.last_tried.append(code)
+            if hit:
+                self.last_won = code
+                return MatchResult(
+                    candidate=hit, method=code, tried=list(self.last_tried), free=True
+                )
+        return None
+
     def match(self, track: Track) -> MatchResult | None:
         ctx = MatchContext(track=track)
         self.last_tried = []
         self.last_won = ""
+        early = self._free_pass(ctx)
+        if early is not None:
+            return early
         for code, fn in self.pipeline():
             try:
                 hit = fn(ctx)

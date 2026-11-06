@@ -752,3 +752,29 @@ def test_cache_command_lists_stored_playlists(monkeypatch, tmp_path, capsys):
     assert main.main(["cache"]) == 0
     out = capsys.readouterr().out
     assert "1 playlist(s)" in out and "src111111111111111111111" in out and "fresh" in out
+
+
+def test_budget_exhaustion_is_reported_separately_from_unmatched(monkeypatch, cfg):
+    """Running out of searches must not look like "not on YouTube"."""
+    tracks = [make_track(id=f"track{i:020d}") for i in range(3)]
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    youtube = EngineYouTube()
+    youtube.max_searches_per_run = 0
+    youtube.searches_this_run = 0
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+
+    class NoBudgetMatcher:
+        last_tried = ["STRICT"]
+        last_won = ""
+
+        def match(self, track):
+            youtube.searches_this_run += 5      # budget is spent
+            return None
+
+    engine.matcher = NoBudgetMatcher()
+    engine.youtube.max_searches_per_run = 3
+    report = engine.run()
+    assert report.budget_skips == 3
+    assert report.unmatched == 0
+    # a budget skip must not start the multi-day "retry later" clock
+    assert engine.state.unmatched_tries(tracks[0].id) == 0

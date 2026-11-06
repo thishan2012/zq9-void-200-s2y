@@ -59,6 +59,7 @@ jobs:
       - name: Validate config and secrets
         env:
           SPOTIFY_BACKEND: ${{ inputs.backend }}
+          YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
@@ -84,6 +85,7 @@ jobs:
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
+          YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
@@ -96,6 +98,7 @@ jobs:
           SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
+          YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
         run: python -m phonksync cache-fill
@@ -124,6 +127,7 @@ jobs:
           MAX_INSERTS_PER_DAY: ${{ inputs.max_inserts }}
           REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
+          YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           DRY_RUN: ${{ inputs.dry_run }}

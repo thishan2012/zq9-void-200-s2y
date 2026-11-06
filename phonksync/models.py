@@ -51,3 +51,4 @@ class MatchResult:
     candidate: Candidate
     method: str
     tried: list[str]
+    free: bool = False  # matched without spending a metered API search
