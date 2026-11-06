@@ -1,5 +1,8 @@
 # 🎧 Phonk Playlist Syncer — පුද්ගලික භාවිතය සඳහා
 
+[![Phonk Sync](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml/badge.svg)](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml)
+[![Tests](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/tests.yml/badge.svg)](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/tests.yml)
+
 > ⚠️ **මෙය පුද්ගලික සින්ක් ටූල් එකක් පමණයි. කරුණාකර Google / Search Engine වල Index නොකරන්න.**
 > `noindex, nofollow` — මෙම repository එක public වුවත් minutes සීමාව නිසා private කිරීමට නොහැක.
 
@@ -13,7 +16,7 @@
 
 - **Sources ගොඩක් → target එකයි.** Spotify source playlists 20ක් 30ක් උනත් කමක් නෑ.
 - **Cookie වලින් Spotify login.** `sp_dc` cookie එක paste කළාම ඇති — Spotify app එකක් හදන්න ඕන නෑ.
-- **Telegram log.** හැම track එකටම ✅ message + summary.
+- **Telegram log.** run එකකට **එක message** එකයි: add/skip/fail ගණන් + add නොවුණු songs විතරක් (spam නෑ).
 - **Duplicate නෑ.** ISRC වලින් එකම recording එක වෙන ID එකකින් තිබ්බත් අඳුරගන්නවා.
 - **Dry-run preview.** default 200 tracks විතරක් කියවලා write නොකර preview කරනවා.
 - **YouTube sync (optional, default off).** ඕන නම් `youtube_enabled: true` කරලා 31-method pipeline එකෙන් YouTube එකටත් add කරනවා.
