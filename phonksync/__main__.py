@@ -67,7 +67,11 @@ def cmd_check(args: argparse.Namespace) -> int:
                 if key_count else "🔎 YouTube search: OAuth"
             )
             has_oauth = bool(
-                (secrets.youtube_client_json or secrets.youtube_token_json)
+                (
+                    secrets.youtube_client_json
+                    or secrets.youtube_token_json
+                    or (secrets.youtube_client_id and secrets.youtube_client_secret)
+                )
                 and (secrets.youtube_refresh_token or secrets.youtube_token_json)
             )
             if has_oauth:
@@ -151,6 +155,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             try:
                 yt = YouTubeClient(
                     client_json=secrets.youtube_client_json,
+                    client_id=secrets.youtube_client_id,
+                    client_secret=secrets.youtube_client_secret,
                     refresh_token=secrets.youtube_refresh_token,
                     token_json=secrets.youtube_token_json,
                     api_key=secrets.youtube_api_key,
@@ -628,15 +634,46 @@ def cmd_cookie_fix(args: argparse.Namespace) -> int:
 
 
 def cmd_youtube_auth(args: argparse.Namespace) -> int:
-    from .oauth_setup import auth_url, exchange_code, run_device_flow, run_oauth_flow
+    from .oauth_setup import (
+        auth_url,
+        client_section,
+        doctor,
+        exchange_code,
+        run_device_flow,
+        run_oauth_flow,
+    )
 
+    source = args.client_json
+    if not source and Path("client_secret.json").exists():
+        source = "client_secret.json"
+    if not source and (args.client_id or os.environ.get("YT_CLIENT_ID")):
+        client_id = args.client_id or os.environ.get("YT_CLIENT_ID", "")
+        secret = args.client_secret or os.environ.get("YT_CLIENT_SECRET", "")
+        print(f"🔑 using client id from {'the command line' if args.client_id else 'YT_CLIENT_ID'}")
+        if args.doctor:
+            return doctor(
+                client_json="", client_id=client_id, client_secret=secret
+            )
+        # Hand the flow an inline JSON so every sub-mode works from an id alone.
+        try:
+            section = client_section("", client_id, secret)
+        except ValueError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        source = json.dumps({"installed": section})
+    if args.doctor:
+        return doctor(
+            client_json=source,
+            client_id=args.client_id or os.environ.get("YT_CLIENT_ID", ""),
+            client_secret=args.client_secret or os.environ.get("YT_CLIENT_SECRET", ""),
+        )
     if args.device:
-        return run_device_flow(args.client_json)
+        return run_device_flow(source)
     if args.auth_url:
-        return auth_url(args.client_json, args.redirect_uri)
+        return auth_url(source, args.redirect_uri)
     if args.code:
-        return exchange_code(args.client_json, args.code, args.redirect_uri)
-    return run_oauth_flow(args.client_json, port=args.port, redirect_uri=args.redirect_uri)
+        return exchange_code(source, args.code, args.redirect_uri)
+    return run_oauth_flow(source, port=args.port, redirect_uri=args.redirect_uri)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -730,7 +767,19 @@ def main(argv: list[str] | None = None) -> int:
     p_fix.set_defaults(func=cmd_cookie_fix)
 
     p_auth = sub.add_parser("youtube-auth", help="One-time YouTube OAuth setup (get refresh token)")
-    p_auth.add_argument("--client-json", default="client_secret.json", help="OAuth client JSON file")
+    p_auth.add_argument(
+        "--client-json",
+        default="",
+        help="OAuth client JSON file (or the JSON itself). Default: client_secret.json if present",
+    )
+    p_auth.add_argument(
+        "--client-id",
+        default="",
+        help="Bare client id from the Cloud Console (…apps.googleusercontent.com)",
+    )
+    p_auth.add_argument(
+        "--client-secret", default="", help="Client secret (needed for the code exchange)"
+    )
     p_auth.add_argument("--port", type=int, default=8765, help="Local redirect port")
     p_auth.add_argument(
         "--redirect-uri",
@@ -747,6 +796,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_auth.add_argument(
         "--code", default="", help="Exchange a pasted authorization code for a refresh token"
+    )
+    p_auth.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Only report what is missing for YouTube writes",
     )
     p_auth.set_defaults(func=cmd_youtube_auth)
 

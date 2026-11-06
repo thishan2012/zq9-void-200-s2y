@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import os
 import secrets as pysecrets
 import threading
 import time
@@ -48,15 +49,69 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+_CLIENT_ID_SUFFIX = ".apps.googleusercontent.com"
+
+
+def is_client_id(value: str) -> bool:
+    """Google client ids: <digits/letters>-<chars>.apps.googleusercontent.com."""
+    value = (value or "").strip()
+    if " " in value or not value.endswith(_CLIENT_ID_SUFFIX):
+        return False
+    head = value[: -len(_CLIENT_ID_SUFFIX)]
+    return len(head) >= 20 and ("-" in head)
+
+
+def client_section(
+    client_json: str = "", client_id: str = "", client_secret: str = ""
+) -> dict:
+    """Build the OAuth client config from whatever the user actually has.
+
+    Accepted, in order of preference:
+
+    1. a path to `client_secret.json`
+    2. the JSON itself, pasted as one string
+    3. a bare **client id** (+ optional secret) — the only thing you can read
+       straight off the Cloud Console credentials row
+    """
+    raw = (client_json or "").strip()
+    if raw and not raw.startswith("{"):
+        path = Path(raw)
+        if path.exists():
+            raw = path.read_text(encoding="utf-8")
+        else:
+            raise FileNotFoundError(raw)
+    if raw:
+        blob = json.loads(raw)
+        section = blob.get("installed") or blob.get("web") or blob
+        if not section.get("client_id"):
+            raise ValueError(
+                "That JSON has no client_id — is it the OAuth client file? "
+                "(It should contain \"installed\" or \"web\".)"
+            )
+        section.setdefault("token_uri", _TOKEN_URL)
+        return section
+
+    client_id = (client_id or "").strip()
+    if not client_id:
+        raise ValueError(
+            "No OAuth client given. Pass --client-json <file>, --client-id <id>, "
+            "or --client-id <id> --client-secret <secret>."
+        )
+    if not is_client_id(client_id):
+        raise ValueError(
+            f"{client_id!r} does not look like a Google OAuth client id "
+            "(it ends with .apps.googleusercontent.com)."
+        )
+    return {
+        "client_id": client_id,
+        "client_secret": (client_secret or "").strip(),
+        "token_uri": _TOKEN_URL,
+    }
+
+
 def _client_section(client_json_path: str) -> dict:
-    path = Path(client_json_path)
-    if not path.exists():
-        raise FileNotFoundError(str(path))
-    blob = json.loads(path.read_text(encoding="utf-8"))
-    section = blob.get("installed") or blob.get("web") or blob
-    if not section.get("client_id") or not section.get("client_secret"):
-        raise ValueError("Client JSON must contain client_id and client_secret")
-    return section
+    """Back-compat wrapper: a JSON path/string, falling back to an id."""
+    return client_section(client_json=client_json_path)
 
 
 def _print_secrets(client_id: str, client_secret: str, token_uri: str, refresh_token: str) -> None:
@@ -83,7 +138,7 @@ def run_device_flow(client_json_path: str) -> int:
     the run happens on a machine without a browser.
     """
     try:
-        section = _client_section(client_json_path)
+        section = client_section(client_json_path)
     except FileNotFoundError:
         print(f"❌ File not found: {client_json_path}")
         return 2
@@ -91,7 +146,7 @@ def run_device_flow(client_json_path: str) -> int:
         print(f"❌ {exc}")
         return 2
     client_id = section["client_id"]
-    client_secret = section["client_secret"]
+    client_secret = section.get("client_secret", "")
     token_uri = section.get("token_uri", _TOKEN_URL)
 
     resp = requests.post(
@@ -135,6 +190,12 @@ def run_device_flow(client_json_path: str) -> int:
         if error == "slow_down":
             interval += 5
             continue
+        if error == "invalid_client" and not client_secret:
+            print("❌ Google says this client needs a **client secret** too.")
+            print("   Cloud Console → APIs & Services → Credentials → your OAuth client")
+            print("   → the 'Client secret' value (or 'Download JSON'). Then re-run with")
+            print("   `--client-id <id> --client-secret <secret> --device`.")
+            return 1
         if error:
             print(f"❌ {error}: {payload.get('error_description', '')}")
             return 1
@@ -151,7 +212,7 @@ def run_device_flow(client_json_path: str) -> int:
 def auth_url(client_json_path: str, redirect_uri: str = "http://localhost:8765/callback") -> int:
     """Print the consent URL for a redirect URI you registered yourself."""
     try:
-        section = _client_section(client_json_path)
+        section = client_section(client_json_path)
     except (FileNotFoundError, ValueError) as exc:
         print(f"❌ {exc}")
         return 2
@@ -179,9 +240,14 @@ def auth_url(client_json_path: str, redirect_uri: str = "http://localhost:8765/c
 def exchange_code(client_json_path: str, code: str, redirect_uri: str) -> int:
     """Turn a pasted authorization code into a refresh token."""
     try:
-        section = _client_section(client_json_path)
+        section = client_section(client_json_path)
     except (FileNotFoundError, ValueError) as exc:
         print(f"❌ {exc}")
+        return 2
+    if not section.get("client_secret"):
+        print("❌ Exchanging a code needs the client **secret** as well as the id.")
+        print("   Cloud Console → Credentials → your OAuth client → 'Client secret',")
+        print("   then re-run with --client-id <id> --client-secret <secret> --code ...")
         return 2
     token_uri = section.get("token_uri", _TOKEN_URL)
     resp = requests.post(
@@ -287,3 +353,48 @@ def run_oauth_flow(client_json_path: str, port: int = 8765, redirect_uri: str = 
 
     _print_secrets(client_id, client_secret, token_uri, refresh_token)
     return 0
+
+
+def doctor(client_json: str = "", client_id: str = "", client_secret: str = "") -> int:
+    """Say exactly what is missing for YouTube writes — and nothing else."""
+    print("🩺 YouTube write setup\n")
+    ok = True
+    if client_json or client_id:
+        try:
+            section = client_section(client_json, client_id, client_secret)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"❌ OAuth client: {exc}")
+            return 2
+        kind = "client JSON" if (client_json or "").strip().startswith("{") or "\"installed\"" in (client_json or "") else "client id"
+        print(f"✅ OAuth client: {section['client_id'][:18]}… ({kind})")
+        if not section.get("client_secret"):
+            print("⚠️  No client secret — the device flow can work without one, but")
+            print("   exchanging an authorization code cannot. Console → Credentials →")
+            print("   your OAuth client → 'Client secret'.")
+            ok = False
+    else:
+        print("❌ OAuth client: nothing configured")
+        print("   Set YT_CLIENT_ID (…apps.googleusercontent.com) + YT_CLIENT_SECRET,")
+        print("   or YT_CLIENT_JSON with the downloaded file.")
+        ok = False
+
+    refresh = os.environ.get("YT_REFRESH_TOKEN", "").strip()
+    access = os.environ.get("YT_ACCESS_TOKEN", "").strip()
+    if refresh:
+        print(f"✅ Refresh token present ({refresh[:6]}…, never expires)")
+    elif access:
+        print("⚠️  Only an access token: writes work ~1 hour, then stop.")
+        print("   Run `phonksync youtube-auth --device` once for a refresh token.")
+        ok = False
+    else:
+        print("❌ No refresh token — nothing can be added to the YouTube playlist.")
+        print("   Run `phonksync youtube-auth --device` (needs the OAuth client above).")
+        ok = False
+
+    if os.environ.get("YOUTUBE_TARGET_PLAYLIST", "").strip():
+        print("✅ Target playlist configured")
+    else:
+        print("⚠️  YOUTUBE_TARGET_PLAYLIST is not set in this environment")
+
+    print("\n" + ("✅ Writes should work." if ok else "👉 Fix the ❌/⚠️ lines above, then re-run `phonksync check`."))
+    return 0 if ok else 1

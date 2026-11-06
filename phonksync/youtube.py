@@ -162,6 +162,8 @@ class YouTubeClient:
     def __init__(
         self,
         client_json: str = "",
+        client_id: str = "",
+        client_secret: str = "",
         refresh_token: str = "",
         token_json: str = "",
         api_key: str | list[str] = "",
@@ -205,6 +207,12 @@ class YouTubeClient:
         self.client_id = section.get("client_id", "")
         self.client_secret = section.get("client_secret", "")
         self.token_uri = section.get("token_uri", self.token_uri)
+        # Bare client id/secret (pasted from the Cloud Console credentials row)
+        # are enough for the refresh-token grant.
+        if not self.client_id:
+            self.client_id = (client_id or "").strip()
+        if not self.client_secret:
+            self.client_secret = (client_secret or "").strip()
         if not self.refresh_token:
             # Token JSONs keep refresh_token at the top level; be lenient and
             # also look inside the installed/web section.
