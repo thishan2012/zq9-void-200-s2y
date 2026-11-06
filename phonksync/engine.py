@@ -73,6 +73,7 @@ class RunReport:
     skipped_by_choice: int = 0
     youtube_readonly: int = 0
     pending_youtube_flushed: int = 0
+    youtube_write_problem: str = ""
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -101,8 +102,11 @@ class RunReport:
         if self.youtube_readonly:
             lines.append(
                 f"📝 YouTube writes OFF: {self.youtube_readonly} match(es) remembered, "
-                "not added (they go in automatically once YT_REFRESH_TOKEN exists)"
+                "not added (they go in automatically once a write credential exists)"
             )
+        problem = self.youtube_write_problem
+        if problem:
+            lines.append(f"⚠️ {problem}")
         if self.skipped_by_choice:
             lines.append(
                 f"🙅 Skipped by choice: {self.skipped_by_choice} (not on YouTube / not "
@@ -251,33 +255,55 @@ class SyncEngine:
 
     # ------------------------------------------------------------------ run
 
-    def _warn_if_youtube_writes_are_off(self) -> None:
-        """Say it once, at the start, when matches cannot be added to YouTube."""
+    def _youtube_write_problem(self) -> str:
+        """Why writes are off, in terms of the credential actually missing."""
         yt = self.youtube
-        if yt is None or getattr(yt, "can_write", True):
-            return
+        if yt is None:
+            return ""
+        if getattr(yt, "can_write", True):
+            return ""
         mode = getattr(yt, "write_mode", "")
         if mode.startswith("manual"):
-            return  # writes DO work, just for ~an hour
+            return ""  # writes DO work, just for ~an hour
+        diag = getattr(yt, "cookie_diag", None)
+        detail = diag() if callable(diag) else ""
+        if detail and "no __Secure-3PAPISID" in detail:
+            return (
+                f"YT_COOKIE is set but unusable — {detail}. Copy the whole "
+                "Cookie header from a signed-in music.youtube.com tab "
+                "(`phonksync youtube-auth --cookie-help`)."
+            )
+        return (
+            "no write credential: set YT_COOKIE (signed-in browser cookie, no "
+            "Console) or YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN."
+        )
+
+    def _warn_if_youtube_writes_are_off(self) -> None:
+        """Say it once, at the start, when matches cannot be added to YouTube."""
+        problem = self._youtube_write_problem()
+        report = getattr(self, "_current_report", None)
+        if report is not None:
+            report.youtube_write_problem = problem
+        if not problem:
+            return
         log.warning(
             "YouTube writes are OFF (record-only mode): matches are stored in state "
-            "so nothing is lost, but no video is added to the playlist. Fix with "
-            "YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN "
-            "(run `phonksync youtube-auth --device` once)."
+            "so nothing is lost, but no video is added to the playlist. %s",
+            problem,
         )
         self.telegram.warn(
-            "✍️ <b>YouTube writes are OFF</b> (API key only). Matches are remembered "
-            "and will be added automatically on the first run after you add "
-            "YT_REFRESH_TOKEN — nothing is lost.\n"
-            "One-time setup: <code>python -m phonksync youtube-auth --device</code>"
+            "✍️ <b>YouTube writes are OFF</b> — matches are remembered and will be "
+            "added automatically on the first run after this is fixed; nothing is "
+            f"lost.\nReason: {escape(problem)}"
         )
 
     def run(self) -> RunReport:
         cfg = self.config
-        report = RunReport(
+        self._current_report = RunReport(
             started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             dry_run=cfg.dry_run,
         )
+        report = self._current_report
         mode = "DRY RUN" if cfg.dry_run else "live"
         if cfg.dry_run and cfg.dry_run_track_limit:
             mode += f" (first {cfg.dry_run_track_limit} source tracks)"
@@ -285,7 +311,10 @@ class SyncEngine:
         if cfg.youtube_enabled and self.youtube is not None:
             mode = getattr(self.youtube, "write_mode", "")
             if not getattr(self.youtube, "can_write", True) and not mode.startswith("manual"):
-                targets += " (read-only API key: search works, playlist adds need OAuth)"
+                targets += (
+                    " (read-only: search works, playlist adds need YT_COOKIE or "
+                    "YT_REFRESH_TOKEN)"
+                )
             elif mode.startswith("manual"):
                 targets += f" ({mode})"
         self.telegram.info(

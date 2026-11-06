@@ -61,11 +61,15 @@ def cmd_check(args: argparse.Namespace) -> int:
             print("ℹ️  YouTube sync disabled — Spotify-only mode")
         else:
             key_count = len([k for k in __import__("re").split(r"[\s,;]+", secrets.youtube_api_key) if k])
-            print(
-                f"🔎 YouTube search: API key (read-only, {key_count} key(s) / "
-                f"{cfg.youtube_daily_quota_units * max(1, key_count)} units/day)"
-                if key_count else "🔎 YouTube search: OAuth"
-            )
+            if key_count:
+                print(
+                    f"🔎 YouTube search: API key ({key_count} key(s) / "
+                    f"{cfg.youtube_daily_quota_units * max(1, key_count)} units/day)"
+                )
+            elif secrets.youtube_cookie:
+                print("🔎 YouTube search: free web pages + cookie (0 quota, no API key)")
+            else:
+                print("🔎 YouTube search: OAuth")
             has_oauth = bool(
                 (
                     secrets.youtube_client_json
@@ -76,6 +80,25 @@ def cmd_check(args: argparse.Namespace) -> int:
             )
             if has_oauth:
                 print("✅ YouTube playlist writes: OAuth enabled (refresh token — never expires)")
+            elif secrets.youtube_cookie:
+                from .youtube import YouTubeClient
+
+                probe = YouTubeClient(
+                    api_key="",
+                    cookie=secrets.youtube_cookie,
+                    authuser=secrets.youtube_authuser,
+                    free_search=False,
+                )
+                if probe.can_write:
+                    print(f"✅ YouTube playlist writes: {probe.write_mode}")
+                else:
+                    print(
+                        f"⚠️  YT_COOKIE is set but unusable: {probe.cookie_diag()}"
+                    )
+                    print(
+                        "   Copy the whole Cookie header from a signed-in "
+                        "music.youtube.com tab (`phonksync youtube-auth --cookie-help`)."
+                    )
             elif secrets.youtube_access_token:
                 print(
                     "⚠️  YouTube writes: manual access token — works ~1 hour, then dies. "
@@ -83,8 +106,10 @@ def cmd_check(args: argparse.Namespace) -> int:
                 )
             else:
                 print(
-                    "⚠️  YouTube playlist writes disabled — API key cannot add videos "
-                    "(add YT_CLIENT_JSON + YT_REFRESH_TOKEN)"
+                    "⚠️  YouTube playlist writes disabled — a read-only API key cannot "
+                    "add videos. Add YT_COOKIE (no Console needed, see "
+                    "`phonksync youtube-auth --cookie-help`) or YT_CLIENT_ID + "
+                    "YT_CLIENT_SECRET + YT_REFRESH_TOKEN."
                 )
     except ConfigError as exc:
         problems.append(f"Config: {exc}")
@@ -185,13 +210,24 @@ def cmd_check(args: argparse.Namespace) -> int:
                         f"✅ YouTube API key works (read-only search, {len(hits)} result, "
                         f"{len(yt.api_keys)} key(s) x {yt.daily_quota_units} units/day)"
                     )
-                if yt.can_write:
+                diag = getattr(yt, "cookie_diag", None)
+                if secrets.youtube_cookie and callable(diag):
+                    print(f"🍪 {diag()}")
+                if yt.has_oauth:
                     yt.playlist_video_ids(cfg.youtube_target_playlist)
                     print("✅ YouTube OAuth valid, target playlist readable (writes enabled)")
+                elif yt.can_write:
+                    # Prove the cookie can actually read the private playlist.
+                    ids = yt.playlist_video_ids(cfg.youtube_target_playlist)
+                    print(
+                        f"✅ YouTube cookie works — target playlist readable "
+                        f"({len(ids)} video(s)), writes go through the web endpoint"
+                    )
                 else:
                     print(
                         "⚠️  YouTube writes disabled (read-only) — add YT_COOKIE "
-                        "(no Console needed) or YT_CLIENT_JSON + YT_REFRESH_TOKEN"
+                        "(no Console needed) or YT_CLIENT_ID + YT_CLIENT_SECRET + "
+                        "YT_REFRESH_TOKEN"
                     )
             except Exception as exc:
                 problems.append(f"YouTube live check: {exc}")

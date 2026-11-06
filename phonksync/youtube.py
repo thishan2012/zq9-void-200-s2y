@@ -29,7 +29,6 @@ import json
 import logging
 import re
 import time
-from http.cookies import SimpleCookie
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -293,23 +292,52 @@ class YouTubeClient:
     # ------------------------------------------------------- browser cookie
     @staticmethod
     def _cookie_value(raw: str, name: str) -> str:
-        """Pull one cookie out of a ``Cookie:`` header (or a bare value)."""
-        raw = (raw or "").strip().replace("\r", "").replace("\n", " ")
-        if name + "=" not in raw:
+        """Pull one cookie out of a pasted block, a ``Cookie:`` header or a value.
+
+        Accepts every shape a browser hands out: a ``Cookie:`` line, the whole
+        "Copy request headers" block, a quoted one-liner, tab/space after the
+        colon, and any letter case for the cookie name. A secret pasted into
+        GitHub usually keeps its line breaks, so newlines are treated as ``;``.
+        """
+        cooked = (raw or "").strip().replace("\r", "").replace("\n", ";")
+        if "=" not in cooked:
             return ""
-        jar = SimpleCookie()
-        try:
-            jar.load(raw.replace('"', ""))
-        except Exception:  # pragma: no cover - malformed cookie strings
-            jar = SimpleCookie()
-        if name in jar:
-            return jar[name].value
-        match = re.search(name + r'=([^;\s]+)', raw)
+        target = name.lower()
+        for part in cooked.replace('"', "").split(";"):
+            key, _, value = part.partition("=")
+            key = key.strip().lower()
+            if key.startswith("cookie:"):
+                key = key[len("cookie:") :].strip()
+            elif key.startswith(":") and key not in (":cookie",):
+                continue  # devtools pseudo-header (:authority:, :method:, ...)
+            if key == target:
+                return value.strip().strip('"')
+        # Last resort (odd formatting): unanchored search, case-insensitive.
+        match = re.search(re.escape(name) + r'\s*=\s*"?([^;\s"]+)', cooked, re.I)
         return match.group(1) if match else ""
 
     def _sapisid(self) -> str:
         return self._cookie_value(self.cookie, "__Secure-3PAPISID") or self._cookie_value(
             self.cookie, "SAPISID"
+        )
+
+    def cookie_diag(self) -> str:
+        """One human line saying whether the cookie is usable (no secrets)."""
+        if not self.cookie:
+            return "no YT_COOKIE set"
+        length = len(self.cookie)
+        sapisid = self._sapisid()
+        if not sapisid:
+            hint = ""
+            if "papisid" in self.cookie.lower():
+                hint = " — the name looks clipped/wrong (need __Secure-3PAPISID)"
+            elif "SID=" not in self.cookie:
+                hint = " — only part of the cookie was pasted (need the whole Cookie header)"
+            return f"cookie present ({length} chars) but no __Secure-3PAPISID{hint}"
+        kind = "full session cookie" if "SID=" in self.cookie else "SAPISID-only (narrow)"
+        return (
+            f"cookie ok ({length} chars, {kind}, __Secure-3PAPISID "
+            f"{sapisid[:3]}…{sapisid[-3:]}, authuser {self.authuser})"
         )
 
     def _ytm_headers(self) -> dict[str, str]:
