@@ -63,6 +63,22 @@ lookups: `max_searches_per_run = 200`, `youtube_max_searches_per_day = 0`.
 The real guard is the per-key unit budget (`youtube_daily_quota_units`), which
 still refuses to exceed Google's 10,000/day.
 
+## Songs that simply are not on YouTube (or you do not want)
+
+Mark them once and the syncer stops looking — no searches, no "unmatched"
+noise, no retry clock:
+
+```bash
+python -m phonksync skip --show                 # skips + what is still unmatched
+python -m phonksync skip --all-unmatched        # "none of these, stop trying"
+python -m phonksync skip <spotify-track-id> --reason "not on YouTube"
+python -m phonksync skip --clear <spotify-track-id>
+```
+
+The summary then reads `🙅 Skipped by choice: 2 (not on YouTube / not wanted …)`
+instead of `❌ Unmatched`. Skips live in `data/sync-state.json` (committed), so
+they survive between runs.
+
 ## "Unmatched" vs "out of budget"
 
 A track that was still being tried when the search budget ran out is **not**
