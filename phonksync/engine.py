@@ -332,9 +332,17 @@ class SyncEngine:
                 "Cookie header from a signed-in music.youtube.com tab "
                 "(`phonksync youtube-auth --cookie-help`)."
             )
+        if not getattr(yt, "cookie", ""):
+            return (
+                "YT_COOKIE is not set at all (the YouTube search key is not a "
+                "write credential). Add it under Settings → Secrets → Actions, "
+                "then run again — matches are already remembered."
+            )
+        # A cookie IS set; the problem is inside it.
         return (
-            "no write credential: set YT_COOKIE (signed-in browser cookie, no "
-            "Console) or YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN."
+            f"YT_COOKIE is set but unusable — {detail or 'no usable SAPISID'}. "
+            "Re-copy the whole Cookie request header from a signed-in "
+            "music.youtube.com tab."
         )
 
     def _warn_if_youtube_writes_are_off(self) -> None:

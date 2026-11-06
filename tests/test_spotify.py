@@ -353,7 +353,7 @@ def test_rate_limit_gives_up_with_helpful_message(monkeypatch):
         client.playlist_tracks("x", max_tracks=10)
     msg = str(exc.value)
     # a persistent 429 is a cooldown now, not a hard failure
-    assert "parking the run" in msg and "resumes here" in msg
+    assert "stopping early" in msg and "web-player route" in msg
     assert client.blocked_until > 0
 
 
@@ -708,7 +708,7 @@ def test_public_reader_handles_http_errors():
 
 
 def test_persistent_short_429_becomes_a_cooldown(monkeypatch):
-    """6 x 429 with short Retry-After must end as a cooldown, not a crash."""
+    """A flapping short Retry-After ends as a cooldown after two knocks."""
     import phonksync.spotify as sp
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
@@ -733,7 +733,7 @@ def test_persistent_short_429_becomes_a_cooldown(monkeypatch):
     client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
     with pytest.raises(RateLimited) as exc:
         client.playlist_tracks("x", max_tracks=10)
-    assert "parking the run" in str(exc.value)
+    assert "stopping early" in str(exc.value)
     assert client.blocked_until > time.time() + 60
     assert client.blocked_until <= time.time() + sp._SHORT_BLOCK_COOLDOWN + 5
 
@@ -1138,3 +1138,71 @@ def test_hash_can_be_overridden_from_the_environment(monkeypatch):
     monkeypatch.setenv("SPOTIFY_HASH_FETCHPLAYLIST", "not-a-hash")
     overrides = sp._hash_overrides()
     assert overrides == {"addToPlaylist": "c" * 64}
+
+
+def test_a_24h_block_is_not_retried_even_once(monkeypatch):
+    """The real run burned 117s (45+13+45+14) on a Retry-After of 24h."""
+    import phonksync.spotify as sp
+
+    sleeps = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: sleeps.append(s))
+
+    class Resp:
+        status_code = 429
+        headers = {"Retry-After": "129599"}  # ~24h, like the real run
+        text = "{}"
+
+        def json(self):
+            return {}
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.calls = 0
+
+        def request(self, *a, **kw):
+            self.calls += 1
+            return Resp()
+
+    session = Session()
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=session)
+    with pytest.raises(RateLimited) as exc:
+        client.playlist_tracks("x", max_tracks=10)
+    assert session.calls == 1, "a multi-hour block must not be retried"
+    assert sleeps == [], "nothing may be slept on a 24h block"
+    assert client.blocked_until > 0
+    assert "Nothing was retried" in str(exc.value)
+
+
+def test_a_flapping_short_block_stops_after_two_knocks(monkeypatch):
+    """Retry-After flapping 45s -> 13s must not cost ~2 minutes of waiting."""
+    import phonksync.spotify as sp
+
+    slept = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: slept.append(s))
+
+    class Resp:
+        status_code = 429
+        headers = {"Retry-After": "45"}
+        text = "{}"
+
+        def json(self):
+            return {}
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+            self.calls = 0
+
+        def request(self, *a, **kw):
+            self.calls += 1
+            return Resp()
+
+    session = Session()
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "t")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=session)
+    with pytest.raises(RateLimited):
+        client.playlist_tracks("x", max_tracks=10)
+    assert session.calls == 2
+    assert sum(slept) <= 60  # one Retry-After (+jitter), not two minutes

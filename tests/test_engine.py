@@ -1152,3 +1152,30 @@ def test_pacing_env_values_are_clamped(tmp_path, monkeypatch):
     cfg = Config.load(cfg_path)
     assert cfg.youtube_free_search_pause == 0.0
     assert cfg.search_results_per_query == 50
+
+
+def test_youtube_problem_separates_not_set_from_unusable(monkeypatch, cfg):
+    """"no write credential" was ambiguous: set vs. set-but-rejected."""
+    cfg.youtube_enabled = True
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+
+    class NoCookie(EngineYouTube):
+        cookie = ""
+        can_write = False
+        write_mode = "none"
+
+        def cookie_diag(self):
+            return "no YT_COOKIE set"
+
+    engine = build_engine(monkeypatch, cfg, spotify, NoCookie())
+    assert "not set at all" in engine._youtube_write_problem()
+
+    class BadCookie(NoCookie):
+        cookie = "SID=abc; HSID=def"
+
+        def cookie_diag(self):
+            return "cookie present (24 chars) but no usable SAPISID"
+
+    engine2 = build_engine(monkeypatch, cfg, spotify, BadCookie())
+    problem = engine2._youtube_write_problem()
+    assert "set but unusable" in problem and "SAPISID" in problem
