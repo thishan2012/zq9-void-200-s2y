@@ -109,7 +109,7 @@ def test_daily_search_cap_survives_multiple_runs():
     session = FakeSession(search_handler)
     quota = QuotaState(date=TODAY, searches=80, units_used=8000)
     yt = YouTubeClient(api_key="KEY123", max_searches_per_run=80,
-                       max_searches_per_day=80, quota_state=quota, session=session)
+                       max_searches_per_day=80, quota_state=quota, session=session, free_search=False)
     with pytest.raises(QuotaExceeded) as exc:
         yt.search("q")
     assert "Daily search limit" in str(exc.value)
@@ -121,7 +121,7 @@ def test_daily_insert_cap():
     session = FakeSession(search_handler)
     quota = QuotaState(date=TODAY, inserts=40, units_used=2000)
     yt = YouTubeClient(token_json=CLIENT_JSON, max_inserts_per_day=40,
-                       quota_state=quota, session=session)
+                       quota_state=quota, session=session, free_search=False)
     with pytest.raises(QuotaExceeded):
         yt.add_to_playlist("PLtarget", "vid00000003")
 
