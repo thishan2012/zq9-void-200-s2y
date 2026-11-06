@@ -168,6 +168,8 @@ class Secrets:
     spotify_cookie: str = ""
     spotify_spare_cookies: list[str] = field(default_factory=list)
     youtube_client_json: str = ""
+    youtube_client_id: str = ""
+    youtube_client_secret: str = ""
     youtube_refresh_token: str = ""
     youtube_token_json: str = ""
     youtube_access_token: str = ""  # short-lived (1h) token pasted by hand
@@ -200,6 +202,8 @@ class Secrets:
             spotify_cookie=os.environ.get("SPOTIFY_COOKIE", ""),
             spotify_spare_cookies=spares,
             youtube_client_json=_first("YT_CLIENT_JSON", "YOUTUBE_CLIENT_JSON", "YOUTUBE_OAUTH_CLIENT_JSON"),
+            youtube_client_id=_first("YT_CLIENT_ID", "YOUTUBE_CLIENT_ID", "GOOGLE_CLIENT_ID"),
+            youtube_client_secret=_first("YT_CLIENT_SECRET", "YOUTUBE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"),
             youtube_refresh_token=_first("YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN"),
             youtube_token_json=_first(
                 "YT_TOKEN_JSON",
@@ -230,7 +234,11 @@ class Secrets:
         if require_youtube:
             # Read-only search needs an API key; playlist writes need OAuth.
             has_oauth = bool(
-                (self.youtube_client_json or self.youtube_token_json)
+                (
+                    self.youtube_client_json
+                    or self.youtube_token_json
+                    or (self.youtube_client_id and self.youtube_client_secret)
+                )
                 and (self.youtube_refresh_token or self.youtube_token_json)
             )
             if not (self.youtube_api_key or has_oauth):

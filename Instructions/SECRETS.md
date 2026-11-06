@@ -145,6 +145,39 @@ Notes:
 - Your OAuth consent screen must include your Google account as a **Test user**, or the app must be published. Otherwise authorization can fail.
 - If no refresh token appears, revoke the app grant at https://myaccount.google.com/permissions and repeat the Playground authorization.
 
+### No `client_secret.json`? A client **id** is almost enough
+
+The downloaded JSON is just a wrapper around two strings. If all you have is the
+**client id** (the `…apps.googleusercontent.com` value on the Credentials page),
+that works too:
+
+```bash
+# a) writes that keep working — refresh token via the device flow
+export YT_CLIENT_ID=676669…apps.googleusercontent.com
+python -m phonksync youtube-auth --device
+#    → prints YT_REFRESH_TOKEN + the one-line JSON (optional to store)
+
+# b) what is still missing?
+python -m phonksync youtube-auth --doctor
+```
+
+Add these instead of / next to `YT_CLIENT_JSON`:
+
+| secret | value |
+|---|---|
+| `YT_CLIENT_ID` | `…apps.googleusercontent.com` |
+| `YT_CLIENT_SECRET` | the "Client secret" of the same OAuth client |
+| `YT_REFRESH_TOKEN` | printed by `youtube-auth` |
+
+`YT_CLIENT_ID` + `YT_CLIENT_SECRET` + `YT_REFRESH_TOKEN` is a complete setup —
+`phonksync check` counts it as OAuth, and the sync uses it for writes.
+
+> The **client secret** is needed to exchange an authorization code. Desktop
+> clients sometimes allow the device flow without it; if Google answers
+> `invalid_client`, copy the secret (Credentials → your OAuth client) and re-run.
+> Note the secret is not a user secret — it identifies the app; keep it out of
+> the repo all the same.
+
 ### Access token vs refresh token (this is the "expires in 2 minutes" trap)
 
 Google hands out **two different tokens**, and only one of them is useful here:

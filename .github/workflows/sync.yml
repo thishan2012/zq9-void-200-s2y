@@ -68,6 +68,9 @@ jobs:
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
           YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_TOKEN_JSON: ${{ secrets.YT_TOKEN_JSON }}
           YOUTUBE_OAUTH_TOKEN_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}
@@ -114,6 +117,9 @@ jobs:
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
           YT_CLIENT_JSON: ${{ secrets.YT_CLIENT_JSON }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_ACCESS_TOKEN: ${{ secrets.YT_ACCESS_TOKEN }}
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           YT_TOKEN_JSON: ${{ secrets.YT_TOKEN_JSON }}
           YOUTUBE_OAUTH_TOKEN_JSON: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON }}

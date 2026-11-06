@@ -211,6 +211,8 @@ class SyncEngine:
             self.cache = SearchCache(config.cache_path, ttl_days=config.search_cache_ttl_days)
             self.youtube = YouTubeClient(
                 client_json=secrets.youtube_client_json,
+                client_id=secrets.youtube_client_id,
+                client_secret=secrets.youtube_client_secret,
                 refresh_token=secrets.youtube_refresh_token,
                 token_json=secrets.youtube_token_json,
                 api_key=secrets.youtube_api_key,

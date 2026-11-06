@@ -325,3 +325,64 @@ def test_oauth_helpers_build_a_consent_url(tmp_path, capsys):
     assert "client_id=cid.apps.googleusercontent.com" in out
     assert "access_type=offline" in out
     assert "redirect_uri=http%3A%2F%2F127.0.0.1%3A8765%2Fcallback" in out
+
+
+# ------------------------------------------------ client id without a JSON
+def test_client_section_accepts_a_bare_client_id():
+    from phonksync.oauth_setup import client_section
+
+    section = client_section("", "6766690abc773-xyz123abc.apps.googleusercontent.com", "")
+    assert section["client_id"].endswith("apps.googleusercontent.com")
+    assert section["token_uri"] == "https://oauth2.googleapis.com/token"
+
+
+def test_client_section_rejects_something_that_is_not_a_client_id():
+    import pytest as _pytest
+
+    from phonksync.oauth_setup import client_section
+
+    with _pytest.raises(ValueError):
+        client_section("", "not-a-client-id", "")
+
+
+def test_client_section_still_accepts_a_json_file(tmp_path):
+    from phonksync.oauth_setup import client_section
+
+    path = tmp_path / "client_secret.json"
+    path.write_text(
+        '{"installed": {"client_id": "x.apps.googleusercontent.com", "client_secret": "s"}}',
+        encoding="utf-8",
+    )
+    assert client_section(str(path))["client_secret"] == "s"
+
+
+def test_youtube_client_accepts_a_bare_id_and_secret():
+    from phonksync.youtube import YouTubeClient
+
+    yt = YouTubeClient(
+        client_id="1234567890-abcdefghijklmnop.apps.googleusercontent.com",
+        client_secret="sec",
+        refresh_token="1//refresh",
+        api_key="",
+        free_search=False,
+    )
+    assert yt.can_write is True
+    assert yt.write_mode.startswith("oauth")
+
+
+def test_doctor_explains_what_is_missing(monkeypatch, capsys):
+    from phonksync import oauth_setup
+
+    monkeypatch.delenv("YT_REFRESH_TOKEN", raising=False)
+    monkeypatch.delenv("YT_ACCESS_TOKEN", raising=False)
+    assert oauth_setup.doctor(client_id="1234567890-abcdefghijklmnop.apps.googleusercontent.com") == 1
+    out = capsys.readouterr().out
+    assert "No client secret" in out
+    assert "No refresh token" in out
+    assert "--device" in out
+
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//refresh")
+    monkeypatch.setenv("YOUTUBE_TARGET_PLAYLIST", "PLx")
+    assert oauth_setup.doctor(
+        client_id="1234567890-abcdefghijklmnop.apps.googleusercontent.com", client_secret="s"
+    ) == 0
