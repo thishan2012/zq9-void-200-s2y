@@ -251,7 +251,7 @@ class Secrets:
             raise ConfigError("Missing required secrets: " + ", ".join(missing))
 
 
-def load_dotenv(path: str | Path = ".env") -> None:
+def load_dotenv(path: str | Path = ".env") -> None:  # noqa: D401
     """Minimal .env loader for local runs. Does not override existing env vars."""
     path = Path(path)
     if not path.exists():

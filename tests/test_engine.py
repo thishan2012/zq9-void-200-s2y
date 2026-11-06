@@ -49,6 +49,8 @@ class EngineYouTube(FakeYouTube):
         self.inserted.append(video_id)
         self.playlist_ids.add(video_id)
 
+    can_write = True
+
 
 class SilentTelegram:
     def __init__(self, *a, **kw):
@@ -850,3 +852,40 @@ def test_summary_mentions_skips_and_budget(monkeypatch, cfg):
     assert "Skipped by choice: 2" in text
     assert "Search budget ran out for 1" in text
     assert "Free YouTube searches: 40" in text
+
+
+# ------------------------------------------------ YouTube writes are off
+class ReadOnlyYouTube(EngineYouTube):
+    @property
+    def can_write(self):
+        return False
+
+
+def test_writes_off_is_announced_and_counted(monkeypatch, cfg):
+    track = make_track(id="track000000000000000031")
+    vid = make_candidate("vid00000031", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = ReadOnlyYouTube(
+        catalog={"vid00000031": vid},
+        search_map={"nulteex montagem miau": ["vid00000031"]},
+    )
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+    assert report.youtube_readonly == 1
+    assert youtube.inserted == []
+    # the match is remembered, so a later run can add it without searching again
+    assert engine.state.pending_youtube_count() == 1
+
+
+def test_pending_youtube_matches_are_flushed_once_writes_work(monkeypatch, cfg):
+    track = make_track(id="track000000000000000032")
+    vid = make_candidate("vid00000032", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    youtube = EngineYouTube(catalog={"vid00000032": vid})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    engine.state.mark_synced(track, "vid00000032", "STRICT", True, False)
+    engine.state.save()
+    report = engine.run()
+    assert report.pending_youtube_flushed == 1
+    assert youtube.inserted == ["vid00000032"]
+    assert engine.state.pending_youtube_count() == 0

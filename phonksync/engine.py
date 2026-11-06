@@ -71,6 +71,8 @@ class RunReport:
     rate_limited_skips: int = 0
     free_searches: int = 0
     skipped_by_choice: int = 0
+    youtube_readonly: int = 0
+    pending_youtube_flushed: int = 0
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -91,6 +93,16 @@ class RunReport:
             f"⏭ Deferred (retry later): {self.deferred}",
             f"♻️ Duplicates skipped: {self.duplicates}",
         ]
+        if self.pending_youtube_flushed:
+            lines.append(
+                f"✍️ Added {self.pending_youtube_flushed} previously matched video(s) "
+                "that were waiting for YouTube auth"
+            )
+        if self.youtube_readonly:
+            lines.append(
+                f"📝 YouTube writes OFF: {self.youtube_readonly} match(es) remembered, "
+                "not added (they go in automatically once YT_REFRESH_TOKEN exists)"
+            )
         if self.skipped_by_choice:
             lines.append(
                 f"🙅 Skipped by choice: {self.skipped_by_choice} (not on YouTube / not "
@@ -237,6 +249,27 @@ class SyncEngine:
 
     # ------------------------------------------------------------------ run
 
+    def _warn_if_youtube_writes_are_off(self) -> None:
+        """Say it once, at the start, when matches cannot be added to YouTube."""
+        yt = self.youtube
+        if yt is None or getattr(yt, "can_write", True):
+            return
+        mode = getattr(yt, "write_mode", "")
+        if mode.startswith("manual"):
+            return  # writes DO work, just for ~an hour
+        log.warning(
+            "YouTube writes are OFF (record-only mode): matches are stored in state "
+            "so nothing is lost, but no video is added to the playlist. Fix with "
+            "YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN "
+            "(run `phonksync youtube-auth --device` once)."
+        )
+        self.telegram.warn(
+            "✍️ <b>YouTube writes are OFF</b> (API key only). Matches are remembered "
+            "and will be added automatically on the first run after you add "
+            "YT_REFRESH_TOKEN — nothing is lost.\n"
+            "One-time setup: <code>python -m phonksync youtube-auth --device</code>"
+        )
+
     def run(self) -> RunReport:
         cfg = self.config
         report = RunReport(
@@ -259,6 +292,8 @@ class SyncEngine:
             f"Targets: {targets}\n"
             f"Mode: {mode}"
         )
+
+        self._warn_if_youtube_writes_are_off()
 
         cooldown_left = self.state.spotify_cooldown_until() - time.time()
         if cooldown_left > 0 and not cfg.dry_run:
@@ -315,6 +350,9 @@ class SyncEngine:
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             return report
+
+        if not cfg.dry_run:
+            self._flush_pending_youtube(report)
 
         resume = self.state.get_resume_point()
         resume_id = resume.get("track_id", "")
@@ -784,6 +822,35 @@ class SyncEngine:
         self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
         return True
 
+    def _flush_pending_youtube(self, report: RunReport) -> None:
+        """Add matches found while writes were off — no new searches needed."""
+        yt = self.youtube
+        if yt is None or not getattr(yt, "can_write", False):
+            return
+        pending = self.state.pending_youtube()
+        if not pending:
+            return
+        added = 0
+        for entry in pending[:50]:  # small batches: inserts cost 50 units each
+            video_id = entry.get("youtube_video_id", "")
+            if not video_id:
+                continue
+            try:
+                if hasattr(yt, "add_to_playlist"):
+                    yt.add_to_playlist(self.config.youtube_target_playlist, video_id)
+                entry["youtube_added"] = True
+                added += 1
+            except QuotaExceeded as exc:
+                report.quota_reason = str(exc)
+                break
+            except Exception as exc:  # keep the rest for the next run
+                log.warning("Could not add pending %s: %s", video_id, exc)
+                break
+        if added:
+            report.pending_youtube_flushed = added
+            self.state.save()  # flush immediately: a crash must not double-add
+            log.info("Added %d previously matched video(s) to the YouTube playlist", added)
+
     def _search_budget_exhausted(self) -> bool:
         """True when the run (or the day) ran out of YouTube search budget."""
         yt = self.youtube
@@ -881,8 +948,9 @@ class SyncEngine:
             elif not report.quota_reason:
                 report.quota_reason = (
                     "YouTube playlist writes disabled (API key only) — set "
-                    "YT_CLIENT_JSON + YT_REFRESH_TOKEN to add videos to the playlist"
+                    "YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN to add videos"
                 )
+                report.youtube_readonly += 1
 
         self.state.mark_synced(
             track, video_id, method, True,
