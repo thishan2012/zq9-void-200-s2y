@@ -284,6 +284,7 @@ class YouTubeClient:
         self.cookie = (cookie or "").strip()
         self.authuser = (authuser or "0").strip() or "0"
         # A hand-pasted access token (works ~1 hour, cannot be renewed).
+        self.inserts_this_run = 0
         self._manual_access_token = access_token.strip()
         if self._manual_access_token:
             self._access_token = self._manual_access_token
@@ -382,7 +383,9 @@ class YouTubeClient:
                 url, json=payload, headers=self._ytm_headers(), timeout=30
             )
         except requests.RequestException as exc:
-            raise RateLimited(f"YouTube Music request failed: {exc}") from exc
+            raise RateLimited(
+                message=f"YouTube Music request failed ({type(exc).__name__}: {exc})"
+            ) from exc
         if resp.status_code in (401, 403):
             raise AuthError(
                 "YouTube rejected the cookie (HTTP "
@@ -391,38 +394,75 @@ class YouTubeClient:
                 "music.youtube.com while signed in."
             )
         if resp.status_code == 429:
-            raise RateLimited("YouTube Music rate-limited the request (429).")
+            raise RateLimited(message="YouTube Music rate-limited the request (429).")
         if resp.status_code >= 400:
             raise RateLimited(
-                f"YouTube Music returned HTTP {resp.status_code}: {resp.text[:200]}"
+                message=(
+                    f"YouTube Music returned HTTP {resp.status_code}: {resp.text[:200]}"
+                )
             )
         try:
             return resp.json()
         except ValueError as exc:
-            raise RateLimited("YouTube Music returned non-JSON — cookie likely expired") from exc
+            raise RateLimited(
+                message="YouTube Music returned non-JSON — cookie likely expired"
+            ) from exc
 
-    def cookie_playlist_video_ids(self, playlist_id: str) -> set[str]:
-        """Private playlists, read with the same cookie (no codeless API key needed)."""
-        ids: set[str] = set()
+    def cookie_playlist_entries(self, playlist_id: str) -> list[dict[str, str]]:
+        """``[{video_id, set_video_id}]`` — set_video_id is what removal needs."""
         data = self._ytm_request("browse", {"browseId": "VL" + playlist_id})
+        entries: list[dict[str, str]] = []
         stack = [data]
         while stack:
             node = stack.pop()
             if isinstance(node, dict):
-                for key, value in node.items():
-                    if key in ("videoId", "setVideoId") and isinstance(value, str):
-                        if key == "videoId":
-                            ids.add(value)
-                    else:
-                        stack.append(value)
+                set_video_id = node.get("setVideoId")
+                item = node.get("playlistItemData")
+                if isinstance(item, dict) and item.get("videoId"):
+                    entries.append(
+                        {
+                            "video_id": str(item["videoId"]),
+                            "set_video_id": str(set_video_id or ""),
+                        }
+                    )
+                for value in node.values():
+                    stack.append(value)
             elif isinstance(node, list):
                 stack.extend(node)
-        return ids
+        return entries
+
+    def cookie_remove_from_playlist(
+        self, playlist_id: str, video_id: str, set_video_id: str
+    ) -> bool:
+        """Undo one add (used by the probe command). Returns True when confirmed."""
+        data = self._ytm_request(
+            "browse/edit_playlist",
+            {
+                "playlistId": playlist_id,
+                "actions": [
+                    {
+                        "action": "ACTION_REMOVE_VIDEO",
+                        "removedVideoId": video_id,
+                        "setVideoId": set_video_id,
+                    }
+                ],
+            },
+        )
+        return "SUCCEEDED" in str(data.get("status", ""))
+
+    def cookie_playlist_video_ids(self, playlist_id: str) -> set[str]:
+        """Private playlists, read with the same cookie (no API key needed)."""
+        ids = {entry["video_id"] for entry in self.cookie_playlist_entries(playlist_id)}
+        if ids:
+            return ids
+        # Layout fallback: any videoId anywhere in the response.
+        data = self._ytm_request("browse", {"browseId": "VL" + playlist_id})
+        return set(self._collect_video_ids(data))
 
     def cookie_add_to_playlist(self, playlist_id: str, video_id: str) -> None:
         """``browse/edit_playlist`` + ``ACTION_ADD_VIDEO`` — the web player's own call."""
         self.quota.rollover()
-        if self.quota.inserts >= self.max_inserts_per_day > 0:
+        if self.max_inserts_per_day and self.quota.inserts >= self.max_inserts_per_day:
             raise QuotaExceeded(
                 f"Daily YouTube insert budget reached ({self.max_inserts_per_day}); "
                 "it resets at midnight Pacific."
@@ -438,12 +478,23 @@ class YouTubeClient:
         )
         status = str(data.get("status", ""))
         if "SUCCEEDED" not in status:
+            # youtubei answers 200 with a failed status instead of an HTTP error,
+            # so decide here — and never let a half-done add be recorded as done.
+            detail = ""
+            for result in data.get("playlistEditResults", []) or []:
+                note = result.get("playlistEditVideoAddedResultData")
+                if isinstance(note, dict) and note.get("setVideoId"):
+                    detail = " (but a setVideoId came back — check the playlist)"
             raise RateLimited(
                 "YouTube Music did not confirm the add (status "
-                f"{status or 'missing'}) — nothing was inserted"
+                f"{status or 'missing'}){detail} — nothing was inserted"
             )
         # Counted in inserts, not in Data-API units: youtubei costs no quota.
         self.quota.inserts += 1
+        self.inserts_this_run += 1
+        log.info(
+            "YouTube: added %s to %s (browser cookie, no quota)", video_id, playlist_id
+        )
 
     # ------------------------------------------------------------------ auth
 
@@ -678,6 +729,7 @@ class YouTubeClient:
                 self.quota.searches += 1
             if insert:
                 self.quota.inserts += 1
+                self.inserts_this_run += 1
             return resp.json() if resp.text else {}
         raise RuntimeError("YouTube request retry loop exhausted")
 

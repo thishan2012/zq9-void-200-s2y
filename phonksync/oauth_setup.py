@@ -391,8 +391,98 @@ def cookie_help(cookie: str = "") -> int:
     ]
     print(f"   other cookies present: {', '.join(others) if others else '(none — copy again)'}")
     print("✅ Writes will use the YouTube Music web endpoint (no OAuth, no Console)")
-    print("\nNext: paste it into the GitHub secret YT_COOKIE, then run `phonksync check`.")
+    print(
+        "\nNext: prove it end to end (adds an existing video, confirms, undoes it):\n"
+        "  python -m phonksync youtube-auth --test-cookie --playlist <PLAYLIST_ID>\n"
+        "Then paste it into the GitHub secret YT_COOKIE and run `phonksync check`."
+    )
     return 0 if others else 1
+
+
+def cookie_test(playlist: str, cookie: str = "", authuser: str = "0") -> int:
+    """Prove the cookie can really write: add one video, read it back, undo it.
+
+    This is the only way to know for certain that ``YT_COOKIE`` works, because a
+    cookie can look perfect and still be signed out on Google's side.
+    """
+    from .youtube import YouTubeClient
+
+    cookie = (cookie or os.environ.get("YT_COOKIE", "")).strip()
+    authuser = (authuser or os.environ.get("YT_AUTHUSER", "0")).strip() or "0"
+    playlist = (playlist or os.environ.get("YOUTUBE_TARGET_PLAYLIST", "")).strip()
+    if not cookie:
+        print("❌ No cookie: pass --cookie-stdin or set YT_COOKIE.")
+        return 2
+    if not playlist:
+        print("❌ No playlist: pass --playlist or set YOUTUBE_TARGET_PLAYLIST.")
+        return 2
+
+    yt = YouTubeClient(api_key="", cookie=cookie, authuser=authuser, free_search=False)
+    print(f"🍪 {yt.cookie_diag()}")
+    if not yt.can_write:
+        return 1
+
+    print(f"📄 Reading {playlist} …")
+    try:
+        entries = yt.cookie_playlist_entries(playlist)
+    except Exception as exc:
+        print(f"❌ Could not read the playlist: {exc}")
+        if "request failed" in str(exc) or "SSL" in str(exc):
+            print("   → no network path to music.youtube.com from here (proxy/VPN?).")
+            print("     GitHub Actions can reach it; run `phonksync check --live` there.")
+        else:
+            print("   → the cookie is rejected, or it is not this account's playlist.")
+        return 1
+    print(f"✅ Read {len(entries)} item(s) in the playlist.")
+
+    # Pick a video already in the playlist: adding it back is a no-op for the
+    # playlist's contents, so a live account is never left with a stray track.
+    existing = [e for e in entries if e["set_video_id"]]
+    if not existing:
+        print("ℹ️  Nothing to test with: add a video to the playlist once, then re-run.")
+        print("   (An existing item is used so the probe never leaves a stray track.)")
+        return 0
+    probe = existing[0]
+    video_id, set_video_id = probe["video_id"], probe["set_video_id"]
+
+    print(f"✍️  Writing: adding {video_id} again (already there) …")
+    try:
+        yt.cookie_add_to_playlist(playlist, video_id)
+    except Exception as exc:
+        print(f"❌ Write failed: {exc}")
+        if "request failed" in str(exc) or "SSL" in str(exc):
+            print("   → network problem, not an auth problem (no data was written).")
+        else:
+            print("   → Google accepted the read but not the write: the cookie is")
+            print("     missing session cookies (include SID/HSID/SSID in YT_COOKIE).")
+        return 1
+    print("✅ Write accepted and confirmed by YouTube (status SUCCEEDED).")
+
+    try:
+        after = yt.cookie_playlist_entries(playlist)
+        print(f"✅ Re-read: {len(after)} item(s) — the playlist is readable after writing.")
+    except Exception as exc:  # pragma: no cover - network dependent
+        print(f"⚠️  Could not re-read the playlist: {exc}")
+
+    # Remove one copy we just added, if YouTube exposed the duplicate's setVideoId.
+    duplicates = [e for e in after if e["video_id"] == video_id and e["set_video_id"] != set_video_id]
+    if duplicates:
+        try:
+            if yt.cookie_remove_from_playlist(playlist, video_id, duplicates[0]["set_video_id"]):
+                print(f"🧹 Undone: removed the extra copy (setVideoId {duplicates[0]['set_video_id']}).")
+                print("   The playlist is back to how it was.")
+            else:
+                print("⚠️  YouTube did not confirm the undo — remove the extra copy by hand.")
+        except Exception as exc:  # pragma: no cover - network dependent
+            print(f"⚠️  Undo failed ({exc}) — remove the extra copy by hand.")
+    else:
+        print(
+            "ℹ️  YouTube treated the duplicate as already present (no extra copy). "
+            "Writes work."
+        )
+
+    print("\n✅ Cookie writes VERIFIED end to end. Run the sync.")
+    return 0
 
 
 def check_token_types(refresh: str, access: str) -> list[str]:

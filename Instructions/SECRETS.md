@@ -157,6 +157,12 @@ python -m phonksync youtube-auth --cookie-help          # how to copy it
 python -m phonksync youtube-auth --cookie-help --cookie-stdin   # check a paste
 ```
 
+0. **Prove it works** (30 seconds, adds a video that is already in the playlist,
+   confirms it and removes the extra copy again — so nothing changes):
+   ```bash
+   python -m phonksync youtube-auth --test-cookie --playlist <PLAYLIST_ID> --cookie-stdin
+   ```
+   `✅ Cookie writes VERIFIED end to end` means Google accepted a real write.
 1. Open <https://music.youtube.com> in the browser where you **are** signed in
    (a VPN for this one page is fine).
 2. `F12` → **Network** → reload → click any `browse?…` request →
