@@ -75,6 +75,10 @@ class RunReport:
     pending_youtube_flushed: int = 0
     youtube_write_problem: str = ""
     youtube_inserted: int = 0
+    added_tracks: list[str] = field(default_factory=list)
+    failed_tracks: list[str] = field(default_factory=list)
+    daily_details: list[str] = field(default_factory=list)
+    cooldown_until: float = 0.0
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -85,16 +89,24 @@ class RunReport:
     source_read_limit: int = 0
 
     def summary_text(self) -> str:
+        head = "🧪 Dry run finished" if self.dry_run else "📊 Sync run finished"
         lines = [
-            "📊 <b>Sync run finished</b>",
-            f"Sources read: {self.sources_read}",
-            f"Unique tracks: {self.unique_tracks}",
-            f"Already synced: {self.already_synced}",
-            f"✅ Added: {self.added}",
-            f"❌ Unmatched: {self.unmatched}",
-            f"⏭ Deferred (retry later): {self.deferred}",
-            f"♻️ Duplicates skipped: {self.duplicates}",
+            f"<b>━━ {head} ━━</b>",
+            f"🆕 Added this run: <b>{self.added}</b>"
+            + (f" (YouTube inserts: {self.youtube_inserted})" if self.youtube_inserted else ""),
+            f"🎵 Sources: {self.sources_read} playlist(s), {self.unique_tracks} unique tracks",
         ]
+        if self.added_tracks:
+            lines.append(f"<b>✅ Added</b> ({len(self.added_tracks)}):")
+            lines.extend(f"  • {line}" for line in self.added_tracks)
+        if self.failed_tracks:
+            lines.append(f"<b>❌ Failed / unmatched</b> ({len(self.failed_tracks)}):")
+            lines.extend(f"  • {line}" for line in self.failed_tracks)
+        lines.append(
+            "Already in the playlist (untouched): "
+            f"{self.already_synced} · Deferred: {self.deferred} · "
+            f"Duplicates: {self.duplicates} · Skipped by choice: {self.skipped_by_choice}"
+        )
         if self.pending_youtube_flushed:
             lines.append(
                 f"✍️ Added {self.pending_youtube_flushed} previously matched video(s) "
@@ -108,11 +120,6 @@ class RunReport:
         problem = self.youtube_write_problem
         if problem:
             lines.append(f"⚠️ {problem}")
-        if self.skipped_by_choice:
-            lines.append(
-                f"🙅 Skipped by choice: {self.skipped_by_choice} (not on YouTube / not "
-                "wanted — never retried; `phonksync skip --clear <id>` undoes it)"
-            )
         if self.budget_skips:
             lines.append(
                 f"⏸ Search budget ran out for {self.budget_skips} track(s) — they were "
@@ -131,8 +138,8 @@ class RunReport:
         if self.youtube_inserted:
             # The proof that the credential can actually write, not just refresh.
             lines.append(
-                f"✅ YouTube inserts confirmed by Google: {self.youtube_inserted} "
-                f"(daily total {self.inserted})"
+                f"✅ YouTube inserts confirmed by Google: {self.youtube_inserted}"
+                + (f" (daily total {self.inserted})" if self.inserted else "")
             )
 
         if self.searches_used:
@@ -191,7 +198,18 @@ class RunReport:
         if self.errors:
             lines.append(f"🛑 Errors: {len(self.errors)}")
             lines.extend(escape(e)[:200] for e in self.errors[:5])
-        return "\n".join(lines)
+        if self.daily_details:
+            lines.append("")
+            lines.append("<b>Details</b>")
+            lines.extend(self.daily_details)
+        if self.cooldown_until:
+            lines.append(
+                "ℹ️ Next run: "
+                + datetime.fromtimestamp(
+                    self.cooldown_until, timezone.utc
+                ).strftime("%Y-%m-%d %H:%M UTC")
+            )
+        return "\n".join(line for line in lines if line is not None)
 
 
 def _parse_iso(value: str) -> datetime | None:
@@ -325,11 +343,10 @@ class SyncEngine:
                 )
             elif mode.startswith("manual"):
                 targets += f" ({mode})"
-        self.telegram.info(
-            f"🎧 <b>Phonk sync started</b>\n"
-            f"Sources: {len(cfg.spotify_source_playlists)} playlists\n"
-            f"Targets: {targets}\n"
-            f"Mode: {mode}"
+        self._detail(
+            report,
+            f"🎧 Started: {len(cfg.spotify_source_playlists)} source playlist(s) → "
+            f"{escape(targets)} (mode: {escape(mode)})",
         )
 
         self._warn_if_youtube_writes_are_off()
@@ -343,6 +360,7 @@ class SyncEngine:
             )
             self.telegram.warn(escape(report.quota_reason))
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._send_single(report)
             return report
 
         try:
@@ -376,6 +394,7 @@ class SyncEngine:
             report.errors.append(str(exc))
             self.telegram.error(f"Setup failed: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._send_single(report)
             return report
         except RateLimited as exc:
             report.errors.append(str(exc))
@@ -388,6 +407,7 @@ class SyncEngine:
                 self.state.set_spotify_cooldown(blocked_until, "Spotify 429")
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            self._send_single(report)
             return report
 
         if not cfg.dry_run:
@@ -397,8 +417,9 @@ class SyncEngine:
         resume_id = resume.get("track_id", "")
         resume_seen = not resume_id
         if resume_id and not cfg.dry_run:
-            self.telegram.info(
-                f"▶️ Resuming after the skipped track <code>{escape(resume.get('name', ''))}</code>"
+            self._detail(
+                report,
+                f"▶️ Resumed after <code>{escape(resume.get('name', ''))}</code>",
             )
 
         synced_isrcs = {
@@ -519,8 +540,7 @@ class SyncEngine:
             self.cache.save()
         self.source_cache.save()
 
-        self.telegram.flush_tracks()
-        self.telegram.send(report.summary_text())
+        self._send_single(report)
         log.info("\n%s", report.summary_text().replace("<b>", "").replace("</b>", ""))
         return report
 
@@ -551,10 +571,6 @@ class SyncEngine:
                     snapshot = ""
                 if cached["snapshot"] and snapshot == cached["snapshot"]:
                     tracks = cached["tracks"]
-                    self.telegram.info(
-                        f"♻️ Using cached read of <code>{playlist_id}</code> "
-                        f"({len(tracks)} tracks, playlist unchanged)"
-                    )
                     report.cached_sources += 1
                     self._merge_tracks(seen, tracks, playlist_id, read_limit)
                     report.sources_read += 1
@@ -671,6 +687,20 @@ class SyncEngine:
             report.backend = "REST (api.spotify.com)"
         return list(seen.values())
 
+    def _send_single(self, report: RunReport) -> None:
+        """Send the one message even when the run died early."""
+        from .telegram import dedupe_lines
+
+        report.added_tracks = dedupe_lines(report.added_tracks)
+        report.failed_tracks = dedupe_lines(report.failed_tracks)
+        report.cooldown_until = getattr(self.spotify, "blocked_until", 0.0) or 0.0
+        self.telegram.flush(summary=report.summary_text())
+
+    def _detail(self, report: RunReport, text: str) -> None:
+        """A line for the end-of-run message (never a message of its own)."""
+        if text and text not in report.daily_details:
+            report.daily_details.append(text)
+
     def _read_pathfinder(self, playlist_id: str, report: RunReport) -> list[Track]:
         """Fallback #1b: the web player's own GraphQL endpoint.
 
@@ -705,10 +735,6 @@ class SyncEngine:
         if not tracks:
             return []
         report.web_reads += 1
-        self.telegram.info(
-            f"🌐 Read <code>{playlist_id}</code> from the web player endpoint — "
-            f"{len(tracks)} tracks (Web API not used)"
-        )
         try:
             self.source_cache.put(playlist_id, tracks, "")
         except Exception as exc:  # cache is best-effort
@@ -734,10 +760,6 @@ class SyncEngine:
                 )
             return []
         report.web_reads += 1
-        self.telegram.info(
-            f"🌐 Read <code>{playlist_id}</code> from the public page — "
-            f"{len(tracks)} tracks (no API quota used)"
-        )
         try:
             self.source_cache.put(playlist_id, tracks, "")
         except Exception:
@@ -954,8 +976,13 @@ class SyncEngine:
                     report.budget_skips += 1
                 else:
                     report.unmatched += 1
-                if cfg.telegram_per_track:
-                    self.telegram.track_unmatched(track.display(), len(self.matcher.last_tried))
+                if budget_hit:
+                    pass  # already summarised as "budget ran out"; not a failure
+                else:
+                    report.failed_tracks.append(
+                        f"{escape(track.display())} — no YouTube match "
+                        f"({len(self.matcher.last_tried)} method(s) tried)"
+                    )
                 if cfg.require_youtube_match_for_spotify:
                     return
                 # Spotify side is exact (same track ID) — still add it.
@@ -975,10 +1002,10 @@ class SyncEngine:
 
         if cfg.dry_run:
             report.added += 1
-            self.telegram.info(
-                f"🧪 Would add: {escape(track.display())}\n"
-                f"Method: <code>{method or 'cached'}</code> → <code>{video_id}</code>"
+            line = (
+                f"{escape(track.display())} <code>[{escape(method or 'cached')}]</code>"
             )
+            report.added_tracks.append(line)
             return
 
         if not spotify_done:
@@ -1001,11 +1028,16 @@ class SyncEngine:
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
         report.added += 1
-        if cfg.telegram_per_track:
-            self.telegram.track_added(
-                track.display(), method or "cached",
-                f"https://www.youtube.com/watch?v={video_id}" if video_id else "",
-            )
+        link = (
+            f' · <a href="https://www.youtube.com/watch?v={video_id}">YT</a>'
+            if video_id
+            else ""
+        )
+        # One line, listed once — in the single end-of-run message. A song that
+        # is already in the DB never reaches this point, so it cannot repeat.
+        report.added_tracks.append(
+            f"{escape(track.display())} <code>[{escape(method or 'cached')}]</code>{link}"
+        )
 
     def _process_track_spotify_only(
         self,
@@ -1025,7 +1057,9 @@ class SyncEngine:
 
         if cfg.dry_run:
             report.added += 1
-            self.telegram.info(f"🧪 Would add to Spotify: {escape(track.display())}")
+            report.added_tracks.append(
+                f"{escape(track.display())} <code>[SPOTIFY]</code>"
+            )
             return
 
         self._add_spotify(track, target_spotify_ids, report)
@@ -1033,5 +1067,4 @@ class SyncEngine:
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
         report.added += 1
-        if cfg.telegram_per_track:
-            self.telegram.track_added(track.display(), "SPOTIFY", "")
+        report.added_tracks.append(f"{escape(track.display())} <code>[SPOTIFY]</code>")

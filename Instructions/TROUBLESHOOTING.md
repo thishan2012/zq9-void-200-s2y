@@ -179,3 +179,27 @@ credential to add them to the playlist. The message now names the real cause:
 
 Everything that was matched is stored with `youtube_added: false`, so the first
 run **after** the fix adds up to 50 of them per run with **no new searches**.
+
+## Telegram spam / too many messages
+
+Every run sends **exactly one message**. Everything the run has to say — the
+source reads, rate-limit notes, and the `✅ Added` list — is collected and sent
+once, at the end:
+
+```
+━━ 📊 Sync run finished ━━
+🆕 Added this run: 7 (YouTube inserts: 7)
+🎵 Sources: 3 playlist(s), 240 unique tracks
+✅ Added (7):
+  • Nulteex — MONTAGEM MIAU [CHANNEL] · YT
+  ...
+❌ Failed / unmatched (2):
+  • … — no YouTube match (6 method(s) tried)
+Already in the playlist (untouched): 233 · Deferred: 0 · Duplicates: 0 · Skipped by choice: 0
+```
+
+- a song that is **already in the state DB** is not in the list — re-reads,
+  re-runs and pending flushes never repeat it;
+- the track list is capped at 60 lines (`… and more`); the counts stay exact;
+- only a run with more than ~3900 characters is split (Telegram's hard limit),
+  and then the pieces are consecutive, not one per track.
