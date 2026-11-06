@@ -17,6 +17,14 @@ on:
         description: "Seconds to wait between Spotify API calls (empty = config.json, 2s)"
         type: string
         default: ""
+      free_search_pause:
+        description: "Seconds between YouTube free page loads (empty = config.json, 1.0; 0.2 = fast)"
+        type: string
+        default: ""
+      results_per_query:
+        description: "Search results per query, i.e. video pages fetched (empty = config.json, 10; 5 = faster)"
+        type: string
+        default: ""
       fill_cache:
         description: "Only store the source playlists for later runs (no sync, no writes)"
         type: boolean
@@ -31,14 +39,6 @@ on:
         default: ""
       max_inserts:
         description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
-        type: string
-        default: ""
-      free_search_pause:
-        description: "Seconds between YouTube free page loads (empty = config.json, 1.0; 0.2 = fast)"
-        type: string
-        default: ""
-      results_per_query:
-        description: "Search results per query, i.e. video pages fetched (empty = config.json, 10; 5 = faster)"
         type: string
         default: ""
 
@@ -119,9 +119,14 @@ jobs:
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
         run: python -m phonksync cache-fill
 
+      # The whole run is logged twice on purpose:
+      #   * the step log (verbose, every decision at INFO) — for "why did this
+      #     track not match / why was this slow";
+      #   * a compact, secret-free summary in the job summary — for "what did
+      #     this run do", readable on a phone without scrolling 2,000 lines.
       - name: Run sync
-        if: ${{ !inputs.fill_cache }}
         id: sync
+        if: ${{ !inputs.fill_cache }}
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -156,7 +161,27 @@ jobs:
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
-        run: python -m phonksync sync 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          set -o pipefail
+          python -m phonksync sync 2>&1 | tee run.log
+          {
+            echo "### Sync output"
+            echo ""
+            echo '```'
+            cat run.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # No API token is ever needed for this: `gh run view --log` and
+      # "Download log archive" both work as long as the run has a log archive.
+      - name: Keep the run log
+        if: ${{ always() && !inputs.fill_cache }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-log-${{ github.run_number }}
+          path: run.log
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Run time
         if: ${{ !cancelled() }}
@@ -167,6 +192,9 @@ jobs:
             echo "- started: $(date -u -d @$SYNC_STARTED '+%H:%M:%S') UTC"
             echo "- finished: $(date -u '+%H:%M:%S') UTC"
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
+            echo ""
+            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}"
+            echo "Pacing: pause=${{ inputs.free_search_pause }} results=${{ inputs.results_per_query }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state

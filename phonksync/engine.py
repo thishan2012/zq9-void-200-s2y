@@ -83,6 +83,8 @@ class RunReport:
     cooldown_until: float = 0.0
     cooldown_hint_left: float = 0.0
     elapsed_seconds: float = 0.0
+    # (display name, seconds, methods tried) for every matched track
+    track_times: list[tuple[str, float, int]] = field(default_factory=list)
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -142,6 +144,11 @@ class RunReport:
                 f"🆓 Free YouTube: {self.free_searches} search(es){pages} (0 quota), "
                 f"matches: {self.free_matches}"
             )
+            if self.unique_tracks and self.free_pages > 6 * self.unique_tracks:
+                lines.append(
+                    "💡 That is a lot of pages — a smaller `results_per_query` "
+                    "(or the workflow input `results_per_query`) cuts the run time"
+                )
         if self.write_mode:
             lines.append(f"✍️ YouTube writes: {self.write_mode}")
         if self.youtube_inserted:
@@ -212,6 +219,15 @@ class RunReport:
                 f"⏱ Took {_human_wait(self.elapsed_seconds)} for "
                 f"{self.unique_tracks} track(s){per}"
             )
+        if self.track_times:
+            slowest = sorted(self.track_times, key=lambda t: t[1], reverse=True)[:3]
+            slowest = [t for t in slowest if t[1] >= 5]
+            if slowest:
+                parts = ", ".join(
+                    f"{escape(name.split(' — ')[0])} {secs:.0f}s/{methods} methods"
+                    for name, secs, methods in slowest
+                )
+                lines.append(f"🐌 Slowest: {parts}")
         if self.errors:
             lines.append(f"🛑 Errors: {len(self.errors)}")
             lines.extend(escape(e)[:200] for e in self.errors[:5])
@@ -1049,11 +1065,20 @@ class SyncEngine:
         method = entry.get("method", "")
 
         if not youtube_done:
+            started = time.time()
             result = self.matcher.match(track)
+            elapsed = time.time() - started
+            report.track_times.append((track.display(), elapsed, len(self.matcher.last_tried)))
             # Record tried/won stats for all exercised methods.
             won = self.matcher.last_won
             for code in self.matcher.last_tried:
                 self.state.record_method(code, tried=True, won=(code == won))
+            if elapsed >= 20:
+                log.warning(
+                    "slow track %.1fs: %s (%d methods)%s",
+                    elapsed, track.display(), len(self.matcher.last_tried),
+                    "" if result else " — no match",
+                )
             if result is None:
                 # "unmatched" and "we ran out of search budget" are different:
                 # the first means the song is probably not on YouTube, the second
