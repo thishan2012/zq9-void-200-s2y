@@ -91,6 +91,19 @@ your runner at any time:
 python -m phonksync diag            # token / client token / pathfinder / page
 ```
 
+**Writes too.** `addToPlaylist` is a pathfinder mutation
+(`playlistUri`, `playlistItemUris`, `newPosition {moveType: BOTTOM_OF_PLAYLIST}`).
+So once Spotify has throttled the Web API, adds go through the web player instead
+of parking the track. Force the backend from the start with:
+
+```bash
+SPOTIFY_BACKEND=web-player          # or the `backend` input in the workflow
+```
+
+The run summary names the backend it used (`🔀 Spotify backend: web player
+(api-partner)`), and the state file remembers it: a proven backend is reused, so
+the first 429 of a run is the only one you pay for.
+
 If the Web API is already parked, the run now reads with pathfinder, parks the
 unwritten tracks in `data/manual-queue.txt`, finishes normally and exits `0`
 instead of dying on the first 429.

@@ -65,6 +65,7 @@ class RunReport:
     manual_queued: int = 0
     skipped: int = 0
     web_reads: int = 0
+    backend: str = ""
     rate_limited_skips: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -108,8 +109,10 @@ class RunReport:
                 f"📋 Manual bucket: {self.manual_queued} tracks in "
                 "data/manual-queue.txt (Spotify was cooling down)"
             )
+        if self.backend:
+            lines.append(f"🔀 Spotify backend: {self.backend}")
         if self.web_reads:
-            lines.append(f"🌐 Public-page reads (API throttled): {self.web_reads}")
+            lines.append(f"🌐 Reads without the Web API (throttled): {self.web_reads}")
         if self.cached_sources:
             lines.append(f"♻️ Cached playlist reads reused: {self.cached_sources}")
         if self.spotify_throttled:
@@ -510,22 +513,44 @@ class SyncEngine:
                     seen[track.id] = track
             log.info("Source %s: %d tracks", playlist_id, len(tracks))
         report.unique_tracks = len(seen)
+        backend = getattr(self.spotify, "backend", "")
+        if backend == "web-player" and not report.backend:
+            report.backend = "web player (api-partner)"
+        elif backend and not report.backend:
+            report.backend = "REST (api.spotify.com)"
         return list(seen.values())
 
     def _read_pathfinder(self, playlist_id: str, report: RunReport) -> list[Track]:
-        """Fallback #1b: the web player's own endpoint (no login, no Web API).
+        """Fallback #1b: the web player's own GraphQL endpoint.
 
-        api.spotify.com answers 429 to web-player tokens, so the *web player*
-        itself does not use it for playlist contents: it calls api-partner with
-        an anonymous client token. That route has its own budget.
+        ``api.spotify.com`` answers 429 to web-player tokens, so the *web player*
+        itself never uses it for playlist contents: it posts to api-partner.
+        Two ways in, tried in order:
+
+        1. the account bearer we already have (same route the web player uses,
+           works for private playlists too) — this is the "web player backend"
+        2. an anonymous *client token* (no login needed), for public playlists
         """
-        try:
-            from .spotify import client_token, pathfinder_playlist
+        tracks: list[Track] = []
+        reader = getattr(self.spotify, "_pathfinder_tracks", None)
+        if reader is not None:
+            try:
+                tracks = reader(playlist_id)
+                if tracks:
+                    self.spotify.pathfinder_ok = True
+                    self.spotify.backend = "web-player"
+            except Exception as exc:
+                log.warning("Web player read failed for %s: %s", playlist_id, exc)
+        if not tracks:
+            try:
+                from .spotify import client_token, pathfinder_playlist
 
-            tracks = pathfinder_playlist(playlist_id, client_token=client_token())
-        except Exception as exc:
-            log.warning("Pathfinder read failed for %s: %s", playlist_id, exc)
-            return []
+                tracks = pathfinder_playlist(playlist_id, client_token=client_token())
+                if tracks:
+                    log.info("Read %s with an anonymous client token", playlist_id)
+            except Exception as exc:
+                log.warning("Pathfinder read failed for %s: %s", playlist_id, exc)
+                return []
         if not tracks:
             return []
         report.web_reads += 1

@@ -14,6 +14,7 @@ No Spotify password, client secret, OAuth app, or Premium account is required.
 from __future__ import annotations
 
 import base64
+import functools
 import hashlib
 import hmac
 import json
@@ -467,6 +468,15 @@ _HASH_RE_TEMPLATE = r'"{op}"\s*,\s*"query"\s*,\s*"([0-9a-f]{{64}})"'
 # Known-good hash for fetchPlaylist (2026-11). Reddit/Spyt/Spotifly all use it;
 # refreshed automatically from the web-player bundle when Spotify rotates it.
 _KNOWN_PLAYLIST_HASH = "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf"
+# Operation -> persisted-query document hash (Spotify re-uses one document for all
+# playlist reads and one for all playlist writes). Healed from the live bundle.
+_OP_HASHES: dict[str, str] = {
+    "fetchPlaylist": _KNOWN_PLAYLIST_HASH,
+    "fetchPlaylistContents": _KNOWN_PLAYLIST_HASH,
+    "addToPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
+    "removeFromPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
+    "searchTracks": "",
+}
 
 
 class PublicPlaylistReader:
@@ -616,7 +626,25 @@ class _ProxyUnavailable(RuntimeError):
     """The CORS proxy could not serve the request (fall back to direct)."""
 
 
+@functools.lru_cache(maxsize=4)
+def _discover_cached(stamp: int, ops: tuple[str, ...]) -> dict[str, str]:
+    return _discover_persisted_hashes_once(list(ops))
+
+
 def _discover_persisted_hashes(ops: list[str]) -> dict[str, str]:
+    """Read persisted-query hashes, caching a *successful* scrape for 10 min.
+
+    A failed scrape is never cached (the next attempt may well succeed), because
+    caching an empty answer would leave the reader permanently broken.
+    """
+    stamp = int(time.time() // 600)
+    found = dict(_discover_cached(stamp, tuple(sorted(ops))))
+    if not found:
+        _discover_cached.cache_clear()
+    return found
+
+
+def _discover_persisted_hashes_once(ops: list[str]) -> dict[str, str]:
     """Read persisted-query hashes from the live web-player bundle.
 
     Spotify rotates these; they are constants inside the JS bundle, so reading
@@ -641,9 +669,14 @@ def _discover_persisted_hashes(ops: list[str]) -> dict[str, str]:
             timeout=60,
         )
         for op in ops:
-            hit = re.search(_HASH_RE_TEMPLATE.format(op=op), bundle.text)
-            if hit:
-                found[op] = hit.group(1)
+            for pattern in (
+                _HASH_RE_TEMPLATE.format(op=op),
+                r'\.l\("' + re.escape(op) + r'","(?:query|mutation)","([a-f0-9]{64})"',
+            ):
+                hit = re.search(pattern, bundle.text)
+                if hit:
+                    found[op] = hit.group(1)
+                    break
     except Exception as exc:  # discovery is best-effort
         log.debug("Could not read persisted-query hashes: %s", exc)
     return found
@@ -907,6 +940,13 @@ class SpotifyClient:
         self.proxy_url = os.environ.get("SPOTIFY_PROXY_URL", "").strip()
         self.proxy_used = 0
         self.direct_used = 0
+        # Set once pathfinder has been seen to work for this account: plays the
+        # same role as a "backend" switch (rest -> web player).
+        self.pathfinder_ok = os.environ.get("SPOTIFY_BACKEND", "").strip().lower() in {
+            "web-player", "webplayer", "pathfinder", "graphql",
+        }
+        self.prefer_pathfinder = self.pathfinder_ok
+        self.backend = "web-player" if self.prefer_pathfinder else "rest"
 
     # ------------------------------------------------------------------ auth
 
@@ -1035,6 +1075,100 @@ class SpotifyClient:
             "or run a sync with SPOTIFY_TOTP_REMOTE=1 so the newest secret is fetched.\n"
             "Details: " + " | ".join(errors[:3])
         )
+
+    def _pathfinder(self, op: str, variables: dict[str, Any]) -> dict[str, Any]:
+        """Run one web-player GraphQL operation (api-partner, no Web API quota).
+
+        Uses the same bearer the web player uses (the API 429 mentioned above is
+        the *Web API*; api-partner answers to web-player tokens). A rotated
+        persisted-query hash is healed once, a 401 re-mints the token once.
+        """
+        hashes = dict(_OP_HASHES)
+        refreshed_hash = False
+        refreshed_auth = False
+        last = ""
+        for _ in range(3):
+            body = {
+                "variables": variables,
+                "operationName": op,
+                "extensions": {
+                    "persistedQuery": {"version": 1, "sha256Hash": hashes.get(op, "")}
+                },
+            }
+            headers = dict(_PLAY_HEADERS)
+            headers["User-Agent"] = _HTML_UA
+            headers["Authorization"] = f"Bearer {self._ensure_token()}"
+            headers.update(proxy_headers())
+            try:
+                text = _proxy_post(_PATHFINDER_URL, body, headers)
+            except requests.RequestException as exc:
+                raise RateLimited(5, f"pathfinder unreachable: {exc}") from exc
+            try:
+                payload = json.loads(text) if text else {}
+            except ValueError:
+                last = f"non-JSON answer ({text[:120]!r})"
+                continue
+            errors = payload.get("errors") or []
+            message = json.dumps(errors)[:300] if errors else ""
+            if errors and "persisted" in message.lower() and not refreshed_hash:
+                fresh = _discover_persisted_hashes([op])
+                if fresh.get(op):
+                    hashes[op] = fresh[op]
+                refreshed_hash = True
+                continue
+            if errors and ("401" in message or "unauthor" in message.lower()):
+                if refreshed_auth:
+                    raise AuthError(f"pathfinder rejected the token: {message}")
+                self._access_token = ""
+                refreshed_auth = True
+                continue
+            if errors:
+                raise RuntimeError(f"pathfinder {op} error: {message}")
+            return payload.get("data") or {}
+        raise RuntimeError(f"pathfinder {op} failed: {last or 'no usable answer'}")
+
+    def _pathfinder_tracks(self, playlist_id: str, max_tracks: int = 0) -> list[Track]:
+        """Read a playlist through the web player endpoint (paged)."""
+        tracks: dict[str, Track] = {}
+        offset = 0
+        total = 0
+        while True:
+            data = self._pathfinder(
+                "fetchPlaylistContents",
+                {"uri": f"spotify:playlist:{playlist_id}", "offset": offset, "limit": 100},
+            )
+            content = ((data.get("playlistV2") or {}).get("content") or {})
+            items = content.get("items") or []
+            if not total:
+                try:
+                    total = int(content.get("totalCount") or 0)
+                except (TypeError, ValueError):
+                    total = 0
+            for item in items:
+                track = _track_from_item(item)
+                if track:
+                    track.sources = [playlist_id]
+                    tracks.setdefault(track.id, track)
+            offset += len(items)
+            if not items or (total and offset >= total) or len(items) < 100:
+                break
+            if max_tracks and len(tracks) >= max_tracks:
+                break
+            self._pace()
+        return list(tracks.values())
+
+    def _pathfinder_add(self, playlist_id: str, uris: list[str]) -> None:
+        """Add tracks through the web player (no Web API, no 30s rolling window)."""
+        for uri in uris:
+            self._pathfinder(
+                "addToPlaylist",
+                {
+                    "playlistUri": f"spotify:playlist:{playlist_id}",
+                    "playlistItemUris": [uri],
+                    "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
+                },
+            )
+            self._pace()
 
     def _token_http(
         self,
@@ -1372,13 +1506,24 @@ class SpotifyClient:
         return sent
 
     def add_tracks(self, playlist_id: str, uris: list[str]) -> None:
+        if getattr(self, "prefer_pathfinder", False):
+            self._pathfinder_add(playlist_id, uris)
+            return
         for i in range(0, len(uris), 100):
             chunk = uris[i : i + 100]
-            self._request(
-                "POST",
-                f"playlists/{playlist_id}/tracks",
-                json_body={"uris": chunk},
-            )
+            try:
+                self._request(
+                    "POST",
+                    f"playlists/{playlist_id}/tracks",
+                    json_body={"uris": chunk},
+                )
+            except RateLimited:
+                if not self.pathfinder_ok:
+                    raise
+                # The Web API is throttled; the web player's own mutation is not.
+                self.prefer_pathfinder = True
+                log.warning("Web API write throttled — writing through the web player")
+                self._pathfinder_add(playlist_id, chunk)
 
     def current_user_id(self) -> str:
         data = self._request("GET", "me")

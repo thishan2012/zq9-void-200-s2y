@@ -1001,3 +1001,105 @@ def test_diag_command_reports_routes(monkeypatch, capsys, tmp_path):
     out = capsys.readouterr().out
     assert "client token" in out and "pathfinder" in out
     assert args == 0
+
+
+def _pf_client(monkeypatch, responses):
+    """SpotifyClient whose pathfinder POSTs answer from a scripted list."""
+    import json as _json
+
+    import phonksync.spotify as sp
+
+    seen = []
+
+    def fake_post(url, payload, headers):
+        seen.append({"url": url, "payload": payload, "headers": headers})
+        return _json.dumps(responses[min(len(seen) - 1, len(responses) - 1)])
+
+    monkeypatch.setattr(sp, "_proxy_post", fake_post)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
+    return client, seen
+
+
+def test_pathfinder_tracks_pages_with_the_bearer(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    client, seen = _pf_client(monkeypatch, [
+        {"data": {"playlistV2": {"content": {"totalCount": 2, "items": [
+            _v2_item("aaa", "One", "A"), _v2_item("bbb", "Two", "B")]}}}},
+    ])
+    tracks = client._pathfinder_tracks("PL1")
+    assert [t.name for t in tracks] == ["One", "Two"]
+    assert seen[0]["url"] == "https://api-partner.spotify.com/pathfinder/v2/query"
+    assert seen[0]["payload"]["operationName"] == "fetchPlaylistContents"
+    assert seen[0]["payload"]["variables"]["uri"] == "spotify:playlist:PL1"
+    assert seen[0]["headers"]["Authorization"] == "Bearer tok"
+    assert seen[0]["headers"]["app-platform"] == "WebPlayer"
+
+
+def test_pathfinder_add_writes_through_the_web_player(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {"__typename": "OK"}}}])
+    client._pathfinder_add("PL9", ["spotify:track:aaa", "spotify:track:bbb"])
+    assert len(seen) == 2
+    first = seen[0]["payload"]
+    assert first["operationName"] == "addToPlaylist"
+    assert first["variables"]["playlistUri"] == "spotify:playlist:PL9"
+    assert first["variables"]["playlistItemUris"] == ["spotify:track:aaa"]
+    assert first["variables"]["newPosition"]["moveType"] == "BOTTOM_OF_PLAYLIST"
+    assert first["extensions"]["persistedQuery"]["sha256Hash"] == sp._OP_HASHES["addToPlaylist"]
+
+
+def test_write_falls_back_to_pathfinder_when_the_api_429s(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {}}}])
+
+    def boom(*a, **kw):
+        raise RateLimited(30, "429")
+
+    monkeypatch.setattr(client, "_request", boom)
+    client.pathfinder_ok = True
+    client.add_tracks("PL1", ["spotify:track:aaa"])
+    assert seen and seen[0]["payload"]["operationName"] == "addToPlaylist"
+    assert client.prefer_pathfinder is True
+
+
+def test_write_does_not_fall_back_when_pathfinder_unproven(monkeypatch):
+    import phonksync.spotify as sp
+
+    client, seen = _pf_client(monkeypatch, [{"data": {}}])
+    monkeypatch.setattr(client, "_request", lambda *a, **kw: (_ for _ in ()).throw(RateLimited(30, "429")))
+    with pytest.raises(RateLimited):
+        client.add_tracks("PL1", ["spotify:track:aaa"])
+    assert not seen
+
+
+def test_spotify_backend_env_selects_web_player(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setenv("SPOTIFY_BACKEND", "web-player")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
+    assert client.backend == "web-player" and client.prefer_pathfinder
+
+
+def test_hash_discovery_caches_success_but_not_failure(monkeypatch):
+    import phonksync.spotify as sp
+
+    sp._discover_cached.cache_clear()
+    calls = []
+
+    def fake_once(ops):
+        calls.append(list(ops))
+        return {"fetchPlaylist": "h" * 64} if len(calls) > 1 else {}
+
+    monkeypatch.setattr(sp, "_discover_persisted_hashes_once", fake_once)
+    assert sp._discover_persisted_hashes(["fetchPlaylist"]) == {}   # failure: not cached
+    assert sp._discover_persisted_hashes(["fetchPlaylist"]) == {"fetchPlaylist": "h" * 64}
+    assert sp._discover_persisted_hashes(["fetchPlaylist"]) == {"fetchPlaylist": "h" * 64}
+    assert len(calls) == 2
+    sp._discover_cached.cache_clear()
