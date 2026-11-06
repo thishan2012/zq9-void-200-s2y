@@ -170,6 +170,7 @@ class Secrets:
     youtube_client_json: str = ""
     youtube_refresh_token: str = ""
     youtube_token_json: str = ""
+    youtube_access_token: str = ""  # short-lived (1h) token pasted by hand
     youtube_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -205,7 +206,12 @@ class Secrets:
                 "YT_OAUTH_TOKEN_JSON",
                 "YOUTUBE_OAUTH_TOKEN_JSON",
                 "YOUTUBE_TOKEN_JSON",
+            ),
+            youtube_access_token=_first(
+                "YT_ACCESS_TOKEN",
+                "YOUTUBE_ACCESS_TOKEN",
                 "YOUTUBE_OAUTH_TOKEN",
+                "YT_OAUTH_TOKEN",
             ),
             youtube_api_key=_first(
                 "YOUTUBE_API_KEY",

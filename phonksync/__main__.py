@@ -70,11 +70,18 @@ def cmd_check(args: argparse.Namespace) -> int:
                 (secrets.youtube_client_json or secrets.youtube_token_json)
                 and (secrets.youtube_refresh_token or secrets.youtube_token_json)
             )
-            print(
-                "✅ YouTube playlist writes: OAuth enabled" if has_oauth
-                else "⚠️  YouTube playlist writes disabled — API key cannot add videos "
-                     "(add YT_CLIENT_JSON + YT_REFRESH_TOKEN)"
-            )
+            if has_oauth:
+                print("✅ YouTube playlist writes: OAuth enabled (refresh token — never expires)")
+            elif secrets.youtube_access_token:
+                print(
+                    "⚠️  YouTube writes: manual access token — works ~1 hour, then dies. "
+                    "Run `phonksync youtube-auth` once for a YT_REFRESH_TOKEN."
+                )
+            else:
+                print(
+                    "⚠️  YouTube playlist writes disabled — API key cannot add videos "
+                    "(add YT_CLIENT_JSON + YT_REFRESH_TOKEN)"
+                )
     except ConfigError as exc:
         problems.append(f"Config: {exc}")
     try:
@@ -621,9 +628,15 @@ def cmd_cookie_fix(args: argparse.Namespace) -> int:
 
 
 def cmd_youtube_auth(args: argparse.Namespace) -> int:
-    from .oauth_setup import run_oauth_flow
+    from .oauth_setup import auth_url, exchange_code, run_device_flow, run_oauth_flow
 
-    return run_oauth_flow(args.client_json, port=args.port)
+    if args.device:
+        return run_device_flow(args.client_json)
+    if args.auth_url:
+        return auth_url(args.client_json, args.redirect_uri)
+    if args.code:
+        return exchange_code(args.client_json, args.code, args.redirect_uri)
+    return run_oauth_flow(args.client_json, port=args.port, redirect_uri=args.redirect_uri)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -719,6 +732,22 @@ def main(argv: list[str] | None = None) -> int:
     p_auth = sub.add_parser("youtube-auth", help="One-time YouTube OAuth setup (get refresh token)")
     p_auth.add_argument("--client-json", default="client_secret.json", help="OAuth client JSON file")
     p_auth.add_argument("--port", type=int, default=8765, help="Local redirect port")
+    p_auth.add_argument(
+        "--redirect-uri",
+        default="",
+        help="Use this exact redirect URI (default http://127.0.0.1:<port>/callback)",
+    )
+    p_auth.add_argument(
+        "--device",
+        action="store_true",
+        help="No redirect URI at all: show a code, you paste it on Google's page",
+    )
+    p_auth.add_argument(
+        "--auth-url", action="store_true", help="Only print the consent URL to open"
+    )
+    p_auth.add_argument(
+        "--code", default="", help="Exchange a pasted authorization code for a refresh token"
+    )
     p_auth.set_defaults(func=cmd_youtube_auth)
 
     args = parser.parse_args(argv)

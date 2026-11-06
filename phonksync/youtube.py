@@ -170,6 +170,7 @@ class YouTubeClient:
         max_searches_per_day: int = 0,
         max_inserts_per_day: int = 0,
         quota_state: QuotaState | None = None,
+        access_token: str = "",
         region_code: str = "US",
         session: requests.Session | None = None,
         free_search: bool = True,
@@ -246,6 +247,11 @@ class YouTubeClient:
         self.session = session or requests.Session()
         self._access_token = ""
         self._access_expiry = 0.0
+        # A hand-pasted access token (works ~1 hour, cannot be renewed).
+        self._manual_access_token = access_token.strip()
+        if self._manual_access_token:
+            self._access_token = self._manual_access_token
+            self._access_expiry = time.time() + 3300
 
     # ------------------------------------------------------------------ auth
 
@@ -255,17 +261,34 @@ class YouTubeClient:
         return bool(self.refresh_token and self.client_id and self.client_secret)
 
     @property
+    def write_mode(self) -> str:
+        """How writes are authorised, for the log: oauth / manual-token / none."""
+        if self.refresh_token and self.client_id and self.client_secret:
+            return "oauth (refresh token)"
+        if self._manual_access_token:
+            return "manual access token (expires in ~1h, not renewable)"
+        return "none"
+
+    @property
     def search_mode(self) -> str:
         if not self.api_keys:
             return "oauth"
         return "api_key" if len(self.api_keys) == 1 else f"api_key x{len(self.api_keys)}"
 
     def _ensure_token(self) -> str:
-        if not self.can_write:
+        if not self.can_write and not self._manual_access_token:
             raise AuthError(
                 "YouTube playlist writes need OAuth (an API key cannot add videos). "
                 "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN to enable writes."
             )
+        if self._manual_access_token and not self.can_write:
+            if time.time() >= self._access_expiry:
+                raise AuthError(
+                    "The pasted YouTube access token expired (~1 hour). A refresh token "
+                    "is the only renewable option: run `phonksync youtube-auth` once "
+                    "(it prints a YT_REFRESH_TOKEN that never expires)."
+                )
+            return self._manual_access_token
         if self._access_token and time.time() < self._access_expiry - 60:
             return self._access_token
         try:

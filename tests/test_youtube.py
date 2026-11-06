@@ -258,3 +258,70 @@ def test_free_video_metadata_comes_from_the_watch_page():
     assert found[0].channel == "Rick Astley"
     assert found[0].duration_s == 213
     assert found[0].views == 1500000000
+
+
+# ------------------------------------------------------- OAuth write modes
+def _yt_with(**kw):
+    from phonksync.youtube import YouTubeClient
+
+    return YouTubeClient(api_key="K", session=object(), free_search=False, **kw)
+
+
+def test_manual_access_token_enables_writes_for_an_hour():
+    import time as _time
+
+    yt = _yt_with(access_token="ya29.pasted")
+    assert yt.can_write is False
+    assert yt.write_mode.startswith("manual")
+    assert yt._ensure_token() == "ya29.pasted"
+    assert yt._access_expiry > _time.time() + 3000
+
+
+def test_expired_manual_token_asks_for_a_refresh_token(monkeypatch):
+    import time as _time
+
+    from phonksync.errors import AuthError
+
+    yt = _yt_with(access_token="ya29.old")
+    monkeypatch.setattr(_time, "time", lambda: yt._access_expiry + 10)
+    with pytest.raises(AuthError) as info:
+        yt._ensure_token()
+    assert "refresh token" in str(info.value)
+
+
+def test_refresh_token_write_mode_is_labelled_oauth():
+    yt = _yt_with(
+        refresh_token="1//refresh",
+        client_json='{"installed": {"client_id": "id", "client_secret": "sec"}}',
+    )
+    assert yt.can_write is True
+    assert yt.write_mode.startswith("oauth")
+
+
+def test_a_pasted_access_token_does_not_satisfy_the_refresh_requirement(monkeypatch):
+    from phonksync.settings import Secrets
+
+    monkeypatch.setenv("SPOTIFY_COOKIE", "sp_dc=" + "a" * 60)
+    monkeypatch.setenv("YT_ACCESS_TOKEN", "ya29.x")
+    monkeypatch.delenv("YT_CLIENT_JSON", raising=False)
+    monkeypatch.delenv("YT_REFRESH_TOKEN", raising=False)
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+    secrets = Secrets.from_env()
+    assert secrets.youtube_access_token == "ya29.x"
+    assert secrets.youtube_refresh_token == ""
+
+
+def test_oauth_helpers_build_a_consent_url(tmp_path, capsys):
+    from phonksync import oauth_setup
+
+    client = tmp_path / "client_secret.json"
+    client.write_text(
+        '{"installed": {"client_id": "cid.apps.googleusercontent.com", '
+        '"client_secret": "shh", "token_uri": "https://oauth2.googleapis.com/token"}}',
+        encoding="utf-8",
+    )
+    assert oauth_setup.auth_url(str(client), "http://127.0.0.1:8765/callback") == 0
+    out = capsys.readouterr().out
+    assert "client_id=cid.apps.googleusercontent.com" in out
+    assert "access_type=offline" in out
+    assert "redirect_uri=http%3A%2F%2F127.0.0.1%3A8765%2Fcallback" in out

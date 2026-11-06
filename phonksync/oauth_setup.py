@@ -12,6 +12,7 @@ import http.server
 import json
 import secrets as pysecrets
 import threading
+import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
@@ -20,6 +21,11 @@ import requests
 
 _SCOPE = "https://www.googleapis.com/auth/youtube"
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_DEVICE_CODE_URL = "https://oauth2.googleapis.com/device/code"
+_TOKEN_URL = "https://oauth2.googleapis.com/token"
+# Device-flow scope: the narrower one is what desktop/CLI apps are allowed to ask
+# for (youtube.force-ssl is also accepted for the same write endpoints).
+_DEVICE_SCOPE = "https://www.googleapis.com/auth/youtube"
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -42,7 +48,173 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def run_oauth_flow(client_json_path: str, port: int = 8765) -> int:
+def _client_section(client_json_path: str) -> dict:
+    path = Path(client_json_path)
+    if not path.exists():
+        raise FileNotFoundError(str(path))
+    blob = json.loads(path.read_text(encoding="utf-8"))
+    section = blob.get("installed") or blob.get("web") or blob
+    if not section.get("client_id") or not section.get("client_secret"):
+        raise ValueError("Client JSON must contain client_id and client_secret")
+    return section
+
+
+def _print_secrets(client_id: str, client_secret: str, token_uri: str, refresh_token: str) -> None:
+    condensed = json.dumps(
+        {"installed": {"client_id": client_id, "client_secret": client_secret,
+                       "token_uri": token_uri, "redirect_uris": ["http://localhost"]}},
+        separators=(",", ":"),
+    )
+    print("\n✅ Success! Add these GitHub repository secrets (Settings → Secrets → Actions):\n")
+    print("  YT_REFRESH_TOKEN =")
+    print(f"  {refresh_token}\n")
+    print("  YT_CLIENT_JSON = (either your whole client_secret.json, or this one-liner):")
+    print(f"  {condensed}\n")
+    print("⚠️  The refresh token does not expire on its own. It only dies if you")
+    print("   revoke the app, change the Google account password, or leave the app")
+    print("   in \"Testing\" mode for more than 7 days (then: publish the app, or")
+    print("   re-run this once). Treat it like a password — never commit it.")
+
+
+def run_device_flow(client_json_path: str) -> int:
+    """OAuth without any redirect URI: paste a code on a Google page.
+
+    This is the flow to use when Cloud Console refuses the redirect URI or when
+    the run happens on a machine without a browser.
+    """
+    try:
+        section = _client_section(client_json_path)
+    except FileNotFoundError:
+        print(f"❌ File not found: {client_json_path}")
+        return 2
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        return 2
+    client_id = section["client_id"]
+    client_secret = section["client_secret"]
+    token_uri = section.get("token_uri", _TOKEN_URL)
+
+    resp = requests.post(
+        _DEVICE_CODE_URL,
+        data={"client_id": client_id, "scope": _DEVICE_SCOPE},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        print(f"❌ Device flow is not enabled for this client ({resp.status_code}).")
+        print("   In Cloud Console → OAuth client → it must be type \"TVs and Limited")
+        print("   Input devices\", or use `youtube-auth --auth-url` / `--code`.")
+        print(f"   {resp.text[:300]}")
+        return 2
+    data = resp.json()
+    device_code = data.get("device_code", "")
+    user_code = data.get("user_code", "")
+    verify_url = data.get("verification_url") or data.get("verification_uri", "")
+    interval = int(data.get("interval", 5))
+    expires_in = int(data.get("expires_in", 1800))
+    print("\n1) Open this page in any browser:")
+    print(f"   {verify_url}")
+    print(f"2) Enter this code:  {user_code}\n")
+    print("Waiting for you to approve ...")
+    deadline = time.time() + expires_in
+    while time.time() < deadline:
+        time.sleep(interval)
+        poll = requests.post(
+            _TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "device_code": device_code,
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            },
+            timeout=30,
+        )
+        payload = poll.json() if poll.content else {}
+        error = payload.get("error", "")
+        if error == "authorization_pending":
+            continue
+        if error == "slow_down":
+            interval += 5
+            continue
+        if error:
+            print(f"❌ {error}: {payload.get('error_description', '')}")
+            return 1
+        refresh_token = payload.get("refresh_token", "")
+        if not refresh_token:
+            print("❌ Google returned no refresh token.")
+            return 1
+        _print_secrets(client_id, client_secret, token_uri, refresh_token)
+        return 0
+    print("❌ Timed out waiting for approval.")
+    return 1
+
+
+def auth_url(client_json_path: str, redirect_uri: str = "http://localhost:8765/callback") -> int:
+    """Print the consent URL for a redirect URI you registered yourself."""
+    try:
+        section = _client_section(client_json_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"❌ {exc}")
+        return 2
+    url = _AUTH_URL + "?" + urllib.parse.urlencode(
+        {
+            "client_id": section["client_id"],
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": _SCOPE,
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+    )
+    print("1) Register this exact redirect URI on the OAuth client (Cloud Console):")
+    print(f"   {redirect_uri}")
+    print("2) Open this URL, approve, then copy the `code=` value from the address")
+    print("   bar you land on (the page itself may show an error — that is fine):\n")
+    print(url + "\n")
+    print("3) Exchange it:")
+    print(f"   python -m phonksync youtube-auth --client-json {client_json_path} \\")
+    print(f"       --code <CODE> --redirect-uri {redirect_uri}")
+    return 0
+
+
+def exchange_code(client_json_path: str, code: str, redirect_uri: str) -> int:
+    """Turn a pasted authorization code into a refresh token."""
+    try:
+        section = _client_section(client_json_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"❌ {exc}")
+        return 2
+    token_uri = section.get("token_uri", _TOKEN_URL)
+    resp = requests.post(
+        token_uri,
+        data={
+            "code": code.strip(),
+            "client_id": section["client_id"],
+            "client_secret": section["client_secret"],
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        print(f"❌ Token exchange failed: {resp.status_code} {resp.text[:300]}")
+        print("   The usual causes: the redirect URI does not match EXACTLY the one")
+        print("   used in the consent URL, the code was already used, or it is older")
+        print("   than 10 minutes.")
+        return 1
+    data = resp.json()
+    refresh_token = data.get("refresh_token", "")
+    if not refresh_token:
+        print("❌ Google returned no refresh token (it only sends one on the first")
+        print("   consent for a client). Revoke the app at")
+        print("   https://myaccount.google.com/permissions and run this again.")
+        return 1
+    _print_secrets(
+        section["client_id"], section["client_secret"], token_uri, refresh_token
+    )
+    return 0
+
+
+def run_oauth_flow(client_json_path: str, port: int = 8765, redirect_uri: str = "") -> int:
     path = Path(client_json_path)
     if not path.exists():
         print(f"❌ File not found: {path}")
@@ -57,7 +229,7 @@ def run_oauth_flow(client_json_path: str, port: int = 8765) -> int:
         print("❌ Client JSON must contain client_id and client_secret")
         return 2
 
-    redirect_uri = f"http://localhost:{port}/callback"
+    redirect_uri = redirect_uri or f"http://127.0.0.1:{port}/callback"
     state = pysecrets.token_urlsafe(16)
     auth_url = _AUTH_URL + "?" + urllib.parse.urlencode(
         {
@@ -71,7 +243,8 @@ def run_oauth_flow(client_json_path: str, port: int = 8765) -> int:
         }
     )
 
-    server = http.server.HTTPServer(("localhost", port), _Handler)
+    bind_host = "127.0.0.1"
+    server = http.server.HTTPServer((bind_host, port), _Handler)
     thread = threading.Thread(target=server.handle_request, daemon=True)
     thread.start()
 
@@ -112,9 +285,5 @@ def run_oauth_flow(client_json_path: str, port: int = 8765) -> int:
         print("❌ Google did not return a refresh token. Revoke the app grant and retry.")
         return 1
 
-    print("\n✅ Success! Add these two GitHub repository secrets:\n")
-    print("  YT_REFRESH_TOKEN =")
-    print(f"  {refresh_token}\n")
-    print("  YT_CLIENT_JSON = (paste the entire contents of your client JSON file)")
-    print("\n⚠️  Treat the refresh token like a password. Never commit it to the repo.")
+    _print_secrets(client_id, client_secret, token_uri, refresh_token)
     return 0
