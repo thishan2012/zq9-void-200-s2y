@@ -142,6 +142,15 @@ class Config:
             cfg.youtube_max_inserts_per_day = int(os.environ["MAX_INSERTS_PER_DAY"])
         if os.environ.get("MAX_TRACKS_PER_RUN"):
             cfg.max_tracks_per_run = int(os.environ["MAX_TRACKS_PER_RUN"])
+        # A dry run must respect the same cap: "first 200" is a default, not a rule.
+        if cfg.dry_run:
+            if cfg.max_tracks_per_run:
+                cfg.dry_run_track_limit = min(
+                    cfg.dry_run_track_limit or cfg.max_tracks_per_run,
+                    cfg.max_tracks_per_run,
+                )
+            elif os.environ.get("DRY_RUN_TRACK_LIMIT"):
+                cfg.dry_run_track_limit = int(os.environ["DRY_RUN_TRACK_LIMIT"])
 
         cfg.spotify_source_playlists = [
             parse_spotify_playlist_id(p) for p in cfg.spotify_source_playlists

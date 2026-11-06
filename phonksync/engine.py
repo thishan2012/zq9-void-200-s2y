@@ -88,6 +88,7 @@ class RunReport:
     write_mode: str = ""
     dry_run: bool = False
     source_read_limit: int = 0
+    max_tracks_per_run: int = 0
 
     def summary_text(self) -> str:
         """Counts first, then ONLY the songs that were not added.
@@ -121,14 +122,14 @@ class RunReport:
                 f"✍️ Added {self.pending_youtube_flushed} previously matched video(s) "
                 "that were waiting for YouTube auth"
             )
-        if self.youtube_readonly:
-            lines.append(
-                f"📝 YouTube writes OFF: {self.youtube_readonly} match(es) remembered, "
-                "not added (they go in automatically once a write credential exists)"
-            )
-        problem = self.youtube_write_problem
-        if problem:
-            lines.append(f"⚠️ {problem}")
+        if self.youtube_write_problem:
+            lines.append("<b>⚠️ YouTube</b>")
+            lines.append(f"  {self.youtube_write_problem}")
+            if self.youtube_readonly:
+                lines.append(
+                    f"  📝 {self.youtube_readonly} match(es) remembered, added "
+                    "automatically once this is fixed"
+                )
         if self.method_wins:
             wins = ", ".join(f"{k}={v}" for k, v in sorted(self.method_wins.items()))
             lines.append(f"🏆 Methods: {wins}")
@@ -191,8 +192,11 @@ class RunReport:
             lines.append("ℹ️ Daily insert total so far: " + str(self.inserted))
         if self.dry_run:
             if self.source_read_limit:
+                cap = self.max_tracks_per_run
                 lines.append(
-                    f"🧪 DRY RUN — source reads limited to {self.source_read_limit} tracks; nothing was written"
+                    f"🧪 DRY RUN — previewed {self.source_read_limit} track(s)"
+                    + (f" (your limit: {cap})" if cap and cap <= self.source_read_limit else "")
+                    + "; nothing was written"
                 )
             else:
                 lines.append("🧪 DRY RUN — nothing was written")
@@ -556,6 +560,7 @@ class SyncEngine:
         if read_limit and cfg.max_tracks_per_run:
             read_limit = min(read_limit, cfg.max_tracks_per_run)
         report.source_read_limit = read_limit
+        report.max_tracks_per_run = cfg.max_tracks_per_run
 
         seen: dict[str, Track] = {}
         for playlist_id in cfg.spotify_source_playlists:
@@ -726,6 +731,8 @@ class SyncEngine:
 
     def _web_api_budget_left(self) -> bool:
         """Cheap-read budget: Web API calls are slow (2s pace) and rate limited."""
+        if getattr(self.spotify, "rate_limited_this_run", False):
+            return False
         cap = getattr(self.config, "spotify_max_requests_per_run", 0)
         if not cap:
             return True

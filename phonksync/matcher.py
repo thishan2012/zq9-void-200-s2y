@@ -572,7 +572,7 @@ class Matcher:
             ("LINKED", self.m_linked),
             ("FIELD", self.m_field),
             ("VARIANTS", self.m_variants),
-            ("DURVER", self.m_durver),
+            ("DUR+VER", self.m_durver),
             ("CLEANARTIST", self.m_cleanartist),
             ("TITLEONLY", self.m_titleonly),
             ("SONGTAG", self.m_songtag),

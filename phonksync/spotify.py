@@ -952,6 +952,7 @@ class SpotifyClient:
         self._cookie_index = 0
         self.cookie_switches = 0
         self._request_count = 0
+        self._rate_limited_this_run = False
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -1272,6 +1273,11 @@ class SpotifyClient:
         """How many Web-API calls this client has made (pacing honesty check)."""
         return self._request_count
 
+    @property
+    def rate_limited_this_run(self) -> bool:
+        """Spotify answered 429 during this run — stop spending calls on it."""
+        return self._rate_limited_this_run
+
     def _pace(self) -> None:
         """Sleep the configured gap before a request (default 2s)."""
         delay = self.request_delay + min(self._pace_debt, 3.0)
@@ -1334,6 +1340,7 @@ class SpotifyClient:
                 # Cheap call, no rate pressure: keep the soft pace budget full.
                 self._pace_debt = max(0.0, self._pace_debt - 1.0)
             if resp.status_code == 429:
+                self._rate_limited_this_run = True
                 retry_after = _retry_after_seconds(resp.headers, attempt)
                 raw_retry = _header_seconds(resp.headers)
                 self._pace_debt += 3.0

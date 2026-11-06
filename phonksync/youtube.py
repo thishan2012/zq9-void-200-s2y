@@ -301,20 +301,54 @@ class YouTubeClient:
         GitHub usually keeps its line breaks, so newlines are treated as ``;``.
         """
         cooked = (raw or "").strip().replace("\r", "").replace("\n", ";")
+        if cooked[:1] in "{[":
+            # Cookie-editor extensions export [{"name": "...", "value": "..."}].
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                data = None
+            if data is not None:
+                stack = [data]
+                while stack:
+                    node = stack.pop()
+                    if isinstance(node, dict):
+                        if str(node.get("name", "")).lower() == name.lower():
+                            value = str(node.get("value", "")).strip()
+                            if value:
+                                return value
+                        stack.extend(node.values())
+                    elif isinstance(node, list):
+                        stack.extend(node)
         if "=" not in cooked:
             return ""
-        target = name.lower()
+
+        def auth_key(key: str) -> str:
+            """Cookie names travel through tools that eat underscores/dashes.
+
+            Chrome's own Network panel, curl exports and JSON cookie exports all
+            mangle `__Secure-3PAPISID` differently (`_Secure-3PAPISID`,
+            `Secure3PAPISID`, `secure-3papisid`), and a name that lost a
+            character silently disables every write. Compare on letters+digits.
+            """
+            return re.sub(r"[^a-z0-9]", "", key.lower())
+
+        target = auth_key(name)
         for part in cooked.replace('"', "").split(";"):
             key, _, value = part.partition("=")
-            key = key.strip().lower()
-            if key.startswith("cookie:"):
+            key = key.strip()
+            if key.lower().startswith("cookie:"):
                 key = key[len("cookie:") :].strip()
-            elif key.startswith(":") and key not in (":cookie",):
+            elif key.startswith(":") and key.lower() != ":cookie":
                 continue  # devtools pseudo-header (:authority:, :method:, ...)
-            if key == target:
+            if key and auth_key(key) == target and value.strip().strip('"'):
                 return value.strip().strip('"')
-        # Last resort (odd formatting): unanchored search, case-insensitive.
-        match = re.search(re.escape(name) + r'\s*=\s*"?([^;\s"]+)', cooked, re.I)
+        # Last resort (odd formatting / separators): unanchored, case-insensitive.
+        # Anchored on a name boundary so "SID=" can never match the tail of
+        # "__Secure-3PAPISID=" (a 7.9k pasted header used to look "full").
+        token = r"[_\-. ]?".join(re.escape(ch) for ch in name.lower().lstrip("_"))
+        match = re.search(
+            r"(?<![a-z0-9_\-])" + token + r'\s*=\s*"?([^;\s"]+)', cooked, re.I
+        )
         return match.group(1) if match else ""
 
     def _sapisid(self) -> str:
@@ -330,12 +364,24 @@ class YouTubeClient:
         sapisid = self._sapisid()
         if not sapisid:
             hint = ""
-            if "papisid" in self.cookie.lower():
-                hint = " — the name looks clipped/wrong (need __Secure-3PAPISID)"
-            elif "SID=" not in self.cookie:
-                hint = " — only part of the cookie was pasted (need the whole Cookie header)"
-            return f"cookie present ({length} chars) but no __Secure-3PAPISID{hint}"
-        kind = "full session cookie" if "SID=" in self.cookie else "SAPISID-only (narrow)"
+            lowered = self.cookie.lower()
+            if "sid" not in lowered and "papisid" not in lowered:
+                hint = (
+                    " — the value does not look like a cookie at all (paste the "
+                    "Cookie request header, not the URL or the page text)"
+                )
+            elif "papisid" not in lowered:
+                hint = (
+                    " — the SAPISID family is missing entirely (copy every cookie "
+                    "from a music.youtube.com request)"
+                )
+            else:
+                hint = " — the value was there but empty or truncated"
+            return f"cookie present ({length} chars) but no usable SAPISID{hint}"
+        has_sid = bool(self._cookie_value(self.cookie, "SID") or self._cookie_value(self.cookie, "HSID"))
+        kind = "full session cookie" if has_sid else (
+            "SAPISID-only (narrow — if writes 401, paste the whole Cookie header)"
+        )
         return (
             f"cookie ok ({length} chars, {kind}, __Secure-3PAPISID "
             f"{sapisid[:3]}…{sapisid[-3:]}, authuser {self.authuser})"
