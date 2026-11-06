@@ -56,7 +56,7 @@ def search_handler(method, url, params, body, headers):
 
 def test_api_key_is_used_for_search_and_no_oauth_token_needed():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", session=session)
+    yt = YouTubeClient(api_key="KEY123", session=session, free_search=False)
     ids = yt.search("nulteex montagem miau", max_results=3)
     assert ids == ["vid00000001"]
     call = session.calls[0]
@@ -68,7 +68,7 @@ def test_api_key_is_used_for_search_and_no_oauth_token_needed():
 
 def test_api_key_only_client_cannot_add_to_playlist():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", session=session)
+    yt = YouTubeClient(api_key="KEY123", session=session, free_search=False)
     with pytest.raises(AuthError):
         yt.add_to_playlist("PLtarget", "vid00000001")
     # No wasted HTTP call: the write is refused before hitting the network.
@@ -77,7 +77,7 @@ def test_api_key_only_client_cannot_add_to_playlist():
 
 def test_oauth_still_required_for_inserts():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(token_json=CLIENT_JSON, session=session, free_search=False)
     assert yt.can_write is True
     yt.add_to_playlist("PLtarget", "vid00000002")
     insert = [c for c in session.calls if c["method"] == "POST" and "playlistItems" in c["url"]]
@@ -89,7 +89,7 @@ def test_oauth_still_required_for_inserts():
 
 def test_both_key_and_oauth_search_prefers_key():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(api_key="KEY123", token_json=CLIENT_JSON, session=session, free_search=False)
     yt.search("q")
     assert session.calls[0]["params"]["key"] == "KEY123"
     assert yt.can_write is True
@@ -97,7 +97,7 @@ def test_both_key_and_oauth_search_prefers_key():
 
 def test_oauth_only_config_still_reads_with_oauth():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(token_json=CLIENT_JSON, session=session, free_search=False)
     assert yt.api_key == ""
     yt.search("q")
     search = [c for c in session.calls if c["url"].endswith("/search")][0]
@@ -140,7 +140,9 @@ def test_invalid_api_key_raises_auth_error_not_crash():
             text='{"error":{"errors":[{"reason":"keyInvalid"}],"message":"API key not valid"}}',
         )
 
-    yt = YouTubeClient(api_key="BAD", session=FakeSession(handler))
+    # free_search must be OFF: with it on, the test would hit youtube.com
+    # (green offline, red on a runner that has internet).
+    yt = YouTubeClient(api_key="BAD", session=FakeSession(handler), free_search=False)
     with pytest.raises(AuthError):
         yt.search("q")
 
@@ -164,7 +166,7 @@ def test_multiple_api_keys_rotate_when_one_is_exhausted():
         return FakeResponse(200, {})
 
     session = FakeSession(handler)
-    yt = YouTubeClient(api_key="KEY1, KEY2", session=session)
+    yt = YouTubeClient(api_key="KEY1, KEY2", session=session, free_search=False)
     assert yt.api_keys == ["KEY1", "KEY2"]
     assert yt.search("q") == ["v2"]
     used = [c["params"].get("key") for c in session.calls if c["url"].endswith("/search")]
@@ -179,7 +181,7 @@ def test_all_keys_exhausted_raises_quota_exceeded():
             text='{"error":{"errors":[{"reason":"quotaExceeded"}]}}',
         )
 
-    yt = YouTubeClient(api_key="K1 K2", session=FakeSession(handler))
+    yt = YouTubeClient(api_key="K1 K2", session=FakeSession(handler), free_search=False)
     with pytest.raises(QuotaExceeded):
         yt.search("q")
     assert yt.search_mode == "api_key x2"
@@ -189,7 +191,7 @@ def test_per_key_budget_from_state_is_respected():
     key_state = {"date": TODAY, "keys": {"0": 9800, "1": 0}, "units_used": 9800}
     quota = QuotaState.from_dict(key_state)
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="K1,K2", quota_state=quota, session=session)
+    yt = YouTubeClient(api_key="K1,K2", quota_state=quota, session=session, free_search=False)
     yt.search("q")
     search = [c for c in session.calls if c["url"].endswith("/search")][0]
     assert search["params"]["key"] == "K2"  # K1 has no units left today
