@@ -596,8 +596,8 @@ def test_every_paste_shape_produces_a_usable_cookie(pasted):
 def test_cookie_diag_explains_a_broken_paste_without_leaking_it():
     yt = YouTubeClient(api_key="", cookie="music.youtube.com", free_search=False)
     diag = yt.cookie_diag()
-    assert "no __Secure-3PAPISID" in diag
-    assert "whole Cookie header" in diag
+    assert "no usable SAPISID" in diag
+    assert "not the URL" in diag
     assert "music.youtube.com" not in diag
 
     ok = YouTubeClient(api_key="", cookie=COOKIE, free_search=False).cookie_diag()
@@ -657,7 +657,7 @@ def test_cookie_probe_refuses_a_broken_cookie(capsys):
     from phonksync.oauth_setup import cookie_test
 
     assert cookie_test("PLtest", cookie="SID=a") == 1
-    assert "no __Secure-3PAPISID" in capsys.readouterr().out
+    assert "no usable SAPISID" in capsys.readouterr().out
 
 
 def test_cookie_probe_explains_a_network_failure(monkeypatch, capsys):
@@ -681,3 +681,37 @@ def test_run_summary_reports_confirmed_inserts():
     report = RunReport(youtube_inserted=3, inserted=5, write_mode="browser cookie")
     text = report.summary_text()
     assert "YouTube inserts confirmed by Google: 3" in text
+
+
+# ------------------------- cookie names mangled by browsers/export tools
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "SID=a; __Secure-3PAPISID=XYZ",          # canonical
+        "SID=a; _Secure-3PAPISID=XYZ",           # one underscore lost
+        "SID=a; __Secure3PAPISID=XYZ",           # dashes lost
+        "sid=a; __secure-3papisid=XYZ",          # lower-cased
+        "Cookie: SID=a; __Secure-3PAPISID=XYZ",  # curl export
+        ':authority: music.youtube.com\ncookie: SID=a; __Secure-3PAPISID=XYZ',
+        '[{"name":"SID","value":"a"},{"name":"__Secure-3PAPISID","value":"XYZ"}]',
+    ],
+)
+def test_mangled_cookie_names_still_authenticate(pasted):
+    yt = YouTubeClient(api_key="", cookie=pasted, free_search=False)
+    assert yt._sapisid() == "XYZ"
+    assert yt.can_write is True
+    assert "cookie ok" in yt.cookie_diag()
+
+
+def test_a_narrow_cookie_is_labelled_narrow():
+    yt = YouTubeClient(api_key="", cookie="__Secure-3PAPISID=XYZ", free_search=False)
+    # "SID" must never match the tail of "__Secure-3PAPISID"
+    assert yt._cookie_value(yt.cookie, "SID") == ""
+    assert "SAPISID-only" in yt.cookie_diag()
+
+
+def test_diag_never_reprints_the_cookie_name_or_value():
+    yt = YouTubeClient(api_key="", cookie="SID=a; __Secure-3PAPISID=", free_search=False)
+    diag = yt.cookie_diag()
+    assert "__Secure-3PAPISID" not in diag  # the old text got mangled into "**Secure"
+    assert "no usable SAPISID" in diag

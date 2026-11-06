@@ -227,3 +227,43 @@ Make it faster still:
 
 The summary reports what happened, so a slow run is visible:
 `🎵 3 playlist(s), 812 tracks read · 720 were already synced`.
+
+## "I set 30 tracks, but it says 30 / it still hit a Spotify 429"
+
+**The number.** `max_tracks` (workflow input) was only applied to live runs; a
+dry run always previewed `dry_run_track_limit` (default 200). Now:
+
+- the dry-run limit is `min(dry_run_track_limit, max_tracks_per_run)` when you
+  passed `max_tracks`;
+- the summary says which one won: `🧪 DRY RUN — previewed 30 track(s) (your limit: 30)`.
+
+**The 429.** A dry run still *reads* Spotify (one call per ~100 tracks plus the
+target playlist), and every call is paced 2s apart. Now a 429 ends Web API
+spending for the rest of the run — the remaining sources are read through the
+web-player route instead of retrying into a growing block:
+
+```
+⚠️ Spotify cooldown until 2026-11-06 04:27 UTC
+🌐 Reads without the Web API (throttled): 1
+```
+
+If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
+preview of 30 tracks then needs ~2 calls, not a page-turn loop.
+
+## `YT_COOKIE … no usable SAPISID`
+
+The cookie name is `__Secure-3PAPISID`, but browsers and export tools mangle it
+(`_Secure-3PAPISID`, `Secure3PAPISID`, lower-case, `Cookie:` prefix, JSON export).
+All of those are now accepted — the matcher compares letters+digits only, so a
+name that lost an underscore or dash still authenticates.
+
+The diagnostic no longer repeats the cookie's own name (it used to be printed
+next to a mangled copy, which read like `**Secure-3PAPISID`); it now says what is
+wrong in plain words:
+
+| message | meaning |
+|---|---|
+| `no usable SAPISID — not the URL` | you pasted the page URL / text, not the header |
+| `no usable SAPISID — the SAPISID family is missing` | the header was clipped |
+| `no usable SAPISID — the value was there but empty or truncated` | present but empty |
+| `cookie ok (…, SAPISID-only (narrow …))` | auth works, but re-paste the whole header if writes 401 |

@@ -1039,3 +1039,39 @@ def test_summary_shows_counts_and_only_the_unadded_tracks():
     assert "Nulteex — hd" in text
     # no added-song listing at all
     assert "✅ Added (" not in text
+
+
+def test_rate_limited_run_stops_spending_web_api_calls(monkeypatch, cfg):
+    """A 429 must end the Web API spending immediately, not per-playlist."""
+    cfg.spotify_source_playlists = [
+        "src111111111111111111111", "src222222222222222222222",
+    ]
+    spotify = FakeSpotify({
+        "src111111111111111111111": [],
+        "src222222222222222222222": [],
+    })
+    youtube = EngineYouTube(catalog={})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    spotify.rate_limited_this_run = True
+    engine.run()
+    assert spotify.read_calls == []
+
+
+def test_dry_run_respects_the_user_track_cap(tmp_path, monkeypatch):
+    from phonksync.settings import Config
+
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("MAX_TRACKS_PER_RUN", "30")
+    monkeypatch.setenv("YOUTUBE_ENABLED", "false")
+    cfg = Config.load("config.json")
+    # the default 200 must bend to the explicit 30
+    assert cfg.max_tracks_per_run == 30
+    assert cfg.dry_run_track_limit <= 30
+
+
+def test_summary_mentions_the_user_cap_not_the_default():
+    from phonksync.engine import RunReport
+
+    report = RunReport(dry_run=True, added=29, source_read_limit=30, max_tracks_per_run=30)
+    text = report.summary_text()
+    assert "previewed 30 track(s) (your limit: 30)" in text
