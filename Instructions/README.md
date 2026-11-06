@@ -70,7 +70,7 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 | `youtube_enabled` | `false` | YouTube sync is disabled by default (Spotify-only) |
 | `max_tracks_per_run` | `0` | 0 = unlimited; otherwise cap processed tracks per run |
 | `dry_run_track_limit` | `200` | dry-run only: max source tracks to read (0 = unlimited) |
-| `telegram_per_track` | `true` | per-track Telegram messages |
+| `telegram_per_track` | `true` | list each track inside the single end-of-run message (never one message per track) |
 | `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track (YouTube mode) |
 | `max_searches_per_run` | `200` | YouTube only: cap on **paid** searches per run (free page searches do not count) |
 | `youtube_free_search` | `true` | search youtube.com first: 0 API units (see `Instructions/YOUTUBE-BUDGET.md`) |

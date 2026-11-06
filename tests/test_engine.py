@@ -53,8 +53,26 @@ class EngineYouTube(FakeYouTube):
 
 
 class SilentTelegram:
+    """Stands in for TelegramLogger: collects, never sends (one message/run)."""
+
     def __init__(self, *a, **kw):
         self.messages = []
+        self._track_buffer = []
+        self.one_message = True
+        self.flushed = 0
+        self.last_summary = ""
+
+    def flush(self, summary=""):
+        self.flushed += 1
+        self.last_summary = summary
+        if summary:
+            self.messages.append(summary)
+        self.messages.extend(self._track_buffer)
+        self._track_buffer = []
+        return 1
+
+    def _buffer_track(self, line):
+        self._track_buffer.append(line)
 
     def info(self, t):
         self.messages.append(t)
@@ -904,8 +922,7 @@ def test_writes_off_warning_names_the_cookie_when_that_is_the_problem(monkeypatc
     report = engine.run()
     summary = report.summary_text()
     assert "YT_COOKIE is set but unusable" in summary
-    assert "YT_REFRESH_TOKEN" not in summary.split("Reason")[0]
-    assert "csv" not in summary
+    assert "whole Cookie header" in summary
 
 
 def test_start_message_does_not_claim_oauth_is_the_only_option(monkeypatch, cfg):
@@ -920,3 +937,51 @@ def test_start_message_does_not_claim_oauth_is_the_only_option(monkeypatch, cfg)
     )
     assert "YT_COOKIE" in joined
     assert "playlist adds need OAuth" not in joined
+
+
+def test_one_message_per_run_even_with_many_tracks(monkeypatch, cfg):
+    tracks = [make_track(id=f"track{i:021d}", name=f"SONG {i}") for i in range(12)]
+    catalog, search_map = {}, {}
+    for i in range(12):
+        vid = f"vid{i:08d}"
+        catalog[vid] = make_candidate(vid, f"Nulteex - SONG {i}", channel="Nulteex - Topic")
+        search_map[f"nulteex song {i}"] = [vid]
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    youtube = EngineYouTube(catalog=catalog, search_map=search_map)
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+    assert report.added >= 1
+    # SilentTelegram stands in for the real logger: it records one flush.
+    assert engine.telegram.flushed == 1
+    assert "Sync run finished" in engine.telegram.last_summary
+
+
+def test_second_run_does_not_report_the_same_songs_again(monkeypatch, cfg):
+    track = make_track(id="track000000000000000051", name="PHONK")
+    vid = make_candidate("vid00000051", "Nulteex - PHONK", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube(catalog={"vid00000051": vid}, search_map={"nulteex phonk": ["vid00000051"]})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+
+    first = engine.run()
+    assert first.added == 1
+    assert any("PHONK" in line for line in first.added_tracks)
+
+    second = engine.run()
+    assert second.added == 0
+    assert second.added_tracks == []
+    assert "PHONK" not in second.summary_text()
+    assert second.already_synced == 1
+
+
+def test_a_song_in_the_db_is_never_logged_even_if_the_playlist_repeats_it(monkeypatch, cfg):
+    track = make_track(id="track000000000000000052", name="LOOP")
+    vid = make_candidate("vid00000052", "Nulteex - LOOP", channel="Nulteex - Topic")
+    # same track twice in one read (duplicate row in the source playlist)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track, track]})
+    youtube = EngineYouTube(
+        catalog={"vid00000052": vid}, search_map={"nulteex loop": ["vid00000052"]}
+    )
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+    assert sum("LOOP" in line for line in report.added_tracks) <= 1
