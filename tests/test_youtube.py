@@ -56,7 +56,7 @@ def search_handler(method, url, params, body, headers):
 
 def test_api_key_is_used_for_search_and_no_oauth_token_needed():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", session=session)
+    yt = YouTubeClient(api_key="KEY123", session=session, free_search=False)
     ids = yt.search("nulteex montagem miau", max_results=3)
     assert ids == ["vid00000001"]
     call = session.calls[0]
@@ -68,7 +68,7 @@ def test_api_key_is_used_for_search_and_no_oauth_token_needed():
 
 def test_api_key_only_client_cannot_add_to_playlist():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", session=session)
+    yt = YouTubeClient(api_key="KEY123", session=session, free_search=False)
     with pytest.raises(AuthError):
         yt.add_to_playlist("PLtarget", "vid00000001")
     # No wasted HTTP call: the write is refused before hitting the network.
@@ -77,7 +77,7 @@ def test_api_key_only_client_cannot_add_to_playlist():
 
 def test_oauth_still_required_for_inserts():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(token_json=CLIENT_JSON, session=session, free_search=False)
     assert yt.can_write is True
     yt.add_to_playlist("PLtarget", "vid00000002")
     insert = [c for c in session.calls if c["method"] == "POST" and "playlistItems" in c["url"]]
@@ -89,7 +89,7 @@ def test_oauth_still_required_for_inserts():
 
 def test_both_key_and_oauth_search_prefers_key():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="KEY123", token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(api_key="KEY123", token_json=CLIENT_JSON, session=session, free_search=False)
     yt.search("q")
     assert session.calls[0]["params"]["key"] == "KEY123"
     assert yt.can_write is True
@@ -97,7 +97,7 @@ def test_both_key_and_oauth_search_prefers_key():
 
 def test_oauth_only_config_still_reads_with_oauth():
     session = FakeSession(search_handler)
-    yt = YouTubeClient(token_json=CLIENT_JSON, session=session)
+    yt = YouTubeClient(token_json=CLIENT_JSON, session=session, free_search=False)
     assert yt.api_key == ""
     yt.search("q")
     search = [c for c in session.calls if c["url"].endswith("/search")][0]
@@ -109,7 +109,7 @@ def test_daily_search_cap_survives_multiple_runs():
     session = FakeSession(search_handler)
     quota = QuotaState(date=TODAY, searches=80, units_used=8000)
     yt = YouTubeClient(api_key="KEY123", max_searches_per_run=80,
-                       max_searches_per_day=80, quota_state=quota, session=session)
+                       max_searches_per_day=80, quota_state=quota, session=session, free_search=False)
     with pytest.raises(QuotaExceeded) as exc:
         yt.search("q")
     assert "Daily search limit" in str(exc.value)
@@ -121,7 +121,7 @@ def test_daily_insert_cap():
     session = FakeSession(search_handler)
     quota = QuotaState(date=TODAY, inserts=40, units_used=2000)
     yt = YouTubeClient(token_json=CLIENT_JSON, max_inserts_per_day=40,
-                       quota_state=quota, session=session)
+                       quota_state=quota, session=session, free_search=False)
     with pytest.raises(QuotaExceeded):
         yt.add_to_playlist("PLtarget", "vid00000003")
 
@@ -140,7 +140,9 @@ def test_invalid_api_key_raises_auth_error_not_crash():
             text='{"error":{"errors":[{"reason":"keyInvalid"}],"message":"API key not valid"}}',
         )
 
-    yt = YouTubeClient(api_key="BAD", session=FakeSession(handler))
+    # free_search must be OFF: with it on, the test would hit youtube.com
+    # (green offline, red on a runner that has internet).
+    yt = YouTubeClient(api_key="BAD", session=FakeSession(handler), free_search=False)
     with pytest.raises(AuthError):
         yt.search("q")
 
@@ -164,7 +166,7 @@ def test_multiple_api_keys_rotate_when_one_is_exhausted():
         return FakeResponse(200, {})
 
     session = FakeSession(handler)
-    yt = YouTubeClient(api_key="KEY1, KEY2", session=session)
+    yt = YouTubeClient(api_key="KEY1, KEY2", session=session, free_search=False)
     assert yt.api_keys == ["KEY1", "KEY2"]
     assert yt.search("q") == ["v2"]
     used = [c["params"].get("key") for c in session.calls if c["url"].endswith("/search")]
@@ -179,7 +181,7 @@ def test_all_keys_exhausted_raises_quota_exceeded():
             text='{"error":{"errors":[{"reason":"quotaExceeded"}]}}',
         )
 
-    yt = YouTubeClient(api_key="K1 K2", session=FakeSession(handler))
+    yt = YouTubeClient(api_key="K1 K2", session=FakeSession(handler), free_search=False)
     with pytest.raises(QuotaExceeded):
         yt.search("q")
     assert yt.search_mode == "api_key x2"
@@ -189,7 +191,7 @@ def test_per_key_budget_from_state_is_respected():
     key_state = {"date": TODAY, "keys": {"0": 9800, "1": 0}, "units_used": 9800}
     quota = QuotaState.from_dict(key_state)
     session = FakeSession(search_handler)
-    yt = YouTubeClient(api_key="K1,K2", quota_state=quota, session=session)
+    yt = YouTubeClient(api_key="K1,K2", quota_state=quota, session=session, free_search=False)
     yt.search("q")
     search = [c for c in session.calls if c["url"].endswith("/search")][0]
     assert search["params"]["key"] == "K2"  # K1 has no units left today
@@ -715,3 +717,97 @@ def test_diag_never_reprints_the_cookie_name_or_value():
     diag = yt.cookie_diag()
     assert "__Secure-3PAPISID" not in diag  # the old text got mangled into "**Secure"
     assert "no usable SAPISID" in diag
+
+
+# ------------------------------------------------------- free-page speed
+class _Resp:
+    def __init__(self, text="", status=200, elapsed=0.0):
+        self.text = text
+        self.status_code = status
+        self.elapsed = _Elapsed(elapsed)
+
+
+class _Elapsed:
+    def __init__(self, seconds):
+        self._s = seconds
+
+    def total_seconds(self):
+        return self._s
+
+
+class _Session:
+    """Counts page loads; every page is a fixed-latency fake."""
+
+    def __init__(self, latency=0.4, ids=None):
+        self.latency = latency
+        self.calls = []
+        self.ids = ids or []
+
+    def mount(self, *a, **kw):
+        pass
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append((url, (params or {}).get("v") or (params or {}).get("search_query")))
+        text = ""
+        if "results" in url:
+            text = "".join(f'"videoId":"vid{i:08d}"' for i in range(len(self.ids)))
+        else:
+            vid = (params or {}).get("v") or ""
+            text = 'ytInitialPlayerResponse = ' + json.dumps(
+                {
+                    "videoDetails": {
+                        "videoId": vid,
+                        "title": "Nulteex - MONTAGEM MIAU",
+                        "author": "Nulteex - Topic",
+                        "lengthSeconds": "120",
+                    }
+                }
+            )
+        return _Resp(text=text, elapsed=self.latency)
+
+
+def _client(session, pause=1.0):
+    from phonksync.youtube import YouTubeClient
+
+    return YouTubeClient(
+        cookie="SID=a; __Secure-3PAPISID=b",
+        free_search=True,
+        free_search_pause=pause,
+        web_session=session,
+    )
+
+
+def test_a_video_page_is_never_downloaded_twice():
+    ids = [f"vid{i:08d}" for i in range(3)]
+    session = _Session(ids=ids)
+    yt = _client(session, pause=0.0)
+    yt.free_videos(ids)
+    first = len(session.calls)
+    yt.free_videos(ids)  # the next pipeline step asks for the same ids
+    assert len(session.calls) == first  # 0 extra page loads
+    assert yt.free_pages_this_run == 3
+
+
+def test_page_gap_counts_the_time_the_page_already_took(monkeypatch):
+    """A 0.9s page + 1.0s gap must not become 1.9s of waiting."""
+    slept = []
+    monkeypatch.setattr("phonksync.youtube.time.sleep", lambda s: slept.append(s))
+    session = _Session(latency=0.9, ids=["vid00000000"])
+    yt = _client(session, pause=1.0)
+    yt.free_search_ids("nulteex montagem miau")
+    assert slept and abs(slept[0] - 0.1) < 1e-6
+
+
+def test_video_pages_are_paced_lighter_than_searches(monkeypatch):
+    slept = []
+    monkeypatch.setattr("phonksync.youtube.time.sleep", lambda s: slept.append(s))
+    session = _Session(latency=0.0, ids=[])
+    yt = _client(session, pause=1.0)
+    yt.free_videos(["vid00000001", "vid00000002"])
+    assert all(s <= 0.25 for s in slept), slept
+
+
+def test_keepalive_adapter_is_mounted_once():
+    session = _Session()
+    yt = _client(session, pause=0.0)
+    assert yt.web_session is session

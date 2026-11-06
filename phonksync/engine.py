@@ -70,6 +70,7 @@ class RunReport:
     backend: str = ""
     rate_limited_skips: int = 0
     free_searches: int = 0
+    free_pages: int = 0
     skipped_by_choice: int = 0
     youtube_readonly: int = 0
     skipped_sources: int = 0
@@ -80,6 +81,8 @@ class RunReport:
     failed_tracks: list[str] = field(default_factory=list)
     daily_details: list[str] = field(default_factory=list)
     cooldown_until: float = 0.0
+    cooldown_hint_left: float = 0.0
+    elapsed_seconds: float = 0.0
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -134,9 +137,10 @@ class RunReport:
             wins = ", ".join(f"{k}={v}" for k, v in sorted(self.method_wins.items()))
             lines.append(f"🏆 Methods: {wins}")
         if self.free_matches or self.free_searches:
+            pages = f" + {self.free_pages} video pages" if self.free_pages else ""
             lines.append(
-                f"🆓 Free YouTube searches: {self.free_searches} "
-                f"(0 quota), matches: {self.free_matches}"
+                f"🆓 Free YouTube: {self.free_searches} search(es){pages} (0 quota), "
+                f"matches: {self.free_matches}"
             )
         if self.write_mode:
             lines.append(f"✍️ YouTube writes: {self.write_mode}")
@@ -200,6 +204,14 @@ class RunReport:
                 )
             else:
                 lines.append("🧪 DRY RUN — nothing was written")
+        if self.elapsed_seconds >= 30:
+            per = ""
+            if self.unique_tracks:
+                per = f" ({self.elapsed_seconds / self.unique_tracks:.0f}s per track)"
+            lines.append(
+                f"⏱ Took {_human_wait(self.elapsed_seconds)} for "
+                f"{self.unique_tracks} track(s){per}"
+            )
         if self.errors:
             lines.append(f"🛑 Errors: {len(self.errors)}")
             lines.extend(escape(e)[:200] for e in self.errors[:5])
@@ -356,17 +368,19 @@ class SyncEngine:
 
         self._warn_if_youtube_writes_are_off()
 
+        # A remembered cooldown is a *hint*, never a wall. The run always happens:
+        # a hint only means "do not spend Web API calls yet" — the web-player
+        # route (which is not rate limited) does the reading instead.
+        self._cooldown_hint_left = 0.0
         cooldown_left = self.state.spotify_cooldown_until() - time.time()
-        if cooldown_left > 0 and not cfg.dry_run:
-            report.spotify_throttled = True
-            report.quota_reason = (
-                f"Spotify cooldown — {_human_wait(cooldown_left)} remaining; "
-                "this run was skipped on purpose (state is safe)"
+        if cooldown_left > 0:
+            self._cooldown_hint_left = cooldown_left
+            report.cooldown_hint_left = cooldown_left
+            self._detail(
+                report,
+                f"⏩ Spotify asked to slow down ({_human_wait(cooldown_left)} left) — "
+                "reading through the web-player route, no Web API calls this run",
             )
-            self.telegram.warn(escape(report.quota_reason))
-            report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            self._send_single(report)
-            return report
 
         self._prework_started = time.time()
         try:
@@ -408,11 +422,6 @@ class SyncEngine:
             report.errors.append(str(exc))
             report.spotify_throttled = True
             report.quota_reason = str(exc)
-            # Remember the block: the next run then skips instantly instead of
-            # burning another six retries into the same window.
-            blocked_until = getattr(self.spotify, "blocked_until", 0.0)
-            if blocked_until:
-                self.state.set_spotify_cooldown(blocked_until, "Spotify 429")
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self._send_single(report)
@@ -511,10 +520,10 @@ class SyncEngine:
         blocked_until = getattr(self.spotify, "blocked_until", 0.0)
         if blocked_until:
             report.spotify_throttled = True
-            self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
             report.quota_reason = (
-                "Spotify cooldown until "
+                "Spotify asked to slow down until "
                 + datetime.fromtimestamp(blocked_until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                + " — this run only, nothing is stored"
             )
             self.telegram.warn(escape(report.quota_reason))
 
@@ -532,6 +541,7 @@ class SyncEngine:
         if cfg.youtube_enabled:
             report.searches_used = int(getattr(self.youtube, "searches_this_run", 0) or 0)
             report.free_searches = int(getattr(self.youtube, "free_searches_this_run", 0) or 0)
+            report.free_pages = int(getattr(self.youtube, "free_pages_this_run", 0) or 0)
             report.free_matches = int(getattr(self, "_free_matches", 0) or 0)
             report.inserted = int(getattr(self.youtube.quota, "inserts", 0) or 0)
             report.youtube_inserted = int(
@@ -720,17 +730,38 @@ class SyncEngine:
             report.backend = "REST (api.spotify.com)"
         return list(seen.values())
 
+    def _clear_stale_cooldown(self, report: RunReport) -> None:
+        """Drop a stored cooldown that no longer has to be respected.
+
+        A run that was NOT throttled simply deletes the old hint, so the age of a
+        block can never pile up into "runs keep skipping themselves".
+        """
+        stored = self.state.spotify_cooldown_until()
+        if not stored:
+            return
+        if report.spotify_throttled and getattr(self.spotify, "blocked_until", 0.0) > time.time():
+            return  # a real, current block: keep the hint until it expires
+        self.state.clear_spotify_cooldown()
+
     def _send_single(self, report: RunReport) -> None:
         """Send the one message even when the run died early."""
         from .telegram import dedupe_lines
 
         report.added_tracks = dedupe_lines(report.added_tracks)
         report.failed_tracks = dedupe_lines(report.failed_tracks)
+        self._clear_stale_cooldown(report)
+        started = _parse_iso(report.started_at)
+        if started and not report.elapsed_seconds:
+            report.elapsed_seconds = max(
+                0.0, (datetime.now(timezone.utc) - started).total_seconds()
+            )
         report.cooldown_until = getattr(self.spotify, "blocked_until", 0.0) or 0.0
         self.telegram.flush(summary=report.summary_text())
 
     def _web_api_budget_left(self) -> bool:
         """Cheap-read budget: Web API calls are slow (2s pace) and rate limited."""
+        if getattr(self, "_cooldown_hint_left", 0.0) > 0:
+            return False  # a remembered 429: use the web-player route instead
         if getattr(self.spotify, "rate_limited_this_run", False):
             return False
         cap = getattr(self.config, "spotify_max_requests_per_run", 0)
@@ -941,8 +972,9 @@ class SyncEngine:
         blocked_until = getattr(self.spotify, "blocked_until", 0.0)
         if not blocked_until:
             return False
+        # Keep the resume point (so the next run starts at this track) but never
+        # store a cooldown: the next run must be free to try again immediately.
         self.state.set_resume_point(track.id, track.name, track.artists, blocked_until)
-        self.state.set_spotify_cooldown(blocked_until, "Spotify 429 (long Retry-After)")
         return True
 
     def _flush_pending_youtube(self, report: RunReport) -> None:

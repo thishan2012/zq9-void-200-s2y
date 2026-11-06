@@ -461,12 +461,11 @@ def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
     resume = eng.state.get_resume_point()
     assert resume["track_id"] == tracks[1].id
     assert report.rate_limited_skips == 1
-    assert eng.state.spotify_cooldown_until() > time.time()
+    # A cooldown is never written to the state file: no run may skip itself.
+    assert eng.state.spotify_cooldown_until() == 0.0
 
     # Next run starts after the skipped track instead of from the top.
     spotify.blocked_until = 0.0
-    # Simulate the cooldown having expired (normally an hour later).
-    eng.state.clear_spotify_cooldown()
     eng.state.save()
     eng2 = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
     report2 = eng2.run()
@@ -529,8 +528,8 @@ def test_web_fallback_failure_falls_back_to_cache(monkeypatch, cfg):
     assert report.added == 2
 
 
-def test_rate_limited_run_records_a_cooldown(monkeypatch, cfg):
-    """A run that dies on 429 must leave a cooldown so the next run skips fast."""
+def test_rate_limited_run_does_not_store_a_cooldown(monkeypatch, cfg):
+    """A 429 ends this run; the next run starts immediately."""
     spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
     spotify.blocked_until = 0.0
 
@@ -548,8 +547,8 @@ def test_rate_limited_run_records_a_cooldown(monkeypatch, cfg):
 
     monkeypatch.setattr(engine, "_collect_source_tracks", collect)
     report = engine.run()
-    assert report.spotify_throttled
-    assert engine.state.spotify_cooldown_until() > time.time() + 500
+    assert report.spotify_throttled                     # reported for this run
+    assert engine.state.spotify_cooldown_until() == 0.0  # nothing persisted
 
 
 def test_main_returns_success_when_run_only_hit_a_cooldown(cfg, monkeypatch, tmp_path, capsys):
@@ -608,7 +607,8 @@ def test_a_parked_spotify_run_still_finishes(monkeypatch, cfg):
     assert report.finished_at
     assert report.spotify_throttled
     assert report.manual_queued >= 1          # nothing lost: parked
-    assert engine.state.spotify_cooldown_until() > time.time() + 1000
+    # parked in the manual bucket, but nothing stops the next run
+    assert engine.state.spotify_cooldown_until() == 0.0
 
 
 def test_pathfinder_is_used_when_spotify_already_parked(monkeypatch, cfg):
@@ -869,7 +869,7 @@ def test_summary_mentions_skips_and_budget(monkeypatch, cfg):
     text = report.summary_text()
     assert "Skipped by choice: 2" in text
     assert "Out of search budget: 1" in text
-    assert "Free YouTube searches: 40" in text
+    assert "Free YouTube: 40 search(es)" in text
 
 
 # ------------------------------------------------ YouTube writes are off
@@ -1075,3 +1075,39 @@ def test_summary_mentions_the_user_cap_not_the_default():
     report = RunReport(dry_run=True, added=29, source_read_limit=30, max_tracks_per_run=30)
     text = report.summary_text()
     assert "previewed 30 track(s) (your limit: 30)" in text
+
+
+def test_a_stored_cooldown_never_skips_a_run(monkeypatch, cfg):
+    """The old bug: "Spotify cooldown — 25m remaining; this run was skipped"."""
+    import time
+
+    track = make_track(id="track000000000000000071", name="LATE")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    # a cooldown left behind by an earlier run (25 minutes to go)
+    engine.state.set_spotify_cooldown(time.time() + 1500, "Spotify 429")
+    engine.state.save()
+    # the web player route works (no Web API, no 429)
+    spotify._pathfinder_tracks = lambda pid, max_tracks=0: list(
+        spotify.sources.get(pid, [])
+    )
+
+    report = engine.run()
+    # the run still happened, through the web route
+    assert spotify.read_calls == []  # zero Web API calls
+    assert report.sources_read == 1
+    assert report.unique_tracks == 1
+    # …and it says why it used the web route instead of the Web API
+    assert any("asked to slow down" in d for d in report.daily_details)
+    # the stale cooldown is gone afterwards
+    assert engine.state.spotify_cooldown_until() == 0.0
+
+
+def test_stale_cooldown_is_cleared_when_the_run_is_not_blocked(monkeypatch, cfg):
+    import time
+
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    engine.state.set_spotify_cooldown(time.time() + 60, "old block")
+    engine.run()
+    assert engine.state.spotify_cooldown_until() == 0.0

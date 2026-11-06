@@ -19,7 +19,8 @@ to stay out of the window, and a 2,689-track playlist still finishes in a few
 minutes thanks to the caches below.
 
 ```
-429 → backoff_seconds(Retry-After) → retry (up to 6x) → 30-min cooldown, run exits 0
+429 → backoff_seconds(Retry-After) → retry (up to 6x) → this run stops using the Web API
+(nothing is stored; the next run starts immediately on the web-player route), run exits 0
 ```
 Every retry path uses `backoff_seconds()` (`phonksync/spotify.py`):
 `Retry-After` (seconds *or* HTTP-date) → exponential `2**attempt` → +jitter,
