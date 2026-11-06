@@ -3,8 +3,9 @@
 [![Phonk Sync](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml/badge.svg)](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml)
 [![Tests](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/tests.yml/badge.svg)](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/tests.yml)
 
-> ⚠️ **මෙය පුද්ගලික සින්ක් ටූල් එකක් පමණයි. කරුණාකර Google / Search Engine වල Index නොකරන්න.**
-> `noindex, nofollow` — මෙම repository එක public වුවත් minutes සීමාව නිසා private කිරීමට නොහැක.
+> ⚠️ **මෙය පුද්ගලික සින්ක් ටූල් එකක් පමණයි — Google / Search Engine වල index වෙන්න ඕන නෑ.**
+> `robots.txt` එකේ `Disallow: /` තියෙනවා, ඒත් GitHub Pages නොවන repo එකකට ඒක බලපාන්නේ නෑ. Search වලින් වළකින්න **repo එක private කරන්න** (Free plan: private repo වලට **මාසෙකට minutes 2,000** — Actions වලට ඒක ඇති).
+> Private කරන්න බැරි නම්: repo name එකේ හෝ description එකේ `phonk` / `spotify` / `playlist sync` වගේ වචන නොදා ඉන්න — search results වලට එන්නේ ඒවායින්.
 
 මෙම ටූල් එකෙන් **Spotify playlists ගොඩක් → එක Spotify playlist එකකට** auto copy වෙනවා. GitHub Actions + Telegram log එක්ක වැඩ කරනවා.
 
@@ -112,4 +113,4 @@ tests/                # offline tests
 ඔබට මෙම repo එක fork කර ඔබේම private repo එකේ භාවිතා කිරීමට පුළුවන්.
 
 ---
-*මේ ගොනුවේ නම **`REPO.md`** — `README.md` කියන්නේ ඒකට යන symlink එකක් විතරයි (GitHub මුල් පිටුවේ පෙන්වන්න). නම මාරු කළේ Google search එකෙන් "README" වගේ generic වචන වලට හසු නොවෙන්නයි. Technical docs ඉංග්‍රීසියෙන් `Instructions/` folder එකේ තියෙනවා.*
+*මේ ගොනුවේ නම **`REPO.md`** — `README.md` කියන්නේ ඒකට යන symlink එකක් විතරයි (GitHub මුල් පිටුවේ පෙන්වන්න). නම මාරු කළේ "README" වගේ generic වචන වලට හසු නොවෙන්නයි. Technical docs ඉංග්‍රීසියෙන් `Instructions/` folder එකේ තියෙනවා.*
