@@ -114,7 +114,7 @@ Counters persist in `data/sync-state.json` → `quota` and reset at UTC midnight
 
 ## A track never matches
 1. Check the Telegram ❌ message / run log for how many methods were tried.
-2. Search YouTube manually; if the video exists, pin it in `data/track-overrides.json` (see [README.md](README.md) §8). The `MANUAL` method bypasses all search.
+2. Search YouTube manually; if the video exists, pin it in `data/track-overrides.json` (see [REPO.md](../REPO.md) §8). The `MANUAL` method bypasses all search.
 3. Unmatched tracks are retried automatically after `retry_unmatched_after_days` (default 7).
 
 ## A wrong video was added
