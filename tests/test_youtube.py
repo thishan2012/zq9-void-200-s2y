@@ -386,3 +386,38 @@ def test_doctor_explains_what_is_missing(monkeypatch, capsys):
     assert oauth_setup.doctor(
         client_id="1234567890-abcdefghijklmnop.apps.googleusercontent.com", client_secret="s"
     ) == 0
+
+
+def test_token_refresh_uses_a_bare_client_id_and_secret():
+    """YT_CLIENT_ID + YT_CLIENT_SECRET alone must be able to mint a token."""
+    from phonksync.youtube import YouTubeClient
+
+    calls = []
+
+    class Session:
+        def post(self, url, data=None, timeout=None, **kw):
+            calls.append(dict(data or {}))
+
+            class R:
+                status_code = 200
+
+                @staticmethod
+                def json():
+                    return {"access_token": "ya29.minted", "expires_in": 3599}
+
+            return R()
+
+    yt = YouTubeClient(
+        client_id="123.apps.googleusercontent.com",
+        client_secret="GOCSPX-x",
+        refresh_token="1//refresh",
+        api_key="",
+        session=Session(),
+        free_search=False,
+    )
+    assert yt.can_write is True
+    assert yt._ensure_token() == "ya29.minted"
+    assert calls[0]["grant_type"] == "refresh_token"
+    assert calls[0]["client_id"] == "123.apps.googleusercontent.com"
+    assert calls[0]["refresh_token"] == "1//refresh"
+    assert yt.write_mode.startswith("oauth")
