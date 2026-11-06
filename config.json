@@ -23,6 +23,8 @@
   "spotify_write_mode": "queue",
   "spotify_queue_flush_size": 40,
   "spotify_request_delay_seconds": 2,
+  "spotify_max_requests_per_run": 40,
+  "startup_time_budget_seconds": 420,
   "spotify_proxy_url": "",
   "source_cache_path": "data/source-cache.json",
   "source_cache_ttl_hours": 12,

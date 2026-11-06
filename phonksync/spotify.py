@@ -951,6 +951,7 @@ class SpotifyClient:
                 self._cookie_pool.append(value)
         self._cookie_index = 0
         self.cookie_switches = 0
+        self._request_count = 0
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -1266,6 +1267,11 @@ class SpotifyClient:
     def cookie_count(self) -> int:
         return len(self._cookie_pool)
 
+    @property
+    def requests_made(self) -> int:
+        """How many Web-API calls this client has made (pacing honesty check)."""
+        return self._request_count
+
     def _pace(self) -> None:
         """Sleep the configured gap before a request (default 2s)."""
         delay = self.request_delay + min(self._pace_debt, 3.0)
@@ -1282,6 +1288,7 @@ class SpotifyClient:
         _retry_auth: bool = True,
         allow_404: bool = False,
     ) -> dict[str, Any]:
+        self._request_count += 1
         token = self._ensure_token()
         url = path if path.startswith("http") else f"{_API}/{path}"
         # A proxy (clean IP) is preferred; on 429 we alternate proxy <-> direct

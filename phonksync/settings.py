@@ -82,6 +82,13 @@ class Config:
     youtube_region_code: str = "US"
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
+    # Cheap reads must not eat the whole run: after this many requests (counted
+    # after reading a playlist) the remaining reads use the web-player route,
+    # which costs no rate-limit budget.
+    spotify_max_requests_per_run: int = 40
+    # Pre-work (reads + target playlist load) may not take longer than this; past
+    # it the run continues with whatever it already has.
+    startup_time_budget_seconds: int = 420
     spotify_proxy_url: str = ""  # CORS proxy for Spotify calls (clean egress IP)
     spotify_web_fallback: bool = True  # read public playlists from the HTML page on 429
     spotify_collection_fallback: bool = True  # use a saved collection when the API is blocked

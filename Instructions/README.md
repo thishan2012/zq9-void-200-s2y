@@ -71,6 +71,8 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 | `max_tracks_per_run` | `0` | 0 = unlimited; otherwise cap processed tracks per run |
 | `dry_run_track_limit` | `200` | dry-run only: max source tracks to read (0 = unlimited) |
 | `telegram_per_track` | `true` | list each track inside the single end-of-run message (never one message per track) |
+| `spotify_max_requests_per_run` | `40` | Web API call budget; past it the reads use the (fast) web-player route |
+| `startup_time_budget_seconds` | `420` | max seconds spent on reading playlists before the run continues |
 | `retry_unmatched_after_days` | `7` | wait before retrying an unmatched track (YouTube mode) |
 | `max_searches_per_run` | `200` | YouTube only: cap on **paid** searches per run (free page searches do not count) |
 | `youtube_free_search` | `true` | search youtube.com first: 0 API units (see `Instructions/YOUTUBE-BUDGET.md`) |

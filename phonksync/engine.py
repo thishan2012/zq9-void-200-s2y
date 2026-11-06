@@ -72,6 +72,7 @@ class RunReport:
     free_searches: int = 0
     skipped_by_choice: int = 0
     youtube_readonly: int = 0
+    skipped_sources: int = 0
     pending_youtube_flushed: int = 0
     youtube_write_problem: str = ""
     youtube_inserted: int = 0
@@ -89,24 +90,32 @@ class RunReport:
     source_read_limit: int = 0
 
     def summary_text(self) -> str:
+        """Counts first, then ONLY the songs that were not added.
+
+        Added songs are deliberately not listed: the playlist is the receipt.
+        """
         head = "🧪 Dry run finished" if self.dry_run else "📊 Sync run finished"
+        added_word = "Would add" if self.dry_run else "Added"
         lines = [
             f"<b>━━ {head} ━━</b>",
-            f"🆕 Added this run: <b>{self.added}</b>"
+            f"✅ {added_word}: <b>{self.added}</b>"
             + (f" (YouTube inserts: {self.youtube_inserted})" if self.youtube_inserted else ""),
-            f"🎵 Sources: {self.sources_read} playlist(s), {self.unique_tracks} unique tracks",
+            f"⏭ Skipped by choice: {self.skipped_by_choice}",
+            f"❌ Failed / unmatched: {self.unmatched}",
         ]
-        if self.added_tracks:
-            lines.append(f"<b>✅ Added</b> ({len(self.added_tracks)}):")
-            lines.extend(f"  • {line}" for line in self.added_tracks)
-        if self.failed_tracks:
-            lines.append(f"<b>❌ Failed / unmatched</b> ({len(self.failed_tracks)}):")
-            lines.extend(f"  • {line}" for line in self.failed_tracks)
+        if self.deferred:
+            lines.append(f"🕒 Deferred (retried later): {self.deferred}")
+        if self.budget_skips:
+            lines.append(f"⏸ Out of search budget: {self.budget_skips} (retried next run)")
+        if self.skipped:
+            lines.append(f"⚠️ Errored: {self.skipped} (retried next run)")
         lines.append(
-            "Already in the playlist (untouched): "
-            f"{self.already_synced} · Deferred: {self.deferred} · "
-            f"Duplicates: {self.duplicates} · Skipped by choice: {self.skipped_by_choice}"
+            f"🎵 {self.sources_read} playlist(s), {self.unique_tracks} tracks read · "
+            f"{self.already_synced} were already synced"
         )
+        if self.failed_tracks:
+            lines.append(f"<b>Not added</b> ({len(self.failed_tracks)}):")
+            lines.extend(f"  • {line}" for line in self.failed_tracks)
         if self.pending_youtube_flushed:
             lines.append(
                 f"✍️ Added {self.pending_youtube_flushed} previously matched video(s) "
@@ -120,11 +129,6 @@ class RunReport:
         problem = self.youtube_write_problem
         if problem:
             lines.append(f"⚠️ {problem}")
-        if self.budget_skips:
-            lines.append(
-                f"⏸ Search budget ran out for {self.budget_skips} track(s) — they were "
-                "NOT tried properly and are not marked unmatched; the next run continues"
-            )
         if self.method_wins:
             wins = ", ".join(f"{k}={v}" for k, v in sorted(self.method_wins.items()))
             lines.append(f"🏆 Methods: {wins}")
@@ -139,7 +143,6 @@ class RunReport:
             # The proof that the credential can actually write, not just refresh.
             lines.append(
                 f"✅ YouTube inserts confirmed by Google: {self.youtube_inserted}"
-                + (f" (daily total {self.inserted})" if self.inserted else "")
             )
 
         if self.searches_used:
@@ -151,8 +154,6 @@ class RunReport:
                 f"🧺 Spotify writes via queue: {self.queued} tracks "
                 f"({self.queued_flushes} batch save(s))"
             )
-        if self.skipped:
-            lines.append(f"⏭ Skipped (errors): {self.skipped} — retried next run")
         if self.rate_limited_skips:
             lines.append(
                 f"⏸ Skipped due to Spotify 429: {self.rate_limited_skips} — "
@@ -187,7 +188,7 @@ class RunReport:
         if self.quota_stopped:
             lines.append(f"⚠️ Stopped early: {escape(self.quota_reason or 'YouTube quota budget reached')}")
         elif self.inserted:
-            lines.append("ℹ️ Next run continues from where this one stopped")
+            lines.append("ℹ️ Daily insert total so far: " + str(self.inserted))
         if self.dry_run:
             if self.source_read_limit:
                 lines.append(
@@ -363,9 +364,12 @@ class SyncEngine:
             self._send_single(report)
             return report
 
+        self._prework_started = time.time()
         try:
             tracks = self._collect_source_tracks(report)
             try:
+                if not self._web_api_budget_left():
+                    raise RateLimited(message=self._web_api_note())
                 target_spotify_ids = self.spotify.playlist_track_ids(
                     cfg.spotify_target_playlist
                 )
@@ -600,7 +604,19 @@ class SyncEngine:
                     self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
                     report.sources_read += 1
                     continue
-            if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+            budget_note = ""
+            if not self._web_api_budget_left():
+                budget_note = self._web_api_note()
+            elif not self._startup_budget_left():
+                budget_note = "startup time budget used up"
+            if budget_note:
+                # A self-imposed budget is not a Spotify 429: never claim it is.
+                self._detail(
+                    report,
+                    f"⏩ Reading <code>{escape(playlist_id)}</code> without the Web API "
+                    f"— {escape(budget_note)}",
+                )
+            if budget_note or getattr(self.spotify, "blocked_until", 0.0) > time.time():
                 # Spotify already told us to go away this run: do not spend
                 # 6 retries (and a longer block) re-learning that. Read the
                 # playlist without the Web API instead.
@@ -609,7 +625,8 @@ class SyncEngine:
                 if web_tracks:
                     self._merge_tracks(seen, web_tracks, playlist_id, read_limit)
                     report.sources_read += 1
-                    report.spotify_throttled = True
+                    if not budget_note:
+                        report.spotify_throttled = True
                     continue
                 if cached is not None and (
                     self.source_cache.fresh(playlist_id) or self.source_cache.allow_stale
@@ -619,7 +636,18 @@ class SyncEngine:
                         report.stale_reads += 1
                     self._merge_tracks(seen, cached["tracks"], playlist_id, read_limit)
                     report.sources_read += 1
-                    report.spotify_throttled = True
+                    if not budget_note:
+                        report.spotify_throttled = True
+                    continue
+                if budget_note:
+                    # A self-imposed budget: take the saved collection if there is
+                    # one, otherwise skip this playlist (counted, not silent).
+                    collection = self._read_collection(cfg.collection_path, playlist_id)
+                    if collection:
+                        self._merge_tracks(seen, collection, playlist_id, read_limit)
+                        report.sources_read += 1
+                        continue
+                    report.skipped_sources += 1
                     continue
                 report.spotify_throttled = True
                 break
@@ -695,6 +723,30 @@ class SyncEngine:
         report.failed_tracks = dedupe_lines(report.failed_tracks)
         report.cooldown_until = getattr(self.spotify, "blocked_until", 0.0) or 0.0
         self.telegram.flush(summary=report.summary_text())
+
+    def _web_api_budget_left(self) -> bool:
+        """Cheap-read budget: Web API calls are slow (2s pace) and rate limited."""
+        cap = getattr(self.config, "spotify_max_requests_per_run", 0)
+        if not cap:
+            return True
+        used = int(getattr(self.spotify, "requests_made", 0) or 0)
+        if used >= cap:
+            return False
+        return True
+
+    def _web_api_note(self) -> str:
+        return (
+            f"reached the per-run Web API budget "
+            f"({self.config.spotify_max_requests_per_run} calls, "
+            f"{self.config.spotify_request_delay_seconds}s apart)"
+        )
+
+    def _startup_budget_left(self) -> bool:
+        budget = getattr(self.config, "startup_time_budget_seconds", 0)
+        if not budget:
+            return True
+        started = getattr(self, "_prework_started", 0.0)
+        return (time.time() - started) < budget
 
     def _detail(self, report: RunReport, text: str) -> None:
         """A line for the end-of-run message (never a message of its own)."""
