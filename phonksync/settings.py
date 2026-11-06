@@ -173,6 +173,8 @@ class Secrets:
     youtube_refresh_token: str = ""
     youtube_token_json: str = ""
     youtube_access_token: str = ""  # short-lived (1h) token pasted by hand
+    youtube_cookie: str = ""  # signed-in music.youtube.com Cookie header
+    youtube_authuser: str = "0"
     youtube_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
@@ -205,6 +207,8 @@ class Secrets:
             youtube_client_id=_first("YT_CLIENT_ID", "YOUTUBE_CLIENT_ID", "GOOGLE_CLIENT_ID"),
             youtube_client_secret=_first("YT_CLIENT_SECRET", "YOUTUBE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"),
             youtube_refresh_token=_first("YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN"),
+            youtube_cookie=_first("YT_COOKIE", "YOUTUBE_COOKIE", "YTMUSIC_COOKIE"),
+            youtube_authuser=_first("YT_AUTHUSER", "YOUTUBE_AUTHUSER") or "0",
             youtube_token_json=_first(
                 "YT_TOKEN_JSON",
                 "YT_OAUTH_TOKEN_JSON",
@@ -241,9 +245,11 @@ class Secrets:
                 )
                 and (self.youtube_refresh_token or self.youtube_token_json)
             )
-            if not (self.youtube_api_key or has_oauth):
+            has_cookie = bool(self.youtube_cookie)
+            if not (self.youtube_api_key or has_oauth or has_cookie):
                 missing.append(
-                    "YOUTUBE_API_KEY (read-only search) or YT_CLIENT_JSON + YT_REFRESH_TOKEN"
+                    "YOUTUBE_API_KEY (read-only search) or YT_COOKIE "
+                    "(writes, no Console) or YT_CLIENT_JSON + YT_REFRESH_TOKEN"
                 )
         if require_telegram and not (self.telegram_bot_token and self.telegram_chat_id):
             missing.append("TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID")

@@ -5,6 +5,12 @@ Search and metadata reads (``search.list`` / ``videos.list``) can run on a plain
 (``playlistItems.insert``) *require* OAuth — Google does not allow key-based
 writes — so a refresh-token flow is used only for those calls.
 
+Writes have a second, OAuth-free path: a **signed-in browser cookie** from
+``music.youtube.com`` (``YT_COOKIE`` + ``YT_AUTHUSER``), used against the same
+internal ``youtubei/v1/browse/edit_playlist`` endpoint the web player calls.
+Nothing has to be registered in Google Cloud Console and no OAuth consent screen
+is involved — so it also works where the Console is unreachable.
+
 Endpoints used:
   * search.list           (read, 100 quota units, API key OK)
   * videos.list           (read, 1 quota unit, API key OK)
@@ -18,10 +24,12 @@ was spent today.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import time
+from http.cookies import SimpleCookie
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -42,6 +50,12 @@ _UA = (
 # videoId entries in the results page's JSON (watch?v= links also match).
 _FREE_ID_RE = re.compile(r'"videoId":"([A-Za-z0-9_-]{11})"')
 _SCOPE = "https://www.googleapis.com/auth/youtube"
+_YTM_API = "https://music.youtube.com/youtubei/v1/"
+_YTM_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
+_YTM_ORIGIN = "https://music.youtube.com"
+# params for the web client's "songs" search filter (base64 protobuf). If YouTube
+# ever changes it the call simply returns nothing and plain search is used.
+_YTM_SEARCH_SONGS = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
 
 COST_SEARCH = 100
 COST_VIDEOS = 1
@@ -176,6 +190,8 @@ class YouTubeClient:
         region_code: str = "US",
         session: requests.Session | None = None,
         free_search: bool = True,
+        cookie: str = "",
+        authuser: str = "0",
         free_search_pause: float = 1.0,
         web_session: requests.Session | None = None,
     ) -> None:
@@ -220,15 +236,25 @@ class YouTubeClient:
                 blob.get("refresh_token", "") or section.get("refresh_token", "")
             )
 
-        if not self.api_key and not (self.client_id and self.client_secret):
+        if (
+            not self.api_key
+            and not (self.client_id and self.client_secret)
+            and not (cookie or "").strip()
+        ):
             raise AuthError(
                 "YouTube credentials are missing. Set YOUTUBE_API_KEY (read-only "
-                "search) and/or YT_CLIENT_JSON + YT_REFRESH_TOKEN (playlist writes)."
+                "search) and/or YT_COOKIE (playlist writes, no Console) or "
+                "YT_CLIENT_JSON + YT_REFRESH_TOKEN."
             )
-        if not self.refresh_token and not self.api_key:
+        if (
+            not self.refresh_token
+            and not self.api_key
+            and not access_token.strip()
+            and not (cookie or "").strip()
+        ):
             raise AuthError(
-                "YouTube refresh_token is missing. Run the one-time OAuth setup "
-                "(Instructions/SECRETS.md) and store YT_REFRESH_TOKEN, or set "
+                "YouTube credentials are missing. Store YT_REFRESH_TOKEN (OAuth), "
+                "YT_COOKIE (signed-in browser cookie, no Console needed) or "
                 "YOUTUBE_API_KEY for read-only search."
             )
 
@@ -255,24 +281,163 @@ class YouTubeClient:
         self.session = session or requests.Session()
         self._access_token = ""
         self._access_expiry = 0.0
+        # A signed-in browser cookie: writes without any Cloud Console project.
+        self.cookie = (cookie or "").strip()
+        self.authuser = (authuser or "0").strip() or "0"
         # A hand-pasted access token (works ~1 hour, cannot be renewed).
         self._manual_access_token = access_token.strip()
         if self._manual_access_token:
             self._access_token = self._manual_access_token
             self._access_expiry = time.time() + 3300
 
+    # ------------------------------------------------------- browser cookie
+    @staticmethod
+    def _cookie_value(raw: str, name: str) -> str:
+        """Pull one cookie out of a ``Cookie:`` header (or a bare value)."""
+        raw = (raw or "").strip().replace("\r", "").replace("\n", " ")
+        if name + "=" not in raw:
+            return ""
+        jar = SimpleCookie()
+        try:
+            jar.load(raw.replace('"', ""))
+        except Exception:  # pragma: no cover - malformed cookie strings
+            jar = SimpleCookie()
+        if name in jar:
+            return jar[name].value
+        match = re.search(name + r'=([^;\s]+)', raw)
+        return match.group(1) if match else ""
+
+    def _sapisid(self) -> str:
+        return self._cookie_value(self.cookie, "__Secure-3PAPISID") or self._cookie_value(
+            self.cookie, "SAPISID"
+        )
+
+    def _ytm_headers(self) -> dict[str, str]:
+        """SAPISIDHASH headers, exactly what the YouTube Music web client sends."""
+        sapisid = self._sapisid()
+        if not sapisid:
+            raise AuthError(
+                "The YouTube cookie has no __Secure-3PAPISID — copy the whole "
+                "Cookie request header from a signed-in music.youtube.com session."
+            )
+        stamp = str(int(time.time()))
+        digest = hashlib.sha1(f"{stamp} {sapisid} {_YTM_ORIGIN}".encode()).hexdigest()
+        return {
+            "Authorization": f"SAPISIDHASH {stamp}_{digest}",
+            "X-Goog-AuthUser": self.authuser,
+            "X-Origin": _YTM_ORIGIN,
+            "Origin": _YTM_ORIGIN,
+            "Referer": _YTM_ORIGIN + "/",
+            "Content-Type": "application/json",
+            "Cookie": self.cookie,
+            "User-Agent": _UA,
+        }
+
+    def _ytm_request(self, endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "context": {
+                "client": {
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1."
+                    + time.strftime("%Y%m%d", time.gmtime())
+                    + ".01.00",
+                    "hl": "en",
+                    "gl": self.region_code or "US",
+                },
+                "user": {},
+            }
+        }
+        payload.update(body)
+        url = f"{_YTM_API}{endpoint}?alt=json&key={_YTM_KEY}&prettyPrint=false"
+        try:
+            resp = self.web_session.post(
+                url, json=payload, headers=self._ytm_headers(), timeout=30
+            )
+        except requests.RequestException as exc:
+            raise RateLimited(f"YouTube Music request failed: {exc}") from exc
+        if resp.status_code in (401, 403):
+            raise AuthError(
+                "YouTube rejected the cookie (HTTP "
+                f"{resp.status_code}) — it was probably signed out or the cookie "
+                "is incomplete. Copy a fresh Cookie header from "
+                "music.youtube.com while signed in."
+            )
+        if resp.status_code == 429:
+            raise RateLimited("YouTube Music rate-limited the request (429).")
+        if resp.status_code >= 400:
+            raise RateLimited(
+                f"YouTube Music returned HTTP {resp.status_code}: {resp.text[:200]}"
+            )
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise RateLimited("YouTube Music returned non-JSON — cookie likely expired") from exc
+
+    def cookie_playlist_video_ids(self, playlist_id: str) -> set[str]:
+        """Private playlists, read with the same cookie (no codeless API key needed)."""
+        ids: set[str] = set()
+        data = self._ytm_request("browse", {"browseId": "VL" + playlist_id})
+        stack = [data]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if key in ("videoId", "setVideoId") and isinstance(value, str):
+                        if key == "videoId":
+                            ids.add(value)
+                    else:
+                        stack.append(value)
+            elif isinstance(node, list):
+                stack.extend(node)
+        return ids
+
+    def cookie_add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        """``browse/edit_playlist`` + ``ACTION_ADD_VIDEO`` — the web player's own call."""
+        self.quota.rollover()
+        if self.quota.inserts >= self.max_inserts_per_day > 0:
+            raise QuotaExceeded(
+                f"Daily YouTube insert budget reached ({self.max_inserts_per_day}); "
+                "it resets at midnight Pacific."
+            )
+        data = self._ytm_request(
+            "browse/edit_playlist",
+            {
+                "playlistId": playlist_id,
+                "actions": [
+                    {"action": "ACTION_ADD_VIDEO", "addedVideoId": video_id}
+                ],
+            },
+        )
+        status = str(data.get("status", ""))
+        if "SUCCEEDED" not in status:
+            raise RateLimited(
+                "YouTube Music did not confirm the add (status "
+                f"{status or 'missing'}) — nothing was inserted"
+            )
+        # Counted in inserts, not in Data-API units: youtubei costs no quota.
+        self.quota.inserts += 1
+
     # ------------------------------------------------------------------ auth
 
     @property
-    def can_write(self) -> bool:
-        """Playlist inserts need OAuth; an API key alone cannot write."""
+    def has_oauth(self) -> bool:
+        """Refresh-token OAuth is configured (renewable, uses the public Data API)."""
         return bool(self.refresh_token and self.client_id and self.client_secret)
+
+    @property
+    def can_write(self) -> bool:
+        """Playlist inserts need either refresh-token OAuth or a signed-in cookie."""
+        if self.has_oauth:
+            return True
+        return bool(self.cookie and self._sapisid())
 
     @property
     def write_mode(self) -> str:
         """How writes are authorised, for the log: oauth / manual-token / none."""
-        if self.refresh_token and self.client_id and self.client_secret:
+        if self.has_oauth:
             return "oauth (refresh token)"
+        if self.cookie and self._sapisid():
+            return "browser cookie (no OAuth, no Console, no VPN for the sync)"
         if self._manual_access_token:
             return "manual access token (expires in ~1h, not renewable)"
         return "none"
@@ -280,14 +445,16 @@ class YouTubeClient:
     @property
     def search_mode(self) -> str:
         if not self.api_keys:
+            if self.cookie and self._sapisid():
+                return "browser cookie (no API key, no quota)"
             return "oauth"
         return "api_key" if len(self.api_keys) == 1 else f"api_key x{len(self.api_keys)}"
 
     def _ensure_token(self) -> str:
         if not self.can_write and not self._manual_access_token:
             raise AuthError(
-                "YouTube playlist writes need OAuth (an API key cannot add videos). "
-                "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN to enable writes."
+                "YouTube playlist writes need OAuth or a signed-in cookie. Add "
+                "YT_COOKIE (no Console needed) or YT_REFRESH_TOKEN."
             )
         if self._manual_access_token and not self.can_write:
             if time.time() >= self._access_expiry:
@@ -524,6 +691,12 @@ class YouTubeClient:
         return seen[:max_results]
 
     def search(self, query: str, max_results: int = 10) -> list[str]:
+        if not self.api_keys and self.cookie and self._sapisid():
+            # Cookie mode: no Google Cloud project at all, so no Data API calls.
+            free = self.free_search_ids(query, max_results=max_results)
+            if free:
+                return free
+            return self.ytm_search_ids(query, max_results=max_results)
         if self.free_search:
             free = self.free_search_ids(query, max_results=max_results)
             if free:
@@ -544,6 +717,78 @@ class YouTubeClient:
             for item in data.get("items", [])
             if item.get("id", {}).get("videoId")
         ]
+
+    def ytm_search_ids(self, query: str, max_results: int = 10) -> list[str]:
+        """Search through the web client's endpoint (cookie mode, no key/quota)."""
+        if not self.cookie or not self._sapisid():
+            return []
+        ids: list[str] = []
+        for body in (
+            {"query": query, "params": _YTM_SEARCH_SONGS},
+            {"query": query},  # if the filter constant ever rots, still search
+        ):
+            try:
+                data = self._ytm_request("search", body)
+                found = self._collect_video_ids(data)
+            except (AuthError, RateLimited) as exc:
+                log.debug("YouTube Music search failed for %r: %s", query, exc)
+                break
+            if found:
+                ids = found
+                break
+        self.free_searches_this_run += 1
+        return ids[:max_results]
+
+    @staticmethod
+    def _collect_video_ids(data: Any) -> list[str]:
+        """Every videoId in a youtubei response, in document order."""
+        ids: list[str] = []
+
+        def walk(node: Any) -> None:
+            if isinstance(node, dict):
+                video_id = node.get("videoId")
+                if isinstance(video_id, str) and video_id not in ids:
+                    ids.append(video_id)
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(data)
+        return ids
+
+    def _ytm_detail(self, video_id: str) -> Candidate | None:
+        try:
+            data = self._ytm_request("player", {"videoId": video_id})
+        except (AuthError, RateLimited) as exc:
+            log.debug("YouTube Music details failed for %s: %s", video_id, exc)
+            return None
+        details = data.get("videoDetails") or {}
+        if not details:
+            return None
+        title = str(details.get("title") or "")
+        channel = str(details.get("author") or "")
+        if not title:
+            return None
+        return Candidate(
+            video_id=video_id,
+            title=title,
+            channel=channel,
+            description=str(details.get("shortDescription") or ""),
+            duration_s=int(details.get("lengthSeconds") or 0),
+        )
+
+    def ytm_videos(self, video_ids: list[str]) -> list[Candidate]:
+        """Metadata from the web client's ``player`` endpoint (cookie mode)."""
+        if not self.cookie or not self._sapisid():
+            return []
+        out: list[Candidate] = []
+        for video_id in video_ids:
+            candidate = self._ytm_detail(video_id)
+            if candidate:
+                out.append(candidate)
+        return out
 
     def free_videos(self, video_ids: list[str]) -> list[Candidate]:
         """Metadata for free: each watch page's embedded player response.
@@ -579,7 +824,12 @@ class YouTubeClient:
     def videos(self, video_ids: list[str]) -> list[Candidate]:
         out: list[Candidate] = []
         if self.free_search and video_ids and not self.api_keys:
-            return self.free_videos(video_ids)
+            # Public watch pages first (no cookie needed), the web endpoint for
+            # whatever is left (cookie mode) — never a quota-billed API call.
+            out = self.free_videos(video_ids)
+            done = {candidate.video_id for candidate in out}
+            rest = [v for v in video_ids if v not in done]
+            return out if not rest else out + self.ytm_videos(rest)
         for i in range(0, len(video_ids), 50):
             chunk = video_ids[i : i + 50]
             data = self._request(
@@ -612,6 +862,8 @@ class YouTubeClient:
         return out
 
     def playlist_video_ids(self, playlist_id: str) -> set[str]:
+        if not self.has_oauth and self.cookie and self._sapisid():
+            return self.cookie_playlist_video_ids(playlist_id)
         ids: set[str] = set()
         page_token = None
         while True:
@@ -649,6 +901,10 @@ class YouTubeClient:
         return self._request("GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST)
 
     def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        if not self.has_oauth and self.cookie and self._sapisid():
+            # Cookie mode: the public Data API cannot write on a cookie, so use
+            # the web player's own youtubei endpoint instead.
+            return self.cookie_add_to_playlist(playlist_id, video_id)
         self._request(
             "POST",
             "playlistItems",

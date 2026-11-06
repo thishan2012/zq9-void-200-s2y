@@ -421,3 +421,154 @@ def test_token_refresh_uses_a_bare_client_id_and_secret():
     assert calls[0]["client_id"] == "123.apps.googleusercontent.com"
     assert calls[0]["refresh_token"] == "1//refresh"
     assert yt.write_mode.startswith("oauth")
+
+
+# ------------------------------------------------ cookie mode (no OAuth at all)
+COOKIE = (
+    "SID=abc; HSID=def; SSID=ghi; APISID=jkl; "
+    "__Secure-3PAPISID=sapisid-value; __Secure-3PSID=psid"
+)
+
+
+class WebSession:
+    """Records the requests the public web / YouTube Music pages receive."""
+
+    def __init__(self, handler):
+        self.handler = handler
+        self.calls = []
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.calls.append({"method": "GET", "url": url, "params": dict(params or {}),
+                           "headers": dict(headers or {})})
+        return self.handler("GET", url, params or {}, headers or {})
+
+    def post(self, url, json=None, data=None, headers=None, timeout=None):
+        self.calls.append({"method": "POST", "url": url, "json": json,
+                           "headers": dict(headers or {})})
+        return self.handler("POST", url, json or {}, headers or {})
+
+
+def cookie_client(handler, **kwargs):
+    return YouTubeClient(
+        api_key="",
+        cookie=COOKIE,
+        free_search=True,
+        web_session=WebSession(handler),
+        session=FakeSession(lambda *a, **k: FakeResponse(500, {})),
+        **kwargs,
+    )
+
+
+def test_cookie_alone_can_write_and_says_so():
+    yt = cookie_client(lambda *a: FakeResponse(200, {}))
+    assert yt.can_write is True
+    assert yt.has_oauth is False
+    assert "cookie" in yt.write_mode
+    assert "Console" in yt.write_mode
+
+
+def test_cookie_without_sapisid_cannot_write():
+    yt = YouTubeClient(api_key="", cookie="SID=abc; HSID=def", free_search=True)
+    assert yt.can_write is False
+    assert yt.write_mode == "none"
+
+
+def test_cookie_add_posts_action_add_video_with_sapisidhash():
+    def handler(method, url, payload, headers):
+        return FakeResponse(200, {"status": "STATUS_SUCCEEDED"})
+
+    yt = cookie_client(handler)
+    yt.add_to_playlist("PLtest123", "vid00000001")
+    call = yt.web_session.calls[-1]
+    assert call["url"].startswith("https://music.youtube.com/youtubei/v1/browse/edit_playlist")
+    assert call["json"]["playlistId"] == "PLtest123"
+    assert call["json"]["actions"] == [
+        {"action": "ACTION_ADD_VIDEO", "addedVideoId": "vid00000001"}
+    ]
+    assert call["json"]["context"]["client"]["clientName"] == "WEB_REMIX"
+    assert call["headers"]["Authorization"].startswith("SAPISIDHASH ")
+    assert call["headers"]["X-Goog-AuthUser"] == "0"
+    assert call["headers"]["Cookie"] == COOKIE
+
+
+def test_cookie_add_raises_when_youtube_does_not_confirm():
+    from phonksync.errors import RateLimited
+
+    yt = cookie_client(lambda *a: FakeResponse(200, {"status": "STATUS_FAILED"}))
+    with pytest.raises(RateLimited):
+        yt.add_to_playlist("PLtest", "vid1")
+
+
+def test_cookie_auth_failure_is_reported_as_auth_error():
+    yt = cookie_client(lambda *a: FakeResponse(401, {}))
+    with pytest.raises(AuthError):
+        yt.add_to_playlist("PLtest", "vid1")
+
+
+def test_cookie_mode_reads_the_playlist_through_youtube_music():
+    def handler(method, url, payload, headers):
+        return FakeResponse(
+            200,
+            {"contents": {"items": [{"videoId": "aaa"}, {"videoId": "bbb"}]}},
+        )
+
+    yt = cookie_client(handler)
+    assert yt.playlist_video_ids("PLtest") == {"aaa", "bbb"}
+
+
+def test_cookie_mode_searches_and_reads_details_without_an_api_key():
+    def handler(method, url, payload, headers):
+        if "search" in url:
+            return FakeResponse(200, {"a": {"videoId": "vidA"}, "b": {"videoId": "vidB"}})
+        if "player" in url:
+            return FakeResponse(
+                200,
+                {"videoDetails": {"title": "Nulteex - PHONK", "author": "Nulteex",
+                                  "lengthSeconds": "131"}},
+            )
+        if "results" in str(url):
+            return FakeResponse(200, text="")  # public search page finds nothing
+        return FakeResponse(200, text="<html></html>")  # watch page: no metadata
+
+    yt = cookie_client(handler)
+    assert yt.search("nulteex phonk") == ["vidA", "vidB"]
+    got = yt.videos(["vidA"])
+    assert got and got[0].video_id == "vidA" and got[0].title == "Nulteex - PHONK"
+    assert yt.search_mode.startswith("browser cookie")
+
+
+def test_cookie_never_overrides_a_real_refresh_token():
+    yt = YouTubeClient(
+        client_id="1234567890-abcdefghijklmnop.apps.googleusercontent.com",
+        client_secret="s",
+        refresh_token="1//refresh",
+        api_key="",
+        cookie=COOKIE,
+        free_search=False,
+        session=FakeSession(lambda *a, **k: FakeResponse(500, {})),
+    )
+    assert yt.has_oauth is True
+    assert yt.write_mode == "oauth (refresh token)"
+
+
+def test_doctor_flags_swapped_token_types(monkeypatch, capsys):
+    from phonksync.oauth_setup import doctor
+
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "ya29.access-token")
+    monkeypatch.delenv("YT_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("YT_COOKIE", raising=False)
+    assert doctor() == 1
+    out = capsys.readouterr().out
+    assert "access token (ya29…)" in out
+
+
+def test_cookie_help_validates_a_pasted_header(capsys):
+    from phonksync.oauth_setup import cookie_help
+
+    assert cookie_help(COOKIE) == 0
+    out = capsys.readouterr().out
+    assert "__Secure-3PAPISID found" in out
+    assert "No OAuth, no Console" in out or "no OAuth" in out
+
+    assert cookie_help("SID=abc") == 1
+    assert "No __Secure-3PAPISID" in capsys.readouterr().out

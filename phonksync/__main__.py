@@ -176,6 +176,8 @@ def cmd_check(args: argparse.Namespace) -> int:
                     refresh_token=secrets.youtube_refresh_token,
                     token_json=secrets.youtube_token_json,
                     api_key=secrets.youtube_api_key,
+                    cookie=secrets.youtube_cookie,
+                    authuser=secrets.youtube_authuser,
                 )
                 if yt.api_keys:
                     hits = yt.search("phonk", max_results=1)
@@ -188,8 +190,8 @@ def cmd_check(args: argparse.Namespace) -> int:
                     print("✅ YouTube OAuth valid, target playlist readable (writes enabled)")
                 else:
                     print(
-                        "⚠️  YouTube writes disabled (API key only) — add "
-                        "YT_CLIENT_JSON + YT_REFRESH_TOKEN to add videos"
+                        "⚠️  YouTube writes disabled (read-only) — add YT_COOKIE "
+                        "(no Console needed) or YT_CLIENT_JSON + YT_REFRESH_TOKEN"
                     )
             except Exception as exc:
                 problems.append(f"YouTube live check: {exc}")
@@ -653,11 +655,18 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
     from .oauth_setup import (
         auth_url,
         client_section,
+        cookie_help,
         doctor,
         exchange_code,
         run_device_flow,
         run_oauth_flow,
     )
+
+    if getattr(args, "cookie_help", False):
+        raw = (args.cookie or "").strip()
+        if getattr(args, "cookie_stdin", False) or raw in ("-",):
+            raw = sys.stdin.read()
+        return cookie_help(raw)
 
     source = args.client_json
     if not source and Path("client_secret.json").exists():
@@ -817,6 +826,19 @@ def main(argv: list[str] | None = None) -> int:
         "--doctor",
         action="store_true",
         help="Only report what is missing for YouTube writes",
+    )
+    p_auth.add_argument(
+        "--cookie-help",
+        action="store_true",
+        help="YouTube writes without OAuth: how to use a browser cookie (no Console)",
+    )
+    p_auth.add_argument(
+        "--cookie", default="", help="Cookie header to check with --cookie-help ('-' = stdin)"
+    )
+    p_auth.add_argument(
+        "--cookie-stdin",
+        action="store_true",
+        help="Read the pasted Cookie header from stdin (for --cookie-help)",
     )
     p_auth.set_defaults(func=cmd_youtube_auth)
 

@@ -150,3 +150,17 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 Then `python -m phonksync check --live`.
+
+
+## The YouTube cookie stops working
+
+`❌ Authentication error: YouTube rejected the cookie (HTTP 401)` means Google
+signed that session out — nothing in the code is broken. Copy a fresh
+`Cookie:` header from a signed-in `music.youtube.com` tab, re-check it:
+
+```bash
+python -m phonksync youtube-auth --cookie-help --cookie-stdin
+```
+
+and update the `YT_COOKIE` secret. A refresh token (`YT_REFRESH_TOKEN`) does not
+have this problem; use the cookie when the Console is unreachable.

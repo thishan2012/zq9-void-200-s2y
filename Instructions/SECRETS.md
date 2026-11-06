@@ -145,6 +145,45 @@ Notes:
 - Your OAuth consent screen must include your Google account as a **Test user**, or the app must be published. Otherwise authorization can fail.
 - If no refresh token appears, revoke the app grant at https://myaccount.google.com/permissions and repeat the Playground authorization.
 
+### No VPN-friendly Console? Use a **browser cookie** (no OAuth at all) 🍪
+
+If the Cloud Console will not load (or Google's consent pages keep challenging
+the sign-in), skip OAuth entirely. A signed-in `music.youtube.com` session is
+enough: the sync then writes through the web player's own endpoint
+(`youtubei/v1/browse/edit_playlist`), exactly like clicking "add to playlist".
+
+```bash
+python -m phonksync youtube-auth --cookie-help          # how to copy it
+python -m phonksync youtube-auth --cookie-help --cookie-stdin   # check a paste
+```
+
+1. Open <https://music.youtube.com> in the browser where you **are** signed in
+   (a VPN for this one page is fine).
+2. `F12` → **Network** → reload → click any `browse?…` request →
+   right-click → **Copy → Copy request headers** (or copy the `Cookie:` value).
+3. Store the secret **`YT_COOKIE`** (optionally `YT_AUTHUSER`, default `0`).
+
+| secret | needed | what |
+|---|---|---|
+| `YT_COOKIE` | ✅ | the `Cookie:` header of a signed-in session (needs `__Secure-3PAPISID`) |
+| `YT_AUTHUSER` | – | which signed-in account, `0` unless you use several |
+
+What changes when a cookie is present and there is no OAuth:
+
+- writes → `browse/edit_playlist` + `ACTION_ADD_VIDEO` (no quota, no Console)
+- playlist reads → `youtubei/v1/browse` with `browseId=VL<playlist>`
+- **search and metadata work with no API key and no quota** (public results page +
+  `youtubei/v1/player`)
+- the summary shows `✍️ YouTube writes: browser cookie (no OAuth, no Console, no VPN for the sync)`
+
+Trade-offs, honestly:
+
+- the cookie is a **session credential** — Google can sign it out (password change,
+  "sign out of all devices", or age). When that happens the run stops with a clear
+  "YouTube rejected the cookie (HTTP 401)" message instead of doing nothing.
+- a real refresh token (`YT_REFRESH_TOKEN` + client id/secret) is still the more
+  durable option and **wins** automatically whenever it is present.
+
 ### No `client_secret.json`? A client **id** is almost enough
 
 The downloaded JSON is just a wrapper around two strings. If all you have is the
