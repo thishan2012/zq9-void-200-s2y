@@ -572,3 +572,34 @@ def test_cookie_help_validates_a_pasted_header(capsys):
 
     assert cookie_help("SID=abc") == 1
     assert "No __Secure-3PAPISID" in capsys.readouterr().out
+
+
+# ------------------------- how the cookie is pasted (the usual silent failure)
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "SID=abc; __Secure-3PAPISID=XYZ123; HSID=d",
+        "Cookie: SID=abc; __Secure-3PAPISID=XYZ123",
+        "cookie:\tSID=abc; __Secure-3PAPISID=XYZ123",
+        ":authority: music.youtube.com\n:method: GET\ncookie: SID=abc; __Secure-3PAPISID=XYZ123",
+        '"SID=abc; __Secure-3PAPISID=XYZ123"',
+        "SID=abc; __secure-3papisid=XYZ123",  # some tools lower-case names
+        "__Secure-3PAPISID=XYZ123",  # SAPISID only
+    ],
+)
+def test_every_paste_shape_produces_a_usable_cookie(pasted):
+    yt = YouTubeClient(api_key="", cookie=pasted, free_search=False)
+    assert yt._sapisid() == "XYZ123"
+    assert yt.can_write is True
+
+
+def test_cookie_diag_explains_a_broken_paste_without_leaking_it():
+    yt = YouTubeClient(api_key="", cookie="music.youtube.com", free_search=False)
+    diag = yt.cookie_diag()
+    assert "no __Secure-3PAPISID" in diag
+    assert "whole Cookie header" in diag
+    assert "music.youtube.com" not in diag
+
+    ok = YouTubeClient(api_key="", cookie=COOKIE, free_search=False).cookie_diag()
+    assert "cookie ok" in ok and "full session cookie" in ok
+    assert "sapisid-value" not in ok  # never the raw value

@@ -889,3 +889,34 @@ def test_pending_youtube_matches_are_flushed_once_writes_work(monkeypatch, cfg):
     assert report.pending_youtube_flushed == 1
     assert youtube.inserted == ["vid00000032"]
     assert engine.state.pending_youtube_count() == 0
+
+def test_writes_off_warning_names_the_cookie_when_that_is_the_problem(monkeypatch, cfg):
+    track = make_track(id="track000000000000000041")
+    vid = make_candidate("vid00000041", "Nulteex - PHONK", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube(catalog={"vid00000041": vid})
+    youtube.can_write = False
+    youtube.cookie_diag = lambda: (
+        "cookie present (17 chars) but no __Secure-3PAPISID — only part of the "
+        "cookie was pasted (need the whole Cookie header)"
+    )
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+    summary = report.summary_text()
+    assert "YT_COOKIE is set but unusable" in summary
+    assert "YT_REFRESH_TOKEN" not in summary.split("Reason")[0]
+    assert "csv" not in summary
+
+
+def test_start_message_does_not_claim_oauth_is_the_only_option(monkeypatch, cfg):
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    youtube = EngineYouTube(catalog={})
+    youtube.can_write = False
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    engine.run()
+    joined = " ".join(
+        m if isinstance(m, str) else " ".join(str(part) for part in m)
+        for m in engine.telegram.messages
+    )
+    assert "YT_COOKIE" in joined
+    assert "playlist adds need OAuth" not in joined

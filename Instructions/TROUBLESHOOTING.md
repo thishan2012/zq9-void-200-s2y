@@ -164,3 +164,18 @@ python -m phonksync youtube-auth --cookie-help --cookie-stdin
 
 and update the `YT_COOKIE` secret. A refresh token (`YT_REFRESH_TOKEN`) does not
 have this problem; use the cookie when the Console is unreachable.
+
+
+## "YouTube writes are OFF" in the summary
+
+That line means the run matched tracks and remembered them, but had no
+credential to add them to the playlist. The message now names the real cause:
+
+| reason shown | fix |
+|---|---|
+| `no write credential: set YT_COOKIE …` | copy a `Cookie:` header from a signed-in `music.youtube.com` tab → secret `YT_COOKIE` (`python -m phonksync youtube-auth --cookie-help`) |
+| `YT_COOKIE is set but unusable — … no __Secure-3PAPISID` | the paste was clipped or the session is signed out → copy the **whole** header again |
+| `YT_COOKIE is set but unusable — … only part of the cookie` | you pasted the URL/host instead of the cookie value |
+
+Everything that was matched is stored with `youtube_added: false`, so the first
+run **after** the fix adds up to 50 of them per run with **no new searches**.
