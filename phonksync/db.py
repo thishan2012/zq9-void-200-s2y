@@ -186,6 +186,23 @@ class StateDB:
             self.spotify["manual_cleared_at"] = _now()
         return removed
 
+    # ------------------------------------------------------ write diagnostics
+    # A GitHub job log is not always readable (Actions log downloads fail); the
+    # state file is. Whatever refused the last Spotify write is recorded here so
+    # the next run — or a human — can see it without any log access at all.
+    def note_write_problem(self, message: str, route: str = "", account: str = "") -> None:
+        if not message:
+            return
+        self.data.setdefault("diagnostics", {})["last_write_problem"] = {
+            "when": _now(),
+            "message": message[:500],
+            "route": route,
+            "account": account,
+        }
+
+    def last_write_problem(self) -> dict[str, Any]:
+        return (self.data.get("diagnostics") or {}).get("last_write_problem") or {}
+
     # ------------------------------------------------------------ collection
 
     @property

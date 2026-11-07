@@ -813,6 +813,14 @@ def cmd_manual(args: argparse.Namespace) -> int:
             + (f" ({len(items) - len(ids)} were already there)" if len(items) > len(ids) else "")
         )
         return 0
+    problem = db.last_write_problem()
+    if problem:
+        print(
+            f"🚨 last write refused {problem.get('when', '')} "
+            f"(route: {problem.get('route') or 'n/a'}, "
+            f"account: {problem.get('account') or 'n/a'})"
+        )
+        print(f"   {problem.get('message', '')}")
     count = db.write_manual_queue(cfg.manual_queue_path)
     print(f"📋 {count} track(s) waiting in {cfg.manual_queue_path}")
     print("   Apply them with: python -m phonksync manual --apply")

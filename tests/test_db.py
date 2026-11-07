@@ -85,3 +85,19 @@ def test_a_parked_track_is_queued_for_the_next_run(tmp_path):
     assert db.pending_spotify()  # untouched
     assert db.clear_pending_spotify([track.id]) == 1
     assert db.pending_spotify() == {}
+
+
+def test_the_last_write_problem_survives_without_a_log(tmp_path):
+    """Job logs are not always downloadable; the state file is."""
+    from phonksync.db import StateDB
+
+    db = StateDB(tmp_path / "state.json")
+    db.note_write_problem("web-player: no mutation in the answer", route="web-player",
+                          account="phonkbot")
+    db.save()
+
+    again = StateDB(tmp_path / "state.json")
+    problem = again.last_write_problem()
+    assert "no mutation" in problem["message"]
+    assert problem["route"] == "web-player"
+    assert problem["account"] == "phonkbot"

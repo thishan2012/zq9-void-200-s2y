@@ -447,6 +447,30 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## Spotify refuses every write but reads work (collaborative playlist)
+
+A **collaborative** playlist is writable by its owner plus the collaborators
+Spotify has accepted. Reading it needs nothing special, so the symptom is
+"playlist reads fine, nothing is ever added".
+
+The run now says which account it is and who owns the playlist, and it records
+the refusal in `data/sync-state.json` (`diagnostics.last_write_problem`) so the
+reason is readable **without the job log**:
+
+```
+ℹ️ write refused: Spotify refused the write on both routes — web-player: …; Web API: …
+ℹ️ playlist owner: thishan; cookie account: phonkbot; collaborative: true
+   → this account does NOT own the playlist: it must be collaborative AND this
+     account an accepted collaborator
+```
+
+What to do if that line appears:
+
+1. Open the playlist as the **cookie account** (the bot) in a browser; if it is
+   not listed under *Your Library → Playlists*, it was never accepted as a
+   collaborator — ask the owner to add that account again and accept the invite.
+2. Or point `SPOTIFY_TARGET_PLAYLIST` at a playlist the cookie account **owns**.
+
 ## The Spotify account is a bot / free account (no Premium)
 
 That is the expected setup here, and the code no longer fights it:

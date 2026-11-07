@@ -222,6 +222,14 @@ jobs:
           python -m phonksync manual >> /tmp/manual.txt 2>&1 || true
           sed -e 's/^/    /' /tmp/manual.txt >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          # The recorded write problem is also an annotation: visible on the run
+          # page even when the job log cannot be downloaded.
+          grep -m1 '^🚨' /tmp/manual.txt | while IFS= read -r line; do
+            echo "::error title=Spotify write refused::${line#🚨 }"
+          done
+          grep -m1 '^   ' /tmp/manual.txt | sed 's/^   //' | while IFS= read -r line; do
+            echo "::error title=Spotify write refused::${line}"
+          done
 
       - name: Keep the run log
         if: ${{ always() && !inputs.fill_cache }}

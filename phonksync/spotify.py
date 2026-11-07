@@ -478,7 +478,9 @@ _OP_HASHES: dict[str, str] = {
     # Seeded from songmirror (working cookie backend); the bundle scrape heals it.
     "fetchPlaylistContents": "a65e12194ed5fc443a1cdebed5fabe33ca5b07b987185d63c72483867ad13cb4",
     "addToPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
-    "removeFromPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
+    # (removeFromPlaylist needs its own hash — they were the same value here by
+    # mistake, so a removal would have silently failed. It is unused for now.)
+    "removeFromPlaylist": "",
     "searchTracks": "",
 }
 
@@ -959,7 +961,12 @@ class SpotifyClient:
         self._rate_limited_this_run = False
         self.writes_this_run = 0  # playlist/queue writes attempted
         self.writes_landed = 0    # writes confirmed by the web-player endpoint
+        self.writes_attempted = 0  # tracks that were supposed to be added
         self.verify_write_result = False
+        self.account_username = ""   # who the cookie belongs to
+        self.token_client_id = ""
+        self.last_write_error = ""   # why the last write was refused
+        self.last_write_route = ""   # "web-player" or "rest"
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -1108,6 +1115,10 @@ class SpotifyClient:
                     continue
                 if data.get("accessToken"):
                     log.debug("Spotify token acquired via %s", label)
+                    username = data.get("username") or data.get("displayName") or ""
+                    if username:
+                        self.account_username = str(username)
+                    self.token_client_id = str(data.get("clientId") or "")
                     return data
                 errors.append(f"{label}: no accessToken in response")
                 continue
@@ -1250,15 +1261,23 @@ class SpotifyClient:
                 continue
             if errors:
                 raise RuntimeError(f"pathfinder addToPlaylist error: {message}")
-            # No errors is not proof: check the operation's own status fields.
-            data = (payload.get("data") or {}).get("playlistV2") or {}
-            status = data.get("__typename") or ""
-            if status.startswith("Error") or (
-                "add" in data and not (data.get("add") or {}).get("__typename")
+            # A 200 with no `errors` is NOT proof: the persisted query can point at
+            # an operation that does nothing. Require a mutation payload we
+            # recognise (the web player answers `addToPlaylist`/`add`), and treat
+            # anything else as a refusal so the caller never claims a write.
+            data = payload.get("data") or {}
+            mutated = data.get("addToPlaylist") or data.get("add")
+            if isinstance(mutated, dict) and (
+                mutated.get("__typename") or mutated.get("uri") or mutated.get("uid")
             ):
-                last = f"operation answered {status or 'nothing'}"
-                continue
-            return True
+                return True
+            status = (data.get("playlistV2") or {}).get("__typename") or ""
+            last = (
+                f"no mutation in the answer (keys: {sorted(data) or 'none'}"
+                + (f", status {status}" if status else "")
+                + ")"
+            )
+            continue
         raise RuntimeError(f"pathfinder addToPlaylist failed: {last or 'no usable answer'}")
 
     def _pathfinder_tracks(self, playlist_id: str, max_tracks: int = 0) -> list[Track]:
@@ -1293,10 +1312,66 @@ class SpotifyClient:
 
     def _pathfinder_add(self, playlist_id: str, uris: list[str]) -> None:
         """Add tracks through the web player (no Web API, no 30s rolling window)."""
+        self.last_write_route = "web-player"
         for uri in uris:
-            self._pathfinder_write(playlist_id, uri)
+            try:
+                self._pathfinder_write(playlist_id, uri)
+            except Exception as exc:
+                self.last_write_error = f"web-player: {str(exc)[:200]}"
+                raise
             self.writes_landed += 1
             self._pace()
+
+    def playlist_info(self, playlist_id: str) -> dict[str, str]:
+        """Owner/name of a playlist, best effort — no extra endpoint.
+
+        With a *collaborative* playlist the account in the cookie must be the
+        owner or an accepted collaborator, otherwise every write is refused while
+        reads keep working. This is what tells those two apart.
+        """
+        info: dict[str, str] = {}
+        try:
+            data = self._pathfinder(
+                "fetchPlaylistContents",
+                {"uri": f"spotify:playlist:{playlist_id}", "offset": 0, "limit": 1},
+            )
+        except Exception as exc:
+            log.debug("Could not read the playlist owner: %s", exc)
+            return info
+        playlist = data.get("playlistV2") or {}
+        name = playlist.get("name")
+        if isinstance(name, str) and name:
+            info["name"] = name
+        owner = (playlist.get("ownerV2") or {}).get("data") or {}
+        for key in ("username", "uri", "name"):
+            value = owner.get(key)
+            if isinstance(value, str) and value:
+                info["owner_" + key] = value
+        if "collaborative" in playlist:
+            info["collaborative"] = "true" if playlist.get("collaborative") else "false"
+        return info
+
+    def permission_hint(self, playlist_id: str) -> str:
+        """One line that says whether *this* account may write to that playlist."""
+        info = self.playlist_info(playlist_id)
+        if not info:
+            return ""
+        me = self.account_username
+        owner = info.get("owner_username") or info.get("owner_name") or ""
+        collab = info.get("collaborative")
+        bits = [f"playlist owner: {owner or 'unknown'}"]
+        if me:
+            bits.append(f"cookie account: {me}")
+        if collab is not None:
+            bits.append(f"collaborative: {collab}")
+        if me and owner and me.lower() == owner.lower():
+            bits.append("this account OWNS the playlist — a refusal is not permissions")
+        elif me and owner:
+            bits.append(
+                "this account does NOT own the playlist: it must be collaborative "
+                "AND this account an accepted collaborator"
+            )
+        return "; ".join(bits)
 
     def verify_added(self, playlist_id: str, uris: list[str]) -> list[str]:
         """Re-read the playlist and return the URIs that are really in it.
@@ -1732,9 +1807,34 @@ class SpotifyClient:
 
     def add_tracks(self, playlist_id: str, uris: list[str]) -> None:
         self.writes_this_run += 1
+        self.writes_attempted += len(uris)
         if getattr(self, "prefer_pathfinder", False):
-            self._pathfinder_add(playlist_id, uris)
-            return
+            try:
+                self._pathfinder_add(playlist_id, uris)
+                return
+            except Exception as web_exc:
+                if self.blocked_until > time.time():
+                    raise
+                # The web player route refused (a rotated hash, a new mutation
+                # shape, a permission quirk) — the Web API is the other route and
+                # it costs one call to find out whether the playlist itself is
+                # writable. Two independent chances per run.
+                log.warning(
+                    "Web player write failed (%s) — trying the Web API", web_exc
+                )
+                try:
+                    self._rest_add(playlist_id, uris)
+                except Exception as rest_exc:
+                    message = (
+                        "Spotify refused the write on both routes — "
+                        f"web-player: {str(web_exc)[:200]}; "
+                        f"Web API: {str(rest_exc)[:200]}"
+                    )
+                    self.last_write_error = message
+                    raise RuntimeError(message) from rest_exc
+                self.last_write_error = ""
+                return
+        self.last_write_route = "rest"
         for i in range(0, len(uris), 100):
             chunk = uris[i : i + 100]
             try:
@@ -1743,13 +1843,34 @@ class SpotifyClient:
                     f"playlists/{playlist_id}/tracks",
                     json_body={"uris": chunk},
                 )
-            except RateLimited:
-                if not self.pathfinder_ok:
-                    raise
-                # The Web API is throttled; the web player's own mutation is not.
+            except RateLimited as exc:
+                reason_rest = f"Web API (429): {str(exc)[:160]}"
+                self.last_write_error = reason_rest
+                # The Web API is throttled; the web player route is not. Try it even
+                # if the account has not used the web player yet this run — and if
+                # that is refused too, the error names BOTH routes.
                 self.prefer_pathfinder = True
+                self.pathfinder_ok = True
                 log.warning("Web API write throttled — writing through the web player")
-                self._pathfinder_add(playlist_id, chunk)
+                try:
+                    self._pathfinder_add(playlist_id, chunk)
+                except Exception as web_exc:
+                    message = (
+                        f"Spotify refused the write on both routes — "
+                        f"{reason_rest}; web-player: {str(web_exc)[:200]}"
+                    )
+                    self.last_write_error = message
+                    raise RuntimeError(message) from web_exc
+
+    def _rest_add(self, playlist_id: str, uris: list[str]) -> None:
+        """The Web API write, on its own (used as the other route)."""
+        self.last_write_route = "rest"
+        for i in range(0, len(uris), 100):
+            self._request(
+                "POST",
+                f"playlists/{playlist_id}/tracks",
+                json_body={"uris": uris[i : i + 100]},
+            )
 
     def current_user_id(self) -> str:
         data = self._request("GET", "me")

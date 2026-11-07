@@ -1042,7 +1042,7 @@ def test_pathfinder_add_writes_through_the_web_player(monkeypatch):
     import phonksync.spotify as sp
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
-    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {"__typename": "OK"}}}])
+    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {"__typename": "Mutation"}}}])
     client._pathfinder_add("PL9", ["spotify:track:aaa", "spotify:track:bbb"])
     assert len(seen) == 2
     first = seen[0]["payload"]
@@ -1057,7 +1057,9 @@ def test_write_falls_back_to_pathfinder_when_the_api_429s(monkeypatch):
     import phonksync.spotify as sp
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
-    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {}}}])
+    client, seen = _pf_client(
+        monkeypatch, [{"data": {"addToPlaylist": {"__typename": "Mutation"}}}]
+    )
 
     def boom(*a, **kw):
         raise RateLimited(30, "429")
@@ -1069,12 +1071,19 @@ def test_write_falls_back_to_pathfinder_when_the_api_429s(monkeypatch):
     assert client.prefer_pathfinder is True
 
 
-def test_write_does_not_fall_back_when_pathfinder_unproven(monkeypatch):
-    client, seen = _pf_client(monkeypatch, [{"data": {}}])
-    monkeypatch.setattr(client, "_request", lambda *a, **kw: (_ for _ in ()).throw(RateLimited(30, "429")))
-    with pytest.raises(RateLimited):
+def test_a_throttled_write_tries_the_web_player_and_names_both_routes(monkeypatch):
+    """Never give up on the first 429: the web player route is one call away."""
+    client, seen = _pf_client(monkeypatch, [{"data": {"playlistV2": {"__typename": "Error"}}}])
+    monkeypatch.setattr(
+        client, "_request", lambda *a, **kw: (_ for _ in ()).throw(RateLimited(30, "429"))
+    )
+    with pytest.raises(RuntimeError) as exc:
         client.add_tracks("PL1", ["spotify:track:aaa"])
-    assert not seen
+    assert seen, "the web player was never tried"
+    message = str(exc.value)
+    assert "both routes" in message
+    assert "Web API (429)" in message
+    assert "web-player" in message
 
 
 def test_spotify_backend_env_selects_web_player(monkeypatch):
@@ -1377,7 +1386,7 @@ def test_add_to_playlist_is_verified_and_heals_a_rotated_hash(monkeypatch):
         calls.append(body["extensions"]["persistedQuery"]["sha256Hash"])
         if len(calls) == 1:
             return _json.dumps({"errors": [{"message": "PersistedQueryNotFound"}]})
-        return _json.dumps({"data": {"playlistV2": {"__typename": "Playlist"}}})
+        return _json.dumps({"data": {"addToPlaylist": {"__typename": "Mutation"}}})
 
     monkeypatch.setattr(sp, "_proxy_post", fake_post)
     monkeypatch.setattr(
@@ -1401,3 +1410,63 @@ def test_verify_added_reports_only_what_is_really_in_the_playlist(monkeypatch):
     assert client.verify_added("pl", ["spotify:track:abc", "spotify:track:gone"]) == [
         "spotify:track:abc"
     ]
+
+
+def test_a_failed_web_player_write_falls_back_to_the_web_api(monkeypatch):
+    """Two independent chances per run: one refused route is not a dead end."""
+    client, seen = _pf_client(
+        monkeypatch, [{"data": {"playlistV2": {"__typename": "Error"}}}]
+    )
+    rest_calls = []
+    monkeypatch.setattr(
+        client, "_request", lambda *a, **kw: rest_calls.append(a) or {"ok": True}
+    )
+    client.prefer_pathfinder = True
+    client.add_tracks("PL1", ["spotify:track:aaa"])
+    assert seen, "the web player was never tried"
+    assert rest_calls, "the Web API was never tried after the refusal"
+    assert client.last_write_error == ""
+
+
+def test_both_routes_refusing_is_reported_as_such(monkeypatch):
+    client, _ = _pf_client(
+        monkeypatch, [{"data": {"playlistV2": {"__typename": "Error"}}}]
+    )
+
+    def boom(*a, **kw):
+        raise RuntimeError("403 Forbidden")
+
+    monkeypatch.setattr(client, "_request", boom)
+    client.prefer_pathfinder = True
+    with pytest.raises(RuntimeError) as exc:
+        client.add_tracks("PL1", ["spotify:track:aaa"])
+    assert "both routes" in str(exc.value)
+    assert "403 Forbidden" in str(exc.value)
+    assert "web-player" in client.last_write_error
+
+
+def test_the_permission_hint_says_whether_this_account_may_write(monkeypatch):
+    """A collaborative playlist + a bot cookie is the classic silent refusal."""
+    client, _ = _pf_client(
+        monkeypatch,
+        [{"data": {"playlistV2": {
+            "name": "phonk",
+            "collaborative": True,
+            "ownerV2": {"data": {"username": "thishan"}},
+        }}}],
+    )
+    client.account_username = "phonkbot"
+    hint = client.permission_hint("PL1")
+    assert "playlist owner: thishan" in hint
+    assert "cookie account: phonkbot" in hint
+    assert "collaborative: true" in hint
+    assert "does NOT own" in hint
+
+
+def test_the_permission_hint_clears_the_owner(monkeypatch):
+    client, _ = _pf_client(
+        monkeypatch,
+        [{"data": {"playlistV2": {"ownerV2": {"data": {"username": "phonkbot"}}}}}],
+    )
+    client.account_username = "phonkbot"
+    assert "OWNS the playlist" in client.permission_hint("PL1")
