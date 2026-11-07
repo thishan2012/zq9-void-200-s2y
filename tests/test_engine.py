@@ -1287,3 +1287,24 @@ def test_summary_mentions_the_near_miss_pool(monkeypatch, cfg):
     report = RunReport(started_at="now")
     report.candidate_pool = 3
     assert "3" in report.summary_text()
+
+
+def test_a_writes_only_run_adds_the_backlog_and_searches_nothing(monkeypatch, cfg):
+    """After adding YT_REFRESH_TOKEN: one fast run, zero searches."""
+    from phonksync.db import StateDB
+
+    cfg.youtube_enabled = True
+    cfg.youtube_writes_only = True
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    youtube = EngineYouTube()
+
+    # the backlog is already in the state file when the run starts
+    db = StateDB(cfg.state_path)
+    db.mark_synced(make_track(id="track0000000000000000a1"), "vidQUEUE0001", "STRICT", True, False)
+    db.save()
+
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+    assert youtube.inserted == ["vidQUEUE0001"]   # the backlog was written
+    assert youtube.searches == []                 # nothing was searched
+    assert report.pending_youtube_flushed == 1

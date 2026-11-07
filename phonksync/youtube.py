@@ -47,6 +47,16 @@ _UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 # videoId entries in the results page's JSON (watch?v= links also match).
+def _fallback_clients() -> list[dict[str, str]]:
+    """Client pairs that may have issued the refresh token (never hard-coded)."""
+    try:
+        from .oauth_setup import well_known_clients
+
+        return well_known_clients()
+    except Exception:  # never let an optional source break auth
+        return []
+
+
 def _elapsed(resp: Any) -> float:
     """How long the request behind ``resp`` took (0 when unknown)."""
     check = getattr(resp, "elapsed", None)
@@ -219,6 +229,11 @@ class YouTubeClient:
         self._key_exhausted: set[int] = set()
         self.client_id = ""
         self.client_secret = ""
+        # A refresh token is only usable with the client that issued it. If the
+        # user has only the token (no YT_CLIENT_ID), the well-known clients are
+        # tried as well — see `_refresh_access_token`.
+        self._client_candidates: list[dict[str, str]] = []
+        self._token_works = False
         self.token_uri = "https://oauth2.googleapis.com/token"
         self.refresh_token = refresh_token.strip()
         self._oauth_error = ""
@@ -250,6 +265,7 @@ class YouTubeClient:
         if (
             not self.api_key
             and not (self.client_id and self.client_secret)
+            and not self.refresh_token
             and not (cookie or "").strip()
         ):
             raise AuthError(
@@ -268,6 +284,10 @@ class YouTubeClient:
                 "YT_COOKIE (signed-in browser cookie, no Console needed) or "
                 "YOUTUBE_API_KEY for read-only search."
             )
+
+        for pair in _fallback_clients():
+            if pair["client_id"] != self.client_id:
+                self._client_candidates.append(pair)
 
         # Quota is per Google Cloud project, i.e. per key. With N keys the run
         # may spend N x daily_quota_units in total, but never more than
@@ -570,8 +590,14 @@ class YouTubeClient:
 
     @property
     def has_oauth(self) -> bool:
-        """Refresh-token OAuth is configured (renewable, uses the public Data API)."""
-        return bool(self.refresh_token and self.client_id and self.client_secret)
+        """Refresh-token OAuth is configured (renewable, uses the public Data API).
+
+        The token alone counts: it is exchanged with the client that issued it,
+        and `_token_works` remembers once that has actually succeeded.
+        """
+        return bool(self.refresh_token and (self.client_id or self._client_candidates) and (
+            self.client_secret or self._token_works or self._client_candidates
+        ))
 
     @property
     def can_write(self) -> bool:
@@ -615,27 +641,47 @@ class YouTubeClient:
             return self._manual_access_token
         if self._access_token and time.time() < self._access_expiry - 60:
             return self._access_token
-        try:
-            resp = self.session.post(
-                self.token_uri,
-                data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "refresh_token": self.refresh_token,
-                    "grant_type": "refresh_token",
-                },
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            raise AuthError(f"YouTube token refresh failed: {exc}") from exc
-        if resp.status_code != 200:
+        attempts = []
+        if self.client_id:
+            attempts.append({"client_id": self.client_id, "client_secret": self.client_secret})
+        attempts.extend(self._client_candidates)
+        if not attempts:
             raise AuthError(
-                f"YouTube token refresh failed ({resp.status_code}): {resp.text[:300]}"
+                "YouTube writes need YT_CLIENT_ID + YT_CLIENT_SECRET next to "
+                "YT_REFRESH_TOKEN (the token belongs to that OAuth client)."
             )
-        data = resp.json()
-        self._access_token = data["access_token"]
-        self._access_expiry = time.time() + int(data.get("expires_in", 3600))
-        return self._access_token
+        last = ""
+        for pair in attempts:
+            body = {
+                "client_id": pair["client_id"],
+                "refresh_token": self.refresh_token,
+                "grant_type": "refresh_token",
+            }
+            if pair.get("client_secret"):
+                body["client_secret"] = pair["client_secret"]
+            try:
+                resp = self.session.post(self.token_uri, data=body, timeout=30)
+            except requests.RequestException as exc:
+                raise AuthError(f"YouTube token refresh failed: {exc}") from exc
+            if resp.status_code != 200:
+                last = f"{resp.status_code}: {resp.text[:200]}"
+                log.debug("No YouTube token from client %s (%s)", pair["client_id"][:14], last)
+                continue
+            data = resp.json()
+            self._access_token = data["access_token"]
+            self._access_expiry = time.time() + int(data.get("expires_in", 3600))
+            self._token_works = True
+            if not self.client_id:
+                # Remember where it worked: one exchange per run, not per call.
+                self.client_id = pair["client_id"]
+                self.client_secret = pair.get("client_secret", "")
+            return self._access_token
+        raise AuthError(
+            "YouTube token refresh failed for every known OAuth client "
+            f"({last}). The refresh token was probably issued to a different "
+            "client: set YT_CLIENT_ID + YT_CLIENT_SECRET to match it, or make a "
+            "new token with `phonksync youtube-auth`."
+        )
 
     def _next_key(self, cost: int) -> int | None:
         """Pick a key that still has quota left today (rotating)."""

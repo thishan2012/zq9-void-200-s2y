@@ -85,6 +85,8 @@ class Config:
     youtube_target_playlist: str = ""
 
     max_tracks_per_run: int = 0  # 0 = unlimited
+    # Writes-only run: add the remembered matches, search for nothing new.
+    youtube_writes_only: bool = False
     dry_run_track_limit: int = 200  # dry-run only: max source tracks to read (0 = unlimited)
     max_searches_per_run: int = 200  # free searches do not count; paid ones are budgeted
     youtube_max_searches_per_day: int = 0  # 0 = no app cap; per-key units still enforced
@@ -167,6 +169,8 @@ class Config:
             }
         if os.environ.get("MAX_INSERTS_PER_DAY"):
             cfg.youtube_max_inserts_per_day = int(os.environ["MAX_INSERTS_PER_DAY"])
+        if os.environ.get("YOUTUBE_WRITES_ONLY", "").strip().lower() in {"1", "true", "yes"}:
+            cfg.youtube_writes_only = True
         if os.environ.get("MAX_TRACKS_PER_RUN"):
             cfg.max_tracks_per_run = int(os.environ["MAX_TRACKS_PER_RUN"])
         # A dry run must respect the same cap: "first 200" is a default, not a rule.
@@ -284,6 +288,7 @@ class Secrets:
                 (
                     self.youtube_client_json
                     or self.youtube_token_json
+                    or self.youtube_refresh_token  # the token alone is enough
                     or (self.youtube_client_id and self.youtube_client_secret)
                 )
                 and (self.youtube_refresh_token or self.youtube_token_json)

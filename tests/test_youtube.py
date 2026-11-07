@@ -811,3 +811,113 @@ def test_keepalive_adapter_is_mounted_once():
     session = _Session()
     yt = _client(session, pause=0.0)
     assert yt.web_session is session
+
+
+# ------------------------------------- a refresh token that is the only secret
+class _TokenSession:
+    """Google's token endpoint: only one client id may redeem the token."""
+
+    def __init__(self, ok_client, access="ya29.access"):
+        self.ok_client = ok_client
+        self.access = access
+        self.requests = []
+        self.headers = {}
+
+    def post(self, url, data=None, timeout=None):
+        self.requests.append(dict(data or {}))
+        cid = (data or {}).get("client_id")
+
+        class R:
+            status_code = 200 if cid == self.ok_client else 400
+            text = "{\"error\": \"invalid_client\"}"
+            headers = {}
+
+            def json(self_inner):
+                return {"access_token": self.access, "expires_in": 3600}
+
+        return R()
+
+    def get(self, *a, **kw):  # not used
+        return _TokenSession.__dict__
+
+
+def test_a_refresh_token_alone_can_authenticate(monkeypatch):
+    """The only secret set is YT_REFRESH_TOKEN — no client id anywhere."""
+    from phonksync.youtube import YouTubeClient
+
+    monkeypatch.setattr(
+        "phonksync.youtube._fallback_clients",
+        lambda: [{"client_id": "known-client", "client_secret": "known-secret"}],
+    )
+    session = _TokenSession(ok_client="known-client")
+    yt = YouTubeClient(token_json="", refresh_token="1//token", session=session,
+                       free_search=False)
+    assert yt.can_write is True
+    assert yt._ensure_token() == "ya29.access"
+    assert session.requests[0]["client_id"] == "known-client"
+    assert session.requests[0]["refresh_token"] == "1//token"
+    # remember where it worked: one exchange, not one per call
+    assert yt.client_id == "known-client"
+    yt._ensure_token()
+    assert len(session.requests) == 1
+
+
+def test_a_token_that_matches_no_known_client_says_so_clearly(monkeypatch):
+    from phonksync.errors import AuthError
+    from phonksync.youtube import YouTubeClient
+
+    monkeypatch.setattr(
+        "phonksync.youtube._fallback_clients",
+        lambda: [{"client_id": "client-a", "client_secret": "s"}],
+    )
+    session = _TokenSession(ok_client="some-other-client")
+    yt = YouTubeClient(refresh_token="1//token", session=session, free_search=False)
+    with pytest.raises(AuthError) as exc:
+        yt._ensure_token()
+    msg = str(exc.value)
+    assert "every known OAuth client" in msg
+    assert "YT_CLIENT_ID" in msg
+
+
+def test_client_id_and_secret_still_win_when_present(monkeypatch):
+    from phonksync.youtube import YouTubeClient
+
+    monkeypatch.setattr("phonksync.youtube._fallback_clients", lambda: [])
+    session = _TokenSession(ok_client="mine")
+    yt = YouTubeClient(
+        client_id="mine", client_secret="sec", refresh_token="1//t",
+        session=session, free_search=False,
+    )
+    assert yt._ensure_token() == "ya29.access"
+    assert session.requests[0]["client_id"] == "mine"
+    assert session.requests[0]["client_secret"] == "sec"
+
+
+def test_check_refresh_token_tries_each_known_client():
+    from phonksync.oauth_setup import check_refresh_token
+
+    session = _TokenSession(ok_client="second")
+    session.post_original = session.post
+    calls = {"n": 0}
+
+    def post(url, data=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            class Bad:
+                status_code = 400
+                text = "{\"error\":\"invalid_client\"}"
+            return Bad()
+        return session.post_original(url, data=data, timeout=timeout)
+
+    session.post = post
+    import phonksync.oauth_setup as o
+
+    original = o.usable_client_secrets
+    o.usable_client_secrets = lambda: [
+        {"client_id": "first", "client_secret": "a"},
+        {"client_id": "second", "client_secret": "b"},
+    ]
+    try:
+        assert check_refresh_token("1//token", session=session) == 0
+    finally:
+        o.usable_client_secrets = original

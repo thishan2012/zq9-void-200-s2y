@@ -485,6 +485,58 @@ def cookie_test(playlist: str, cookie: str = "", authuser: str = "0") -> int:
     return 0
 
 
+# A refresh token is only usable together with the client it was issued to.
+# Two fixed pairs (the project's own client), so someone holding only a token
+# does not have to create and manage YT_CLIENT_ID / YT_CLIENT_SECRET secrets.
+DEFAULT_OAUTH_CLIENTS: list[dict[str, str]] = []
+
+
+def well_known_clients() -> list[dict[str, str]]:
+    """Client id/secret pairs shipped with the bot (env + optional constants)."""
+    pairs: list[dict[str, str]] = []
+    raw = os.environ.get("YT_KNOWN_CLIENTS", "").strip()
+    for chunk in raw.split("|||"):
+        cid, _, secret = chunk.strip().partition(":")
+        if cid.strip() and secret.strip():
+            pairs.append({"client_id": cid.strip(), "client_secret": secret.strip()})
+    for entry in DEFAULT_OAUTH_CLIENTS:
+        cid = str(entry.get("client_id", "")).strip()
+        secret = str(entry.get("client_secret", "")).strip()
+        if cid and secret:
+            pairs.append({"client_id": cid, "client_secret": secret})
+    seen, unique = set(), []
+    for pair in pairs:
+        if pair["client_id"] not in seen:
+            seen.add(pair["client_id"])
+            unique.append(pair)
+    return unique
+
+
+def usable_client_secrets() -> list[dict[str, str]]:
+    """Every client that may have issued the token: configured first, then known.
+
+    A token minted by our own client works with no client secret at all, which is
+    the point: the account owner only has to paste the token.
+    """
+    out: list[dict[str, str]] = []
+    for cid in (
+        os.environ.get("YT_CLIENT_ID", "").strip(),
+        os.environ.get("YOUTUBE_CLIENT_ID", "").strip(),
+        os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
+    ):
+        secret = (
+            os.environ.get("YT_CLIENT_SECRET", "").strip()
+            or os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+            or os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+        )
+        if cid:
+            out.append({"client_id": cid, "client_secret": secret})
+    for pair in well_known_clients():
+        if not any(p["client_id"] == pair["client_id"] for p in out):
+            out.append(pair)
+    return out
+
+
 def check_token_types(refresh: str, access: str) -> list[str]:
     """Catch the classic mix-up before Google answers with a cryptic error."""
     problems = []
@@ -504,6 +556,77 @@ def check_token_types(refresh: str, access: str) -> list[str]:
             "YT_ACCESS_TOKEN holds a refresh token (1//…) — put it in YT_REFRESH_TOKEN instead."
         )
     return problems
+
+
+def check_refresh_token(token: str, session=None) -> int:
+    """Does this token work on its own? Tries every client that may have issued it.
+
+    Nothing is stored and nothing is guessed twice: the first client that
+    returns an access token is reported. That is the answer to "I only have
+    YT_REFRESH_TOKEN — is that enough?".
+    """
+    token = (token or "").strip()
+    if not token:
+        print("❌ No token given (pass --check-token 1//… or set YT_REFRESH_TOKEN).")
+        return 2
+    problems = check_token_types(token, "")
+    for problem in problems:
+        print(f"❌ {problem}")
+    if problems:
+        return 2
+    print(f"🔎 Checking a refresh token ({token[:6]}…, {len(token)} chars)\n")
+    clients = usable_client_secrets()
+    if not clients:
+        print("❌ No OAuth client is known, so the token cannot be redeemed.")
+        print("   A refresh token only works with the client that issued it:")
+        print("   set YT_CLIENT_ID + YT_CLIENT_SECRET (or YT_KNOWN_CLIENTS /")
+        print("   DEFAULT_OAUTH_CLIENTS in phonksync/oauth_setup.py).")
+        return 1
+    sess = session or requests.Session()
+    last = ""
+    for pair in clients:
+        body = {
+            "client_id": pair["client_id"],
+            "refresh_token": token,
+            "grant_type": "refresh_token",
+        }
+        if pair.get("client_secret"):
+            body["client_secret"] = pair["client_secret"]
+        try:
+            resp = sess.post("https://oauth2.googleapis.com/token", data=body, timeout=30)
+        except Exception as exc:
+            print(f"❌ {pair['client_id'][:22]}…: network error ({exc})")
+            return 1
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"✅ Works with client {pair['client_id'][:22]}…")
+            print(f"   access token {str(data.get('access_token', ''))[:8]}… "
+                  f"(valid {data.get('expires_in', '?')}s)")
+            print("\n👉 Only YT_REFRESH_TOKEN is needed — the bot already knows this client.")
+            return 0
+        last = f"{resp.status_code}: {resp.text[:180]}"
+        print(f"⚠️  {pair['client_id'][:22]}… → {last}")
+    print("\n❌ The token did not work with any known client.")
+    print("   Usually: it was issued to a different OAuth client, it was revoked")
+    print("   (password change / 'remove access'), or a newline was pasted with it.")
+    print("   Fix: set YT_CLIENT_ID + YT_CLIENT_SECRET to the client you used, or")
+    print("   run `phonksync youtube-auth --device` (or --cookie-help) to start over.")
+    return 1
+
+
+def show_client() -> int:
+    """Print the client id/secret pairs this build can use (secret masked)."""
+    clients = usable_client_secrets()
+    if not clients:
+        print("ℹ️  No OAuth client is configured (YT_CLIENT_ID / YT_KNOWN_CLIENTS).")
+        return 1
+    for pair in clients:
+        secret = pair.get("client_secret", "")
+        masked = f"{secret[:4]}…{secret[-4:]}" if secret else "(none)"
+        print(f"· client id: {pair['client_id']}")
+        print(f"  secret   : {masked} ({len(secret)} chars)")
+    print("\n👉 Paste these two into GitHub secrets only if `--check-token` asks for them.")
+    return 0
 
 
 def doctor(

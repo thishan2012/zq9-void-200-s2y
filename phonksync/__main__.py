@@ -690,6 +690,7 @@ def cmd_cookie_fix(args: argparse.Namespace) -> int:
 def cmd_youtube_auth(args: argparse.Namespace) -> int:
     from .oauth_setup import (
         auth_url,
+        check_refresh_token,
         client_section,
         cookie_help,
         cookie_test,
@@ -697,7 +698,17 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
         exchange_code,
         run_device_flow,
         run_oauth_flow,
+        show_client,
     )
+
+    if getattr(args, "show_client", False):
+        return show_client()
+
+    if getattr(args, "check_token", None):
+        token = args.check_token
+        if token == "-":
+            token = sys.stdin.read()
+        return check_refresh_token(token or os.environ.get("YT_REFRESH_TOKEN", ""))
 
     if getattr(args, "test_cookie", False):
         raw = (args.cookie or "").strip()
@@ -964,6 +975,16 @@ def main(argv: list[str] | None = None) -> int:
         "--doctor",
         action="store_true",
         help="Only report what is missing for YouTube writes",
+    )
+    p_auth.add_argument(
+        "--check-token",
+        default="",
+        help="Only test this refresh token ('-' = stdin, empty = YT_REFRESH_TOKEN)",
+    )
+    p_auth.add_argument(
+        "--show-client",
+        action="store_true",
+        help="Print the OAuth client id/secret this build can use (secret masked)",
     )
     p_auth.add_argument(
         "--live",
