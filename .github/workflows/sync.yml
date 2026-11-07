@@ -75,7 +75,7 @@ jobs:
         env:
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
@@ -106,7 +106,7 @@ jobs:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
         run: python -m phonksync diag
@@ -119,7 +119,7 @@ jobs:
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
         run: python -m phonksync cache-fill
 
@@ -159,7 +159,7 @@ jobs:
           REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}

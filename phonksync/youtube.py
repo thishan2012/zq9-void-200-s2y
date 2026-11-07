@@ -234,6 +234,9 @@ class YouTubeClient:
         # tried as well — see `_refresh_access_token`.
         self._client_candidates: list[dict[str, str]] = []
         self._token_works = False
+        # Set when a client id exists but no secret: the exchange must fail
+        # honestly instead of posting an empty secret.
+        self.client_secret_missing = False
         self.token_uri = "https://oauth2.googleapis.com/token"
         self.refresh_token = refresh_token.strip()
         self._oauth_error = ""
@@ -595,9 +598,10 @@ class YouTubeClient:
         The token alone counts: it is exchanged with the client that issued it,
         and `_token_works` remembers once that has actually succeeded.
         """
-        return bool(self.refresh_token and (self.client_id or self._client_candidates) and (
-            self.client_secret or self._token_works or self._client_candidates
-        ))
+        return bool(
+            self.refresh_token
+            and (self.client_id or self._client_candidates or self._token_works)
+        )
 
     @property
     def can_write(self) -> bool:
@@ -641,6 +645,15 @@ class YouTubeClient:
             return self._manual_access_token
         if self._access_token and time.time() < self._access_expiry - 60:
             return self._access_token
+        if self.client_id and not self.client_secret and self.refresh_token:
+            self.client_secret_missing = True
+            raise AuthError(
+                f"YouTube OAuth client {self.client_id[:22]}… has no client secret. "
+                "A refresh token needs YT_CLIENT_SECRET + YT_CLIENT_ID from the SAME "
+                "OAuth client (`phonksync youtube-auth --doctor`). A partially filled "
+                "pair cannot be redeemed, so the run stops here instead of failing "
+                "one insert at a time."
+            )
         attempts = []
         if self.client_id:
             attempts.append({"client_id": self.client_id, "client_secret": self.client_secret})
