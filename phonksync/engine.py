@@ -460,6 +460,18 @@ class SyncEngine:
         if not cfg.dry_run:
             self._flush_pending_youtube(report)
 
+        if cfg.youtube_writes_only:
+            # Nothing is searched: the run only turns remembered matches into
+            # playlist entries (seconds, no quota, no Spotify pages to fetch).
+            report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            report.cooldown_until = getattr(self.spotify, "blocked_until", 0.0) or 0.0
+            self._detail(
+                report,
+                "✍️ Writes-only run — no searches were made, no new matches looked for",
+            )
+            self._send_single(report)
+            return report
+
         resume = self.state.get_resume_point()
         resume_id = resume.get("track_id", "")
         resume_seen = not resume_id

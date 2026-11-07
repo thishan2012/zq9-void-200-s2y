@@ -68,3 +68,12 @@ def test_tests_workflow_runs_on_every_branch_and_uses_an_interpretable_runner():
     assert "pull_request" in doc[True]
     versions = doc["jobs"]["test"]["strategy"]["matrix"]["python-version"]
     assert "3.11" in [str(v) for v in versions]
+
+
+def test_the_sync_job_has_a_manual_switch_for_youtube_writes_only():
+    """A run that only adds the pending backlog must not spend search budget."""
+    doc = _load("sync.yml")
+    inputs = doc[True]["workflow_dispatch"]["inputs"]
+    env = _steps(doc)["Run sync"]["env"]
+    assert "writes_only" in inputs
+    assert "inputs.writes_only" in env.get("YOUTUBE_WRITES_ONLY", "")

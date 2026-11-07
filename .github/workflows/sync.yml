@@ -25,6 +25,10 @@ on:
         description: "Search results per query, i.e. video pages fetched (empty = config.json, 10; 5 = faster)"
         type: string
         default: ""
+      writes_only:
+        description: "Only add the already-remembered YouTube matches (no searching, fast)"
+        type: boolean
+        default: false
       fill_cache:
         description: "Only store the source playlists for later runs (no sync, no writes)"
         type: boolean
@@ -161,6 +165,7 @@ jobs:
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
+          YOUTUBE_WRITES_ONLY: ${{ inputs.writes_only }}
         run: |
           set -o pipefail
           python -m phonksync sync 2>&1 | tee run.log

@@ -304,6 +304,46 @@ looks wrong, open the job summary first, then the artifact.
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.
 
+## I only have `YT_REFRESH_TOKEN` — do I need the client id too?
+
+**The token alone is enough**, as long as the bot knows the OAuth client that
+issued it. A Google refresh token is not a standalone credential: it is only
+redeemable by the client that created it. The bot therefore tries the
+configured client (`YT_CLIENT_ID` / `YT_CLIENT_SECRET`) and then the clients
+that ship with it (`DEFAULT_OAUTH_CLIENTS` in `phonksync/oauth_setup.py`, or the
+`YT_KNOWN_CLIENTS` variable — `id:secret|||id:secret`).
+
+Check it in one command, without a run:
+
+```bash
+python -m phonksync youtube-auth --check-token 1//…   # which client accepts it
+python -m phonksync youtube-auth --show-client        # what this build knows (secret masked)
+```
+
+```
+✅ Works with client 1234-…apps.googleusercontent.com
+   access token ya29.abc…
+👉 Only YT_REFRESH_TOKEN is needed — the bot already knows this client.
+```
+
+If no client is known, the answer is explicit instead of a confusing 400:
+
+```
+❌ No OAuth client is known, so the token cannot be redeemed.
+   set YT_CLIENT_ID + YT_CLIENT_SECRET (or YT_KNOWN_CLIENTS / DEFAULT_OAUTH_CLIENTS)
+```
+
+Either set those two secrets, or — **once** — run
+`python -m phonksync youtube-auth --device` with the client you own and paste
+the printed `DEFAULT_OAUTH_CLIENTS = [{"client_id": …, "client_secret": …}]`
+into `phonksync/oauth_setup.py`. After that, the token is the only secret anyone
+has to touch again.
+
+> ⚠️ Symmetry check: one command proves both directions —
+> `--check-token` (my token → which client) and `--show-client` (which clients
+> this build can use). Nothing is guessed silently: if the pair does not match,
+> the message says so.
+
 ## I just added `YT_REFRESH_TOKEN` — was everything lost?
 
 No. While writes were off, every matched video was stored as
