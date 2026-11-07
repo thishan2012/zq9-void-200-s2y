@@ -5,6 +5,12 @@ name: Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      spotify_write_probe:
+        description: "Make ONE real Spotify write and publish Spotify's own answer"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -46,6 +52,56 @@ jobs:
           name: pytest-${{ matrix.python-version }}
           path: pytest.log
           retention-days: 3
+
+  # Manual only, and never on a pull request: it makes ONE real Spotify write to
+  # the target playlist and prints Spotify's own answer verbatim, which is then
+  # committed to a branch. Job logs are not always downloadable; a branch is.
+  spotify-write-probe:
+    if: github.event_name == 'workflow_dispatch' && inputs.spotify_write_probe
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: One real write, every answer printed
+        env:
+          SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
+          SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
+          SPOTIFY_ENCRYPTED_TOKEN: ${{ secrets.SPOTIFY_ENCRYPTED_TOKEN }}
+          SPOTIFY_TOTP_VER: ${{ secrets.SPOTIFY_TOTP_VER }}
+          SPOTIFY_TOTP_CIPHER: ${{ secrets.SPOTIFY_TOTP_CIPHER }}
+          SPOTIFY_WEB_TOKEN: ${{ secrets.SPOTIFY_WEB_TOKEN }}
+          SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+          PROXY_URL: ${{ vars.SPOTIFY_PROXY_URL }}
+          SPOTIFY_PROXY_URL: ${{ vars.SPOTIFY_PROXY_URL }}
+        run: |
+          code=0
+          python -m phonksync spotify-write-test --json > probe.txt 2>&1 || code=$?
+          { echo "### Spotify write probe (exit $code)"; echo ""; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat probe.txt >> "$GITHUB_STEP_SUMMARY"
+          { echo '```'; echo ""; } >> "$GITHUB_STEP_SUMMARY"
+          grep -m3 -E '^(❌|🚨|3️⃣|4️⃣)' probe.txt | while IFS= read -r line; do
+            echo "::warning title=Spotify write probe::${line}"
+          done
+          echo "````" >> probe.txt
+          exit "$code"
+      - name: Commit the answer (logs are not downloadable, this is)
+        if: always()
+        run: |
+          git config user.name "phonk-sync-bot"
+          git config user.email "actions@github.com"
+          mkdir -p diagnostics
+          cp probe.txt "diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md"
+          git add diagnostics
+          git commit -m "diagnostics: spotify write probe #${GITHUB_RUN_NUMBER} [skip ci]" || true
+          git push origin HEAD:spotify-probe || true
+          echo "wrote diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md on branch spotify-probe"
 
   # One required check, whatever the matrix ends up being.
   tests-ok:

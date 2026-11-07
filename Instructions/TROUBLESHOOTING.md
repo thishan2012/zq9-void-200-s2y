@@ -447,6 +447,45 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## "Nothing gets added to Spotify" — the two-minute probe
+
+Run **Actions → Tests → Run workflow → spotify_write_probe = true**. Nothing else.
+It makes **one** real write to the target playlist and publishes Spotify's own
+answer (status, GraphQL error strings, the payload) three ways:
+
+1. the job summary,
+2. a commit to the branch **`spotify-probe`**:
+   `diagnostics/spotify-write-probe-<run>.md`,
+3. `data/sync-state.json` → `diagnostics.last_write_problem`.
+
+Locally the same thing, with your `.env` loaded:
+
+```bash
+python -m phonksync spotify-write-test --json
+```
+
+It prints exactly this (no cookie or token is ever printed):
+
+```
+1️⃣ token    : ✅ 260 chars, account phonkbot
+2️⃣ read     : ✅ playlist owner: thisisan; cookie account: phonkbot; collaborative: true
+3️⃣ write    : …
+── attempt 1: addToPlaylist (b907ad6b088d…)
+   variables: {"playlistUri": "spotify:playlist:…", "playlistItemUris": […], "interactionId": null}
+   answer   : {"data": …}            ← the whole truth, verbatim
+4️⃣ verify   : ❌ the track is NOT in the playlist
+```
+
+Read the `answer`:
+
+* `"errors": [...]` → the persisted query or the variables are wrong; the error
+  string names it.
+* `"data": {}` (or `addItemsToPlaylist: null`) → the mutation ran as a no-op:
+  wrong hash for this build, or the account may not write to that playlist.
+* `addItemsToPlaylist: {"__typename": "AddItemsToPlaylistPayload"}` but verify
+  still says NOT in the playlist → the **write went somewhere else**: compare
+  `playlistUri` with `SPOTIFY_TARGET_PLAYLIST` (an empty target reads as 0 tracks).
+
 ## Where the web-player mutation details come from
 
 The working values are the ones a real browser session uses (and an older

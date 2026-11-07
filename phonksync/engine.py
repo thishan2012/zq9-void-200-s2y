@@ -81,6 +81,7 @@ class RunReport:
     spotify_note: str = ""   # why Spotify refused the writes (one line)
     spotify_note_writes: bool = False  # the note is about a refused *write*
     spotify_writes_missing: int = 0    # claimed added, but not in the playlist
+    spotify_playlist_empty: bool = False  # the target playlist read as empty
     skipped: int = 0
     web_reads: int = 0
     stale_reads: int = 0
@@ -241,6 +242,11 @@ class RunReport:
                 "are NOT in the target playlist — kept in the backlog, never marked as "
                 "added"
             )
+            if self.spotify_playlist_empty:
+                lines.append(
+                    "⚠️ The target playlist reads as EMPTY — check "
+                    "SPOTIFY_TARGET_PLAYLIST (wrong id?) before anything else"
+                )
         if self.spotify_note:
             lines.append(self.spotify_note)
         if self.quota_stopped:
@@ -1207,6 +1213,31 @@ class SyncEngine:
             "%d claimed Spotify write(s) are not in the playlist — un-claimed and "
             "queued for the next run", len(missing),
         )
+        # Record the verdict *and* the evidence, so the reason is readable from
+        # data/sync-state.json without the (unreliable) job log.
+        hint = ""
+        try:
+            hint = self.spotify.permission_hint(self.config.spotify_target_playlist)
+            total = len(self.spotify._pathfinder_tracks(self.config.spotify_target_playlist))
+        except Exception:
+            total = -1
+        message = (
+            f"Spotify accepted the write but {len(missing)} of {len(uris)} track(s) "
+            f"are not in the playlist (playlist now holds {total} track(s))"
+        )
+        if total == 0:
+            report.spotify_playlist_empty = True
+            message += (
+                " — the target playlist reads as EMPTY: check SPOTIFY_TARGET_PLAYLIST, "
+                "or the playlist read (fetchPlaylist) is not answering"
+            )
+        if hint:
+            message += f" | {hint}"
+        self.state.note_write_problem(
+            message,
+            route=getattr(self.spotify, "last_write_route", ""),
+            account=getattr(self.spotify, "account_username", ""),
+        )
 
     def _confirm_spotify_writes(self, uris: list[str], report: RunReport) -> list[str] | None:
         """Which of these URIs are really in the target playlist now?
@@ -1283,6 +1314,7 @@ class SyncEngine:
         landed = self._confirm_spotify_writes(uris, report)
         if landed is None:  # could not check: trust the API answer
             landed = list(uris)
+        self.spotify.last_add_accepted = bool(landed)
         missing = [u for u in uris if u not in landed]
         if missing:
             report.spotify_writes_missing += len(missing)

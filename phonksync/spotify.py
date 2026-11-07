@@ -978,6 +978,9 @@ class SpotifyClient:
         self.token_client_id = ""
         self.last_write_error = ""   # why the last write was refused
         self.last_write_route = ""   # "web-player" or "rest"
+        self.last_write_answer = ""  # the mutation payload Spotify returned
+        self.last_mutation_key = ""  # which data key carried it
+        self.last_add_accepted = False  # the API said ok (not proof of landing)
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -1304,6 +1307,11 @@ class SpotifyClient:
             if isinstance(mutated, dict) and (
                 mutated.get("__typename") or mutated.get("uri") or mutated.get("uid")
             ):
+                self.last_write_answer = json.dumps(mutated)[:300]
+                self.last_mutation_key = next(
+                    key for key in ("addItemsToPlaylist", "addToPlaylist", "add")
+                    if isinstance(data.get(key), dict)
+                )
                 return True
             status = (data.get("playlistV2") or {}).get("__typename") or ""
             last = (
@@ -1426,6 +1434,28 @@ class SpotifyClient:
                 "AND this account an accepted collaborator"
             )
         return "; ".join(bits)
+
+    def confirm_one(self, playlist_id: str, uri: str, expected_total: int | None = None) -> bool | None:
+        """Is this one URI in the playlist? ``None`` = the read itself failed.
+
+        Called right after a write answers "ok". A wrong persisted-query hash
+        answers HTTP 200 with an empty body (a silent no-op), so the *answer* is
+        not evidence — this read is.
+        """
+        try:
+            tracks = self._pathfinder_tracks(playlist_id)
+        except Exception as exc:
+            log.debug("Could not confirm the write: %s", exc)
+            return None
+        present = {t.uri or f"spotify:track:{t.id}" for t in tracks}
+        present |= {f"spotify:track:{t.id}" for t in tracks}
+        if uri in present:
+            return True
+        if expected_total is not None and len(tracks) < expected_total:
+            # The playlist read returned *less* than it had before the write: the
+            # read is unreliable, not the write.
+            return None
+        return False
 
     def verify_added(self, playlist_id: str, uris: list[str]) -> list[str]:
         """Re-read the playlist and return the URIs that are really in it.

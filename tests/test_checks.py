@@ -62,3 +62,13 @@ def test_promo_channel_alone_does_not_block():
 def test_title_in_title():
     assert title_in_title("Montagem Miau", "Montagem Miau (Slowed)")
     assert not title_in_title("Montagem Miau", "Montagem Lunar")
+
+
+def test_the_write_test_command_exists_and_needs_a_cookie(monkeypatch, capsys):
+    """`spotify-write-test` is the command that prints the real GraphQL answer."""
+    import phonksync.__main__ as cli
+
+    monkeypatch.delenv("SPOTIFY_COOKIE", raising=False)
+    code = cli.main(["spotify-write-test", "--track", "abc"])
+    assert code == 2
+    assert "SPOTIFY_COOKIE is required" in capsys.readouterr().err
