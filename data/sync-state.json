@@ -2,12 +2,12 @@
   "candidates": {},
   "quota": {
     "date": "2026-11-07",
-    "inserts": 5,
+    "inserts": 10,
     "keys": {
-      "0": 5
+      "0": 11
     },
     "searches": 0,
-    "units_used": 256
+    "units_used": 513
   },
   "skipped": {},
   "spotify": {
@@ -22,6 +22,17 @@
         "queued_at": "2026-11-07T21:23:21+00:00",
         "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
       },
+      "1HOfVRxlZSrRxwdU9khv6p": {
+        "artists": [
+          "h6itam",
+          "Penkramin",
+          "SNYSTA"
+        ],
+        "name": "MONTAGEM VALKARO - Slowed",
+        "queued_at": "2026-11-07T22:10:28+00:00",
+        "reason": "Spotify asked to slow down",
+        "uri": "spotify:track:1HOfVRxlZSrRxwdU9khv6p"
+      },
       "1RD6UmOALWhLSXAe8GNczs": {
         "artists": [
           "HDN"
@@ -29,6 +40,35 @@
         "name": "LUZ",
         "queued_at": "2026-11-07T21:23:34+00:00",
         "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
+      },
+      "1kZvBIepQFlgUywAub2h56": {
+        "artists": [
+          "ASTXR",
+          "MC ETERNA"
+        ],
+        "name": "TURAN 2 - Slowed",
+        "queued_at": "2026-11-07T22:09:36+00:00",
+        "reason": "Spotify asked to slow down",
+        "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
+      },
+      "23AD8PYw2abHfy3UVGC2FC": {
+        "artists": [
+          "Nulteex",
+          "ewyx"
+        ],
+        "name": "SHAKA - SLOWED",
+        "queued_at": "2026-11-07T22:09:49+00:00",
+        "reason": "Spotify asked to slow down",
+        "uri": "spotify:track:23AD8PYw2abHfy3UVGC2FC"
+      },
+      "3hkqp9V8ulFGAiWSmBy8FZ": {
+        "artists": [
+          "IXZIYOL"
+        ],
+        "name": "MONTAGEM MANADO - Slowed",
+        "queued_at": "2026-11-07T22:10:03+00:00",
+        "reason": "Spotify asked to slow down",
+        "uri": "spotify:track:3hkqp9V8ulFGAiWSmBy8FZ"
       },
       "4SOpgVtAoZGiSULa9eU74e": {
         "artists": [
@@ -56,30 +96,140 @@
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
         "queued_at": "2026-11-07T21:22:41+00:00",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
+      },
+      "6JYZTjE9mQrTmRZuNkqpwj": {
+        "artists": [
+          "Zericxxn",
+          "vultury"
+        ],
+        "name": "MALEMO - Slowed",
+        "queued_at": "2026-11-07T22:10:14+00:00",
+        "reason": "Spotify asked to slow down",
+        "uri": "spotify:track:6JYZTjE9mQrTmRZuNkqpwj"
+      }
+    },
+    "pending": {
+      "0g3rBLGiHXo9hDEqVaL5sM": {
+        "artists": [
+          "fennecxx",
+          "DJ ALEX",
+          "Dj Samir"
+        ],
+        "held_at": "2026-11-07T22:09:21+00:00",
+        "name": "SPOOKY 3 - Slowed",
+        "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
+      },
+      "1HOfVRxlZSrRxwdU9khv6p": {
+        "artists": [
+          "h6itam",
+          "Penkramin",
+          "SNYSTA"
+        ],
+        "held_at": "2026-11-07T22:10:28+00:00",
+        "name": "MONTAGEM VALKARO - Slowed",
+        "uri": "spotify:track:1HOfVRxlZSrRxwdU9khv6p"
+      },
+      "1RD6UmOALWhLSXAe8GNczs": {
+        "artists": [
+          "HDN"
+        ],
+        "held_at": "2026-11-07T22:09:21+00:00",
+        "name": "LUZ",
+        "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
+      },
+      "1kZvBIepQFlgUywAub2h56": {
+        "artists": [
+          "ASTXR",
+          "MC ETERNA"
+        ],
+        "held_at": "2026-11-07T22:09:36+00:00",
+        "name": "TURAN 2 - Slowed",
+        "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
+      },
+      "23AD8PYw2abHfy3UVGC2FC": {
+        "artists": [
+          "Nulteex",
+          "ewyx"
+        ],
+        "held_at": "2026-11-07T22:09:49+00:00",
+        "name": "SHAKA - SLOWED",
+        "uri": "spotify:track:23AD8PYw2abHfy3UVGC2FC"
+      },
+      "3hkqp9V8ulFGAiWSmBy8FZ": {
+        "artists": [
+          "IXZIYOL"
+        ],
+        "held_at": "2026-11-07T22:10:03+00:00",
+        "name": "MONTAGEM MANADO - Slowed",
+        "uri": "spotify:track:3hkqp9V8ulFGAiWSmBy8FZ"
+      },
+      "4SOpgVtAoZGiSULa9eU74e": {
+        "artists": [
+          "SUXMII",
+          "DJ AURAXÉ"
+        ],
+        "held_at": "2026-11-07T22:09:21+00:00",
+        "name": "MONTAGEM BREAKDOWN",
+        "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
+      },
+      "5zeZGRzOBKAoxVO6LwX9Dq": {
+        "artists": [
+          "h6itam",
+          "NXDLS"
+        ],
+        "held_at": "2026-11-07T22:09:21+00:00",
+        "name": "FUNK MISTERIO",
+        "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
+      },
+      "61zBVwzhLskripTriL7aVR": {
+        "artists": [
+          "WXRTNAX",
+          "DJ HuTao"
+        ],
+        "held_at": "2026-11-07T22:09:21+00:00",
+        "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
+        "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
+      },
+      "6JYZTjE9mQrTmRZuNkqpwj": {
+        "artists": [
+          "Zericxxn",
+          "vultury"
+        ],
+        "held_at": "2026-11-07T22:10:14+00:00",
+        "name": "MALEMO - Slowed",
+        "uri": "spotify:track:6JYZTjE9mQrTmRZuNkqpwj"
       }
     }
   },
   "stats": {
     "methods": {
+      "CHANNEL": {
+        "tried": 1,
+        "won": 1
+      },
       "DETAIL": {
-        "tried": 5,
+        "tried": 10,
         "won": 0
       },
       "LOOSE": {
-        "tried": 5,
+        "tried": 10,
         "won": 0
       },
       "REVERSED": {
-        "tried": 5,
-        "won": 5
+        "tried": 10,
+        "won": 9
+      },
+      "SINGLE": {
+        "tried": 1,
+        "won": 0
       },
       "STRICT": {
-        "tried": 5,
+        "tried": 10,
         "won": 0
       }
     },
-    "runs": 1,
-    "total_added": 5
+    "runs": 2,
+    "total_added": 10
   },
   "synced": {
     "0g3rBLGiHXo9hDEqVaL5sM": {
@@ -92,10 +242,25 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "SPOOKY 3 - Slowed",
-      "spotify_added": true,
+      "spotify_added": false,
       "spotify_id": "0g3rBLGiHXo9hDEqVaL5sM",
       "youtube_added": true,
       "youtube_video_id": "yJ4hfEX7XjI"
+    },
+    "1HOfVRxlZSrRxwdU9khv6p": {
+      "added_at": "2026-11-07T22:10:29+00:00",
+      "artists": [
+        "h6itam",
+        "Penkramin",
+        "SNYSTA"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM VALKARO - Slowed",
+      "spotify_added": false,
+      "spotify_id": "1HOfVRxlZSrRxwdU9khv6p",
+      "youtube_added": true,
+      "youtube_video_id": "IqMWg54nlzU"
     },
     "1RD6UmOALWhLSXAe8GNczs": {
       "added_at": "2026-11-07T21:23:34+00:00",
@@ -105,10 +270,51 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "LUZ",
-      "spotify_added": true,
+      "spotify_added": false,
       "spotify_id": "1RD6UmOALWhLSXAe8GNczs",
       "youtube_added": true,
       "youtube_video_id": "Jfyy3XcdxkM"
+    },
+    "1kZvBIepQFlgUywAub2h56": {
+      "added_at": "2026-11-07T22:09:36+00:00",
+      "artists": [
+        "ASTXR",
+        "MC ETERNA"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "TURAN 2 - Slowed",
+      "spotify_added": false,
+      "spotify_id": "1kZvBIepQFlgUywAub2h56",
+      "youtube_added": true,
+      "youtube_video_id": "NE_0P-AN648"
+    },
+    "23AD8PYw2abHfy3UVGC2FC": {
+      "added_at": "2026-11-07T22:09:50+00:00",
+      "artists": [
+        "Nulteex",
+        "ewyx"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "SHAKA - SLOWED",
+      "spotify_added": false,
+      "spotify_id": "23AD8PYw2abHfy3UVGC2FC",
+      "youtube_added": true,
+      "youtube_video_id": "DUxC3j1Y_Y0"
+    },
+    "3hkqp9V8ulFGAiWSmBy8FZ": {
+      "added_at": "2026-11-07T22:10:03+00:00",
+      "artists": [
+        "IXZIYOL"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM MANADO - Slowed",
+      "spotify_added": false,
+      "spotify_id": "3hkqp9V8ulFGAiWSmBy8FZ",
+      "youtube_added": true,
+      "youtube_video_id": "Jd-vdVOwTXs"
     },
     "4SOpgVtAoZGiSULa9eU74e": {
       "added_at": "2026-11-07T21:22:54+00:00",
@@ -119,7 +325,7 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "MONTAGEM BREAKDOWN",
-      "spotify_added": true,
+      "spotify_added": false,
       "spotify_id": "4SOpgVtAoZGiSULa9eU74e",
       "youtube_added": true,
       "youtube_video_id": "Y2Z9gg1gcJ0"
@@ -133,7 +339,7 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "FUNK MISTERIO",
-      "spotify_added": true,
+      "spotify_added": false,
       "spotify_id": "5zeZGRzOBKAoxVO6LwX9Dq",
       "youtube_added": true,
       "youtube_video_id": "xn7KfgXZedc"
@@ -147,13 +353,27 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
-      "spotify_added": true,
+      "spotify_added": false,
       "spotify_id": "61zBVwzhLskripTriL7aVR",
       "youtube_added": true,
       "youtube_video_id": "QeJYH2tVfCk"
+    },
+    "6JYZTjE9mQrTmRZuNkqpwj": {
+      "added_at": "2026-11-07T22:10:14+00:00",
+      "artists": [
+        "Zericxxn",
+        "vultury"
+      ],
+      "isrc": "",
+      "method": "CHANNEL",
+      "name": "MALEMO - Slowed",
+      "spotify_added": false,
+      "spotify_id": "6JYZTjE9mQrTmRZuNkqpwj",
+      "youtube_added": true,
+      "youtube_video_id": "rtMyIrxh_6M"
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-07T21:23:34+00:00",
+  "updated_at": "2026-11-07T22:10:29+00:00",
   "version": 1
 }
