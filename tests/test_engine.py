@@ -1539,3 +1539,67 @@ def test_the_old_parked_but_added_state_is_repaired_once(monkeypatch, cfg):
     eng.state.data["synced"][old.id]["added_at"] = "2030-01-01T00:00:00+00:00"
     eng.state.clear_pending_spotify()
     assert eng._repair_parked_bucket() == 0
+
+
+def test_the_parked_backlog_is_added_before_the_run_can_get_throttled(monkeypatch, cfg):
+    """A Spotify slow-down later in the run used to swallow the backlog again."""
+    import time as _time
+
+    from phonksync.models import Track
+
+    cfg.youtube_enabled = False
+    tracks = _many_tracks(3)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    # A track parked by the previous (throttled) run, waiting for a batch add.
+    waiting = Track(id="waiting00000000000000001", name="LUZ", artists=["HDN"],
+                    uri="spotify:track:waiting00000000000000001")
+    eng.state.add_manual(waiting, reason="Spotify asked to slow down")
+    eng.state.add_pending_spotify(waiting)
+    eng.state.save()
+
+    calls = {"n": 0}
+
+    def add_tracks(playlist_id, uris):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the batch add worked, the album writes are throttled
+            spotify.blocked_until = _time.time() + 3600
+            raise RateLimited(3600, "Spotify blocked this session for ~1h 0m")
+        spotify.added.extend(uris)
+
+    monkeypatch.setattr(spotify, "add_tracks", add_tracks)
+    report = eng.run()
+
+    assert waiting.uri in spotify.added, "the backlog was not flushed before the throttle"
+    assert report.parked_saved == 1
+    assert waiting.id not in eng.state.pending_spotify()   # done, not re-queued
+    assert waiting.id not in eng.state.manual_items()
+    assert eng.state.data["synced"][waiting.id]["spotify_added"] is True
+    # The tracks this run parked (throttled album writes) wait for the next run.
+    assert eng.state.pending_spotify()
+
+
+def test_the_summary_says_why_spotify_refused(monkeypatch, cfg):
+    """Same symptom, three causes: name the one that happened."""
+    import time as _time
+
+    cfg.youtube_enabled = False
+    cfg.spotify_write_mode = "queue"
+    tracks = _many_tracks(2)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+
+    def add(playlist_id, uris):
+        spotify.blocked_until = _time.time() + 3600
+        raise RateLimited(3600, "Spotify blocked this session for ~1h 0m")
+
+    monkeypatch.setattr(spotify, "add_tracks", add)
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    spotify.queue_supported = False  # a non-Premium account
+    report = eng.run()
+    text = report.summary_text()
+    assert "Spotify rate limited (429)" in text
+    assert "reason: Spotify blocked this session" in text
+    assert "player queue was refused" in text
+    assert "SPOTIFY_WRITE_MODE=direct" in text
+    assert "pacing 2s/call" in text
