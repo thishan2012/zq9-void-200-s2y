@@ -80,6 +80,7 @@ class RunReport:
     parked_repaired: int = 0  # state-file entries fixed (parked but marked added)
     spotify_note: str = ""   # why Spotify refused the writes (one line)
     spotify_note_writes: bool = False  # the note is about a refused *write*
+    spotify_writes_missing: int = 0    # claimed added, but not in the playlist
     skipped: int = 0
     web_reads: int = 0
     stale_reads: int = 0
@@ -234,6 +235,12 @@ class RunReport:
                     "⚠️ Spotify rate limited (429): wrote what it could — "
                     "wait a few minutes and run again to continue"
                 )
+        if self.spotify_writes_missing:
+            lines.append(
+                f"🚨 {self.spotify_writes_missing} track(s) were accepted by Spotify but "
+                "are NOT in the target playlist — kept in the backlog, never marked as "
+                "added"
+            )
         if self.spotify_note:
             lines.append(self.spotify_note)
         if self.quota_stopped:
@@ -313,8 +320,14 @@ class SyncEngine:
             os.environ["REQUEST_DELAY_SECONDS"] = str(config.spotify_request_delay_seconds)
         if config.spotify_proxy_url and "SPOTIFY_PROXY_URL" not in os.environ:
             os.environ["SPOTIFY_PROXY_URL"] = config.spotify_proxy_url
+        # A bot account is never Premium: start on the web-player route (no
+        # Premium-only queue, no Web API write budget) instead of discovering it
+        # from the first 403/429. SPOTIFY_BACKEND=rest forces the old behaviour.
+        backend = os.environ.get("SPOTIFY_BACKEND", "").strip().lower()
         self.spotify = SpotifyClient(
-            secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
+            secrets.spotify_cookie,
+            extra_cookies=secrets.spotify_spare_cookies,
+            prefer_web_player=backend not in {"rest", "web-api", "api"},
         )
         self._free_matches = 0
         self.public_spotify = PublicPlaylistReader() if config.spotify_web_fallback else None
@@ -667,6 +680,7 @@ class SyncEngine:
         if not cfg.dry_run:
             self._flush_queue()
             self._retry_pending_queue()
+            self._audit_claimed_spotify(report)
             if self.state.manual_items():
                 self.state.write_manual_queue(cfg.manual_queue_path)
 
@@ -1140,6 +1154,76 @@ class SyncEngine:
             )
         return "ℹ️ " + "; ".join(bits)
 
+    def _audit_claimed_spotify(self, report: RunReport) -> None:
+        """One read at the end: are the tracks we claimed really in the playlist?
+
+        Cheap (one paged read of our own target) and it turns "the run said it
+        added them" into a fact. Anything claimed but absent is un-claimed, so the
+        next run retries it instead of skipping it forever.
+        """
+        claimed = [
+            track_id
+            for track_id, entry in (self.state.data["synced"] or {}).items()
+            if entry.get("spotify_added") and entry.get("added_at", "") >= (
+                (report.started_at or "")[:19]
+            )
+        ]
+        if not claimed:
+            return
+        verify = getattr(self.spotify, "verify_added", None)
+        if verify is None:
+            return
+        uris = [
+            (self.state.data["synced"][t].get("spotify_id") and
+             f"spotify:track:{self.state.data['synced'][t]['spotify_id']}")
+            or f"spotify:track:{t}"
+            for t in claimed
+        ]
+        try:
+            landed = verify(self.config.spotify_target_playlist, uris)
+        except Exception as exc:
+            log.warning("Could not audit this run's Spotify writes: %s", exc)
+            return
+        if not landed:
+            return  # the playlist read itself failed; do not un-claim on a guess
+        missing = [u for u in uris if u not in landed]
+        if not missing:
+            log.info("Verified: all %d claimed Spotify write(s) are in the playlist", len(uris))
+            return
+        for track_id, uri in zip(claimed, uris):
+            if uri in missing:
+                self.state.data["synced"][track_id]["spotify_added"] = False
+                entry = self.state.data["synced"][track_id]
+                self.state.add_pending_spotify(
+                    Track(
+                        id=track_id,
+                        name=entry.get("name", ""),
+                        artists=list(entry.get("artists") or []),
+                        uri=uri,
+                    )
+                )
+        report.spotify_writes_missing = len(missing)
+        log.warning(
+            "%d claimed Spotify write(s) are not in the playlist — un-claimed and "
+            "queued for the next run", len(missing),
+        )
+
+    def _confirm_spotify_writes(self, uris: list[str], report: RunReport) -> list[str] | None:
+        """Which of these URIs are really in the target playlist now?
+
+        ``None`` means "could not check" (no Spotify cookie, an unexpected
+        client): callers then trust the API answer rather than blocking.
+        """
+        verify = getattr(self.spotify, "verify_added", None)
+        if verify is None:
+            return None
+        try:
+            landed = verify(self.config.spotify_target_playlist, uris)
+        except Exception as exc:
+            log.warning("Could not verify the playlist write: %s", exc)
+            return None
+        return list(landed)
+
     def _retry_pending_spotify(self, report: RunReport) -> None:
         """Add the tracks an earlier throttled run could only park.
 
@@ -1179,6 +1263,20 @@ class SyncEngine:
             )
             report.parked_spotify = len(uris)
             return
+        landed = self._confirm_spotify_writes(uris, report)
+        if landed is None:  # could not check: trust the API answer
+            landed = list(uris)
+        missing = [u for u in uris if u not in landed]
+        if missing:
+            report.spotify_writes_missing += len(missing)
+            keep = {tid for tid, e in pending.items() if e.get("uri") in missing}
+            log.warning(
+                "%d of %d parked track(s) did NOT land in the playlist — kept for a "
+                "retry", len(missing), len(uris),
+            )
+            report.parked_spotify = len(missing)
+            uris = landed
+            pending = {k: v for k, v in pending.items() if k not in keep}
         for track_id, entry in pending.items():
             track = Track(
                 id=track_id,
@@ -1191,9 +1289,10 @@ class SyncEngine:
                 entry_state["spotify_added"] = True
             else:
                 self.state.mark_synced(track, "", "", True, False)
-        self.state.clear_pending_spotify()
-        self.state.clear_manual(list(pending))
-        report.parked_spotify = 0
+        done_ids = [k for k in pending]
+        self.state.clear_pending_spotify(done_ids)
+        self.state.clear_manual(done_ids)
+        # `parked_spotify` keeps whatever must stay in the backlog.
         report.parked_saved = len(uris)
         log.info(
             "Added %d track(s) that an earlier run had to park (Spotify cooldown)",

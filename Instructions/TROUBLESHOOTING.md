@@ -447,6 +447,27 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## The Spotify account is a bot / free account (no Premium)
+
+That is the expected setup here, and the code no longer fights it:
+
+* **The player queue is Premium-only.** `me/player/queue` answers 403/404 for a
+  free account, so it is not used at all — writes go through the **web player
+  route** (`api-partner`, the same endpoint the browser tab uses), which needs no
+  Premium and no Web API budget.
+* **The Web API throttles bot writes fast** (429 after a few playlist updates).
+  The web-player route does not share that window.
+* **`SPOTIFY_BACKEND=rest`** is the opt-out if you ever want the old behaviour.
+
+Writes are also **verified**: after one batch, the target playlist is re-read and
+only the tracks that are really there are marked as added. Anything else stays in
+the backlog and is retried, with this line in the summary:
+
+```
+🚨 3 track(s) were accepted by Spotify but are NOT in the target playlist —
+   kept in the backlog, never marked as added
+```
+
 ## YouTube got the tracks but the Spotify playlist is empty
 
 Read the summary line the run prints now:

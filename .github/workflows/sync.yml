@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
       backend:
-        description: "Spotify backend: auto (default) or web-player"
+        description: "Spotify route: empty = web player (free account: no queue, no Web API writes); 'rest' = Web API only"
         type: string
         default: ""
       proxy_url:
@@ -239,6 +239,7 @@ jobs:
         env:
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
+          SPOTIFY_BACKEND: ${{ inputs.backend }}
         run: |
           {
             echo "### ⏱ Wall clock"
@@ -247,7 +248,7 @@ jobs:
             echo "- finished: $(date -u '+%H:%M:%S') UTC"
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
             echo ""
-            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}${{ inputs.writes_only && ' writes_only=true' || '' }}"
+            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}${{ inputs.writes_only && ' writes_only=true' || '' }} spotify=${SPOTIFY_BACKEND:-web-player}"
             # Empty inputs inherit config.json — name the value that was really used
             # instead of printing `pause= results=` (which reads like "zero pause").
             echo "Pacing: pause=${YOUTUBE_FREE_SEARCH_PAUSE:-(=config.json)}s results=${SEARCH_RESULTS_PER_QUERY:-(=config.json)}"

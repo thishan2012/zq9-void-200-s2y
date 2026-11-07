@@ -100,7 +100,13 @@ class StateDB:
         }
 
     def manual_items(self) -> dict[str, Any]:
-        return self.spotify.get("manual") or {}
+        # During a run the ids are parked live, not necessarily loaded from disk:
+        # NEVER build a throwaway copy here (edits to it would be lost, which is
+        # how a cleared bucket kept coming back).
+        bucket = self.spotify.get("manual")
+        if bucket is None:
+            bucket = self.spotify["manual"] = {}
+        return bucket
 
     def manual_uris(self, skip_ids: set[str] | None = None) -> list[str]:
         """Track URIs waiting in the manual bucket, minus the already-added ones."""
