@@ -85,6 +85,7 @@ class RunReport:
     elapsed_seconds: float = 0.0
     # (display name, seconds, methods tried) for every matched track
     track_times: list[tuple[str, float, int]] = field(default_factory=list)
+    candidate_pool: int = 0  # near-misses kept for a later, reviewed add
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -218,6 +219,11 @@ class RunReport:
             lines.append(
                 f"⏱ Took {_human_wait(self.elapsed_seconds)} for "
                 f"{self.unique_tracks} track(s){per}"
+            )
+        if self.candidate_pool:
+            lines.append(
+                f"❓ Near-miss candidates kept for review: {self.candidate_pool} "
+                "(never added automatically — `phonksync pending`)"
             )
         if self.track_times:
             slowest = sorted(self.track_times, key=lambda t: t[1], reverse=True)[:3]
@@ -1001,6 +1007,43 @@ class SyncEngine:
         self.state.set_resume_point(track.id, track.name, track.artists, blocked_until)
         return True
 
+    def _remember_best_unmatched(self, track: Track, report: RunReport) -> None:
+        """Keep the closest candidate for a track that failed the checks.
+
+        Nothing is written to any playlist now (the checks said no). But when a
+        write credential appears later (a refresh token after weeks of
+        read-only runs), the useful candidates are the ones already found — no
+        need to re-search 54 queries to rediscover them. They go to a separate
+        bucket, added only on an explicit opt-in (`phonksync pending --add`).
+        """
+        pool = getattr(self.matcher, "last_pool", None) or []
+        if not pool:
+            return
+        best = None
+        best_score = 0.0
+        want = track.name.lower()
+        for cand in pool:
+            title = (cand.title or "").lower()
+            if not title:
+                continue
+            score = 0.0
+            for token in {t for t in want.split() if len(t) > 3}:
+                if token in title:
+                    score += 1.0
+            if score > best_score:
+                best, best_score = cand, score
+        if best is None:
+            return
+        self.state.add_candidate(
+            track,
+            video_id=best.video_id,
+            title=best.title,
+            channel=best.channel,
+            duration_s=best.duration_s,
+            methods=len(self.matcher.last_tried),
+        )
+        report.candidate_pool += 1
+
     def _flush_pending_youtube(self, report: RunReport) -> None:
         """Add matches found while writes were off — no new searches needed."""
         yt = self.youtube
@@ -1107,6 +1150,7 @@ class SyncEngine:
                         f"{escape(track.display())} — no YouTube match "
                         f"({len(self.matcher.last_tried)} method(s) tried)"
                     )
+                self._remember_best_unmatched(track, report)
                 if cfg.require_youtube_match_for_spotify:
                     return
                 # Spotify side is exact (same track ID) — still add it.

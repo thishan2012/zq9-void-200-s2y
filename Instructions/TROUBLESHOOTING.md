@@ -304,6 +304,30 @@ looks wrong, open the job summary first, then the artifact.
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.
 
+## I just added `YT_REFRESH_TOKEN` — was everything lost?
+
+No. While writes were off, every matched video was stored as
+`pending_youtube` ("matched, not added yet"), so the first run with a working
+credential adds them **without searching again**.
+
+```bash
+python -m phonksync pending            # what is waiting (adds nothing)
+python -m phonksync pending --add      # write them now: skips what is already there
+python -m phonksync youtube-auth --doctor --live   # prove the token works
+```
+
+`pending --add` reads the playlist first and skips any video already in it, so
+running it twice cannot create a duplicate.
+
+Tracks that never passed the safety checks are kept separately as
+**near-misses** (`❓ Near-miss candidates kept for review` in the summary). They
+are **never** added automatically — review the list and pin the ones you trust:
+
+```bash
+python -m phonksync pending                     # shows the candidates
+python -m phonksync manual --track <spotify id> --video <video id>
+```
+
 ## `YT_COOKIE … no usable SAPISID`
 
 The cookie name is `__Secure-3PAPISID`, but browsers and export tools mangle it

@@ -506,8 +506,18 @@ def check_token_types(refresh: str, access: str) -> list[str]:
     return problems
 
 
-def doctor(client_json: str = "", client_id: str = "", client_secret: str = "") -> int:
-    """Say exactly what is missing for YouTube writes — and nothing else."""
+def doctor(
+    client_json: str = "",
+    client_id: str = "",
+    client_secret: str = "",
+    live: bool = False,
+) -> int:
+    """Say exactly what is missing for YouTube writes — and nothing else.
+
+    ``live=True`` actually exchanges the refresh token for an access token, so a
+    token that belongs to a different client, was revoked, or was copied with a
+    newline shows up here instead of in the middle of a sync run.
+    """
     print("🩺 YouTube write setup\n")
     ok = True
     if client_json or client_id:
@@ -560,6 +570,31 @@ def doctor(client_json: str = "", client_id: str = "", client_secret: str = "") 
         print("✅ Target playlist configured")
     else:
         print("⚠️  YOUTUBE_TARGET_PLAYLIST is not set in this environment")
+
+    if live and ok and not cookie:
+        from .youtube import YouTubeClient
+
+        print("\n🔌 Testing the refresh token against Google…")
+        try:
+            yt = YouTubeClient(
+                client_json=client_json,
+                client_id=client_id,
+                client_secret=client_secret,
+                refresh_token=refresh,
+                free_search=False,
+            )
+            token = yt._ensure_token()
+            print(f"✅ Refresh token works (access token {token[:8]}… issued)")
+            playlist = os.environ.get("YOUTUBE_TARGET_PLAYLIST", "").strip()
+            if playlist:
+                ids = yt.playlist_video_ids(playlist)
+                print(f"✅ Target playlist readable ({len(ids)} video(s)) — writes are on")
+        except Exception as exc:
+            print(f"❌ Live check failed: {exc}")
+            print("   Most common causes: the refresh token belongs to a different")
+            print("   OAuth client than YT_CLIENT_ID/YT_CLIENT_SECRET, it was revoked")
+            print("   (new password / 'remove access'), or a newline got pasted with it.")
+            ok = False
 
     print("\n" + ("✅ Writes should work." if ok else "👉 Fix the ❌/⚠️ lines above, then re-run `phonksync check`."))
     return 0 if ok else 1
