@@ -1437,3 +1437,21 @@ def test_a_client_json_does_not_hide_the_explicit_pair(monkeypatch):
     assert yt._ensure_token() == "ya29.ok"
     assert [c["client_id"] for c in seen] == [json_client, "pair-client"]
     assert yt.client_used == "pair-client"
+
+
+def test_a_setup_failure_is_printed_and_summarised(monkeypatch, cfg, capsys):
+    """Exit 1 with an empty summary was the worst possible failure mode."""
+    from phonksync.errors import AuthError
+
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    def refuse(report):
+        raise AuthError("Spotify refused to issue a web-player token (403)")
+
+    monkeypatch.setattr(engine, "_collect_source_tracks", refuse)
+    report = engine.run()
+
+    assert report.setup_failed is True
+    assert "Nothing could run" in report.summary_text()
+    assert "Spotify refused" in capsys.readouterr().err

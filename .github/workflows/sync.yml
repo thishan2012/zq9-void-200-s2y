@@ -109,7 +109,15 @@ jobs:
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
-        run: python -m phonksync diag
+        run: |
+          python -m phonksync diag 2>&1 | tee diag.log
+          {
+            echo "### 🔎 Route check (diag)"
+            echo ""
+            echo '```'
+            tail -n 40 diag.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fill source cache
         if: ${{ inputs.fill_cache }}
@@ -168,14 +176,37 @@ jobs:
           YOUTUBE_WRITES_ONLY: ${{ inputs.writes_only }}
         run: |
           set -o pipefail
-          python -m phonksync sync 2>&1 | tee run.log
+          # Never leave the summary empty: capture the exit code, publish the log
+          # FIRST, then fail the step. (A failed step used to skip the summary
+          # entirely, so a red run showed only the wall clock.)
+          code=0
+          python -m phonksync sync 2>&1 | tee run.log || code=$?
           {
-            echo "### Sync output"
+            echo "### Sync output (exit $code)"
             echo ""
+            if [ "$code" -ne 0 ]; then
+              echo "> ⚠️ The step failed with exit $code. The last lines are repeated below."
+              echo ""
+            fi
             echo '```'
-            cat run.log
+            tail -n 120 run.log
             echo '```'
+            if [ -s run.log ]; then
+              echo "### ❌ What went wrong"
+              echo ""
+              grep -m3 -E "Setup failed|refused|❌|ERROR|Traceback" run.log \
+                | sed 's/^/    /' || echo "    (no reason line found — open the log above)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ] && [ -s run.log ]; then
+            # Annotations show up on the run page itself (no log download needed).
+            grep -m2 -E "Setup failed|refused|❌|ERROR" run.log \
+              | while IFS= read -r line; do
+                  line="${line//\%/\%25}"; line="${line//$'\n'/ }"
+                  echo "::error title=phonksync::${line:0:400}"
+                done
+          fi
+          exit "$code"
 
       # No API token is ever needed for this: `gh run view --log` and
       # "Download log archive" both work as long as the run has a log archive.
@@ -184,7 +215,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sync-log-${{ github.run_number }}
-          path: run.log
+          path: |
+            run.log
+            phonksync.log
           retention-days: 14
           if-no-files-found: warn
 
