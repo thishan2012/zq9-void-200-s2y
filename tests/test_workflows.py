@@ -44,11 +44,14 @@ def test_every_input_is_passed_to_the_run():
 def test_the_run_log_is_kept_and_mirrored_to_the_summary():
     doc = _load("sync.yml")
     steps = _steps(doc)
-    assert "tee run.log" in steps["Run sync"]["run"]
-    assert "GITHUB_STEP_SUMMARY" in steps["Run sync"]["run"]
+    run_step = steps["Run sync"]["run"]
+    assert "tee run.log" in run_step
+    assert "GITHUB_STEP_SUMMARY" in run_step
+    # a failed run must still publish the log: capture the code, summarise, then exit
+    assert "|| code=$?" in run_step and 'exit "$code"' in run_step
     keep = steps["Keep the run log"]
     assert keep["uses"].startswith("actions/upload-artifact")
-    assert keep["with"]["path"] == "run.log"
+    assert "run.log" in str(keep["with"]["path"])
     assert keep["if"].startswith("${{ always()")
 
 

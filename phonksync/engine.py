@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -87,6 +88,7 @@ class RunReport:
     track_times: list[tuple[str, float, int]] = field(default_factory=list)
     candidate_pool: int = 0  # near-misses kept for a later, reviewed add
     youtube_auth_failed: bool = False  # credential refused before any work
+    setup_failed: bool = False  # nothing could run at all
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -235,6 +237,11 @@ class RunReport:
                     for name, secs, methods in slowest
                 )
                 lines.append(f"🐌 Slowest: {parts}")
+        if self.setup_failed:
+            lines.append(
+                "🛑 <b>Nothing could run</b> — the setup itself was refused "
+                "(credential, playlist id or config). The reason is above."
+            )
         if self.errors:
             lines.append(f"🛑 Errors: {len(self.errors)}")
             lines.extend(escape(e)[:200] for e in self.errors[:5])
@@ -479,6 +486,10 @@ class SyncEngine:
             )
         except (AuthError, ConfigError) as exc:
             report.errors.append(str(exc))
+            report.setup_failed = True
+            # Printed as well as sent: without a Telegram secret the console is
+            # the only place this can appear, and the step exits 1 anyway.
+            print(f"❌ Setup failed: {exc}", file=sys.stderr)
             self.telegram.error(f"Setup failed: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self._send_single(report)
