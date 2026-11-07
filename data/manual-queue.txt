@@ -1,3 +1,7 @@
-# 1 track(s) that could not be added automatically (2026-11-07T21:31:35+00:00).
-# Paste these into the target playlist, or let the next run retry them (`python -m phonksync manual --apply`).
-spotify:track:aaaaaaaaaaaaaaaaaaaaaa  # Nulteex - MONTAGEM MIAU  (Spotify asked to slow down)
+# 5 tracks that could not be added automatically (2026-11-07T21:23:34+00:00).
+# Paste these into the target playlist (or run `python -m phonksync manual --apply`).
+spotify:track:61zBVwzhLskripTriL7aVR  # WXRTNAX, DJ HuTao - MONTAGEM GALACTO LOCONA - Ultra Slowed
+spotify:track:4SOpgVtAoZGiSULa9eU74e  # SUXMII, DJ AURAXÉ - MONTAGEM BREAKDOWN
+spotify:track:5zeZGRzOBKAoxVO6LwX9Dq  # h6itam, NXDLS - FUNK MISTERIO
+spotify:track:0g3rBLGiHXo9hDEqVaL5sM  # fennecxx, DJ ALEX, Dj Samir - SPOOKY 3 - Slowed
+spotify:track:1RD6UmOALWhLSXAe8GNczs  # HDN - LUZ
