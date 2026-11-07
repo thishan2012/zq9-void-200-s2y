@@ -467,7 +467,10 @@ _HTML_UA = (
 _JS_BUNDLE_RE = re.compile(
     r"(?:https://open\.spotifycdn\.com)?/cdn/build/web-player/web-player\.[0-9a-f]+\.js"
 )
-_HASH_RE_TEMPLATE = r'"{op}"\s*,\s*"query"\s*,\s*"([0-9a-f]{{64}})"'
+# Spotify registers persisted queries as either a query or a **mutation**
+# (addToPlaylist is a mutation). Matching only "query" made the self-healing
+# scrape silently useless for every write.
+_HASH_RE_TEMPLATE = r'"{op}"\s*,\s*"(?:query|mutation)"\s*,\s*"([0-9a-f]{{64}})"'
 # Known-good hash for fetchPlaylist (2026-11). Reddit/Spyt/Spotifly all use it;
 # refreshed automatically from the web-player bundle when Spotify rotates it.
 _KNOWN_PLAYLIST_HASH = "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf"
@@ -477,7 +480,14 @@ _OP_HASHES: dict[str, str] = {
     "fetchPlaylist": _KNOWN_PLAYLIST_HASH,
     # Seeded from songmirror (working cookie backend); the bundle scrape heals it.
     "fetchPlaylistContents": "a65e12194ed5fc443a1cdebed5fabe33ca5b07b987185d63c72483867ad13cb4",
-    "addToPlaylist": "47b2a1234b17748d332dd0431534f22450e9ecbb3d5ddcdacbd83368636a0990",
+    # The operation the real web player/syncer uses for a playlist read; a
+    # fallback for when the older `fetchPlaylistContents` name is refused.
+    "fetchPlaylist": _KNOWN_PLAYLIST_HASH,
+    # Proven in a working cookie-based syncer: this is the hash the real web
+    # player uses for addToPlaylist. The old value here (which was also pasted
+    # into removeFromPlaylist) is not it, and a wrong hash makes the mutation
+    # silently do nothing — "the call worked, the playlist stayed empty".
+    "addToPlaylist": "b907ad6b088d5bf7680fa81198996d58398c2d55dfcdf59fcc959e0be98a418a",
     # (removeFromPlaylist needs its own hash — they were the same value here by
     # mistake, so a removal would have silently failed. It is unused for now.)
     "removeFromPlaylist": "",
@@ -963,6 +973,7 @@ class SpotifyClient:
         self.writes_landed = 0    # writes confirmed by the web-player endpoint
         self.writes_attempted = 0  # tracks that were supposed to be added
         self.verify_write_result = False
+        self._read_op_name = ""  # the playlist-read operation that works
         self.account_username = ""   # who the cookie belongs to
         self.token_client_id = ""
         self.last_write_error = ""   # why the last write was refused
@@ -1202,7 +1213,23 @@ class SpotifyClient:
             return payload.get("data") or {}
         raise RuntimeError(f"pathfinder {op} failed: {last or 'no usable answer'}")
 
+    def _read_op_variables(self, op: str, playlist_id: str, offset: int) -> dict[str, Any]:
+        if op == "fetchPlaylist":
+            # The browser sends these three flags; the endpoint is picky about them.
+            return {
+                "uri": f"spotify:playlist:{playlist_id}",
+                "offset": offset,
+                "limit": 100,
+                "enableWatchFeedEntrypoint": True,
+                "includeEpisodeContentRatingsV2": True,
+            }
+        return {"uri": f"spotify:playlist:{playlist_id}", "offset": offset, "limit": 100}
+
     def _pathfinder_write(self, playlist_id: str, uri: str) -> bool:
+        """Add a single track (thin wrapper around the batch call)."""
+        return self._pathfinder_write_many(playlist_id, [uri])
+
+    def _pathfinder_write_many(self, playlist_id: str, uris: list[str]) -> bool:
         """Add one track via addToPlaylist; verified, and hash-healed like reads.
 
         Reads and writes must fail the same way: a rotating persisted-query hash
@@ -1213,10 +1240,13 @@ class SpotifyClient:
         hashes = dict(_OP_HASHES)
         for name, value in _hash_overrides().items():
             hashes[name] = value
+        # The browser sends the whole batch in ONE call, an explicit interactionId,
+        # and confirms on `addItemsToPlaylist.__typename`.
         variables = {
             "playlistUri": f"spotify:playlist:{playlist_id}",
-            "playlistItemUris": [uri],
+            "playlistItemUris": list(uris) if isinstance(uris, list) else [uris],
             "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
+            "interactionId": None,
         }
         refreshed_hash = False
         refreshed_auth = False
@@ -1266,7 +1296,11 @@ class SpotifyClient:
             # recognise (the web player answers `addToPlaylist`/`add`), and treat
             # anything else as a refusal so the caller never claims a write.
             data = payload.get("data") or {}
-            mutated = data.get("addToPlaylist") or data.get("add")
+            mutated = (
+                data.get("addItemsToPlaylist")
+                or data.get("addToPlaylist")
+                or data.get("add")
+            )
             if isinstance(mutated, dict) and (
                 mutated.get("__typename") or mutated.get("uri") or mutated.get("uid")
             ):
@@ -1285,13 +1319,30 @@ class SpotifyClient:
         tracks: dict[str, Track] = {}
         offset = 0
         total = 0
+        op = self._read_op_name or "fetchPlaylistContents"
         while True:
-            data = self._pathfinder(
-                "fetchPlaylistContents",
-                {"uri": f"spotify:playlist:{playlist_id}", "offset": offset, "limit": 100},
-            )
+            data = self._pathfinder(op, self._read_op_variables(op, playlist_id, offset))
             content = ((data.get("playlistV2") or {}).get("content") or {})
             items = content.get("items") or []
+            if not items and not self._read_op_name:
+                # The older operation name may simply not exist any more; the
+                # browser's own is `fetchPlaylist`. Remember whichever works so
+                # the rest of the run pays for this once.
+                other = "fetchPlaylist" if op != "fetchPlaylist" else ""
+                if other and not offset:
+                    try:
+                        data = self._pathfinder(
+                            other, self._read_op_variables(other, playlist_id, 0)
+                        )
+                        content = ((data.get("playlistV2") or {}).get("content") or {})
+                        items = content.get("items") or []
+                        if items:
+                            self._read_op_name = other
+                            op = other
+                    except Exception as exc:
+                        log.debug("Playlist read via %s failed: %s", other, exc)
+            if not items and not self._read_op_name:
+                self._read_op_name = op  # what we tried does answer, even if empty
             if not total:
                 try:
                     total = int(content.get("totalCount") or 0)
@@ -1313,13 +1364,16 @@ class SpotifyClient:
     def _pathfinder_add(self, playlist_id: str, uris: list[str]) -> None:
         """Add tracks through the web player (no Web API, no 30s rolling window)."""
         self.last_write_route = "web-player"
-        for uri in uris:
+        # One mutation per 100 URIs, exactly like the browser: fewer calls, less
+        # rate limit, and no half-applied batch to reason about.
+        for start in range(0, len(uris), 100):
+            chunk = uris[start : start + 100]
             try:
-                self._pathfinder_write(playlist_id, uri)
+                self._pathfinder_write_many(playlist_id, chunk)
             except Exception as exc:
                 self.last_write_error = f"web-player: {str(exc)[:200]}"
                 raise
-            self.writes_landed += 1
+            self.writes_landed += len(chunk)
             self._pace()
 
     def playlist_info(self, playlist_id: str) -> dict[str, str]:
