@@ -107,6 +107,8 @@ def cfg(tmp_path):
     c.overrides_path = str(tmp_path / "overrides.json")
     c.cache_path = str(tmp_path / "cache.json")
     c.source_cache_path = str(tmp_path / "source-cache.json")
+    # every run() rewrites the manual bucket — never the repo's real file
+    c.manual_queue_path = str(tmp_path / "manual-queue.txt")
     (tmp_path / "overrides.json").write_text('{"overrides": {}}')
     return c
 
@@ -488,8 +490,6 @@ def test_a_throttled_add_is_never_recorded_as_added(monkeypatch, cfg):
     import time as _time
 
     cfg.youtube_enabled = False
-    # never write into the repo's real data/ files from a test
-    cfg.manual_queue_path = cfg.state_path.replace("state.json", "manual.txt")
     tracks = _many_tracks(4)
     spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
 
@@ -1515,7 +1515,6 @@ def test_a_setup_failure_is_printed_and_summarised(monkeypatch, cfg, capsys):
 
 def test_the_old_parked_but_added_state_is_repaired_once(monkeypatch, cfg):
     """State written by the buggy version: parked AND marked added, same instant."""
-    from phonksync.models import Track
 
     cfg.youtube_enabled = False
     tracks = _many_tracks(2)
