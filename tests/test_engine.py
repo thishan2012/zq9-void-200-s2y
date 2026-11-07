@@ -1308,3 +1308,69 @@ def test_a_writes_only_run_adds_the_backlog_and_searches_nothing(monkeypatch, cf
     assert youtube.inserted == ["vidQUEUE0001"]   # the backlog was written
     assert youtube.searches == []                 # nothing was searched
     assert report.pending_youtube_flushed == 1
+
+
+# ------------------------------------------------- secret audit (names only)
+_AUDIT_ENV = {
+    "SPOTIFY_COOKIE": "sp_dc=" + "a" * 60,
+    "SPOTIFY_SOURCE_PLAYLISTS": "src" + "a" * 19,
+    "SPOTIFY_TARGET_PLAYLIST": "tgt" + "b" * 19,
+    "TELEGRAM_BOT_TOKEN": "1:abc",
+    "TELEGRAM_CHAT_ID": "1",
+    "YOUTUBE_ENABLED": "true",
+    "YOUTUBE_TARGET_PLAYLIST": "PL" + "x" * 20,
+    "YOUTUBE_API_KEY": "AIza",
+}
+
+
+def _run_check(monkeypatch, capsys, **extra):
+    import phonksync.__main__ as main
+
+    for key in list(_AUDIT_ENV) + ["YT_REFRESH_TOKEN", "YT_CLIENT_ID",
+                                   "YT_CLIENT_SECRET", "YT_COOKIE", "PROXY_URL",
+                                   "SPOTIFY_PROXY_URL"]:
+        monkeypatch.delenv(key, raising=False)
+    for key, value in {**_AUDIT_ENV, **extra}.items():
+        monkeypatch.setenv(key, value)
+    code = main.main(["check"])
+    return code, capsys.readouterr().out
+
+
+def test_check_names_every_secret_and_never_prints_a_value(monkeypatch, capsys):
+    code, out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN="1//secret-token", YT_CLIENT_ID="1234-abcdef.apps.googleusercontent.com",
+        YT_CLIENT_SECRET="shhh-client-secret", YT_COOKIE="SID=abc; __Secure-3PAPISID=xyz",
+    )
+    assert code == 0
+    assert "YT_REFRESH_TOKEN" in out and "YT_CLIENT_SECRET" in out
+    assert "YouTube writes will use: OAuth refresh token" in out
+    for secret in ("secret-token", "shhh-client-secret", "AIza", "sp_dc="):
+        assert secret not in out, f"a secret value leaked into the log: {secret}"
+
+
+def test_half_an_oauth_pair_fails_the_check(monkeypatch, capsys):
+    code, out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN="1//t",
+        YT_CLIENT_ID="1234-abcdefghijklmnopqrst.apps.googleusercontent.com",
+    )
+    assert code == 1
+    assert "YT_CLIENT_SECRET is missing" in out
+
+
+def test_proxy_url_short_name_now_works(monkeypatch, capsys):
+    code, out = _run_check(monkeypatch, capsys, PROXY_URL="https://proxy.example/")
+    assert code == 0
+    assert "Spotify route: proxy https://proxy.example/" in out
+
+
+def test_a_swapped_token_fails_the_check(monkeypatch, capsys):
+    code, out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN="ya29.access-token",
+        YT_CLIENT_ID="1234-abcdefghijklmnopqrst.apps.googleusercontent.com",
+        YT_CLIENT_SECRET="s",
+    )
+    assert code == 1
+    assert "access token" in out

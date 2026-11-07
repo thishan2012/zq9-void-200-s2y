@@ -183,6 +183,14 @@ class Config:
             elif os.environ.get("DRY_RUN_TRACK_LIMIT"):
                 cfg.dry_run_track_limit = int(os.environ["DRY_RUN_TRACK_LIMIT"])
 
+        # Accept the short name too: people save the secret as PROXY_URL.
+        # Only the config object is touched (engine copies it into the env), so a
+        # `check` run cannot leave the process pointed at a proxy.
+        if not os.environ.get("SPOTIFY_PROXY_URL", "").strip():
+            short = os.environ.get("PROXY_URL", "").strip()
+            if short and not cfg.spotify_proxy_url:
+                cfg.spotify_proxy_url = short
+
         cfg.spotify_source_playlists = [
             parse_spotify_playlist_id(p) for p in cfg.spotify_source_playlists
         ]
@@ -277,6 +285,12 @@ class Secrets:
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
         )
+
+    def token_problems(self) -> list[str]:
+        """Catch swapped/expired-shape tokens before a run starts."""
+        from .oauth_setup import check_token_types
+
+        return check_token_types(self.youtube_refresh_token, self.youtube_access_token)
 
     def validate(self, require_telegram: bool = False, require_youtube: bool = False) -> None:
         missing = []

@@ -304,6 +304,34 @@ looks wrong, open the job summary first, then the artifact.
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.
 
+## Which secrets do I actually need? (`check` prints the list)
+
+Every run now starts with a names-only audit — no value is ever printed:
+
+```
+🔑 Secrets found in this run (names only — values are never printed)
+   ✅ SPOTIFY_COOKIE             [required    ] Spotify login (sp_dc) — reads the playlists
+   ✅ YT_REFRESH_TOKEN           [required    ] YouTube writes (1//…, never expires)
+   ✅ YT_CLIENT_ID               [needs secret] the OAuth client that issued YT_REFRESH_TOKEN
+   ⚠️ PROXY_URL                  [typo/rename ] NOT READ by the bot …
+   ✍️  YouTube writes will use: OAuth refresh token
+```
+
+Rules it enforces:
+
+| situation | result |
+|---|---|
+| `YT_CLIENT_ID` without `YT_CLIENT_SECRET` (or the reverse) | `check` fails — a half pair cannot redeem a token |
+| `YT_REFRESH_TOKEN` holding a `ya29.` access token | `check` fails — that shape dies in ~1h |
+| both `YT_REFRESH_TOKEN` and `YT_COOKIE` | OAuth wins, the log says so |
+| `YT_CLIENT_JSON` **and** id+secret | the JSON wins, the log says so |
+| `PROXY_URL` instead of `SPOTIFY_PROXY_URL` | accepted as an alias (the long name still wins) |
+
+Only four things are truly required for a run: `SPOTIFY_COOKIE`,
+`SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`, and the Telegram pair.
+Everything YouTube is optional until you want writes, and even then a refresh
+token is a usable path on its own — once the client secret is there too.
+
 ## I only have `YT_REFRESH_TOKEN` — do I need the client id too?
 
 **The token alone is enough**, as long as the bot knows the OAuth client that

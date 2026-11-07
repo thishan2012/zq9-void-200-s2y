@@ -50,6 +50,106 @@ def _is_rate_limit_text(text: str) -> bool:
     return "429" in low or "throttl" in low or "rate limit" in low or "cooldown" in low
 
 
+# name -> (what it does, is it still used?)
+_SECRET_NOTES: list[tuple[str, str, str]] = [
+    ("SPOTIFY_COOKIE", "Spotify login (sp_dc) — reads the playlists", "required"),
+    ("SPOTIFY_COOKIE_2", "spare Spotify account, used only after a 429", "optional"),
+    ("SPOTIFY_SOURCE_PLAYLISTS", "source playlist id(s)", "required"),
+    ("SPOTIFY_TARGET_PLAYLIST", "where tracks are added", "required"),
+    ("TELEGRAM_BOT_TOKEN", "the one end-of-run message", "required"),
+    ("TELEGRAM_CHAT_ID", "which chat gets it", "required"),
+    ("YOUTUBE_API_KEY", "YouTube search (100 units/query); free pages are used first", "optional"),
+    ("YT_API_KEY", "alias of YOUTUBE_API_KEY", "alias"),
+    ("YOUTUBE_ENABLED", "true/false: sync to YouTube at all", "required"),
+    ("YOUTUBE_TARGET_PLAYLIST", "the YouTube playlist to fill", "required"),
+    ("YT_REFRESH_TOKEN", "YouTube writes (1//…, never expires) — this is the one", "required"),
+    ("YT_CLIENT_ID", "the OAuth client that issued YT_REFRESH_TOKEN", "needs secret"),
+    ("YT_CLIENT_SECRET", "the OAuth client's secret (both halves or neither)", "needs id"),
+    ("YT_CLIENT_JSON", "the downloaded OAuth client file — replaces id+secret", "alternative"),
+    ("YOUTUBE_OAUTH_TOKEN_JSON", "a whole token.json (client + refresh token in one)", "alternative"),
+    ("YT_COOKIE", "browser-cookie writes — not needed once OAuth works", "alternative"),
+    ("PROXY_URL", "short name for the same proxy (accepted as an alias)", "alias"),
+]
+
+_PROXY_ALIASES = ("SPOTIFY_PROXY_URL",)
+# Filled in by `_audit_secrets`, read by `cmd_check`. One run per process, so a
+# module-level list is simpler than threading a return value through.
+_audit_problems: list[str] = []
+
+
+def _audit_secrets(secrets, cfg) -> None:
+    """Name every configured secret and say what it is for (values never shown)."""
+    _audit_problems.clear()  # a second `check` in the same process must not stack
+    configured = {
+        name: bool(os.environ.get(name, "").strip())
+        for name, _, _ in _SECRET_NOTES
+    }
+    for alias in _PROXY_ALIASES + ("SPOTIFY_PROXY_SECRET", "YT_AUTHUSER", "MAX_INSERTS_PER_DAY"):
+        configured.setdefault(alias, bool(os.environ.get(alias, "").strip()))
+
+    has_id = bool(secrets.youtube_client_id)
+    has_secret = bool(secrets.youtube_client_secret)
+    rows = [
+        (name, note, status)
+        for name, note, status in _SECRET_NOTES
+        if configured.get(name) and not (status == "needs id" and not has_id)
+    ]
+    missing = [n for n, _, s in _SECRET_NOTES if s == "required" and not configured.get(n)]
+
+    print("\n🔑 Secrets found in this run (names only — values are never printed)")
+    if rows:
+        for name, note, status in rows:
+            bad = status == "typo/rename"
+            if status == "needs secret" and not has_secret:
+                bad = True
+            print(f"   {'⚠️' if bad else '✅'} {name:26} [{status:12}] {note}")
+    else:
+        print("   (none)")
+    if configured.get("SPOTIFY_PROXY_URL"):
+        print(f"   ✅ {'SPOTIFY_PROXY_URL':26} [{'optional':12}] Spotify egress proxy")
+
+    # YouTube: which single path will actually be used?
+    has_refresh = bool(secrets.youtube_refresh_token)
+    has_pair = bool(secrets.youtube_client_id and secrets.youtube_client_secret)
+    has_id_only = bool(secrets.youtube_client_id and not secrets.youtube_client_secret)
+    has_json = bool(secrets.youtube_client_json or secrets.youtube_token_json)
+    has_cookie = bool(secrets.youtube_cookie)
+    if has_refresh or has_pair or has_json or has_cookie:
+        path = "none"
+        if has_refresh and (has_pair or has_json or (not has_id_only)):
+            path = "OAuth refresh token"
+        elif has_cookie:
+            path = "browser cookie"
+        elif has_json:
+            path = "token JSON"
+        print(f"\n   ✍️  YouTube writes will use: {path}")
+        if has_id_only:
+            print(
+                "   ⚠️  YT_CLIENT_ID is set but YT_CLIENT_SECRET is not — a refresh "
+                "token cannot be redeemed with half a pair."
+            )
+        if has_refresh and has_cookie:
+            print("   ℹ️  Both YT_REFRESH_TOKEN and YT_COOKIE are set; OAuth wins.")
+        if has_json and has_pair:
+            print("   ℹ️  YT_CLIENT_JSON and YT_CLIENT_ID/SECRET are set; the JSON wins.")
+        if has_json and has_refresh:
+            print("   ℹ️  YouTube token JSON already carries the client and the token.")
+    if has_id_only:
+        _audit_problems.append(
+            "YT_CLIENT_ID is set but YT_CLIENT_SECRET is missing — a refresh token "
+            "cannot be redeemed with half an OAuth client (add the secret or delete "
+            "the id)."
+        )
+    if configured.get("PROXY_URL") and configured.get("SPOTIFY_PROXY_URL"):
+        print(
+            "\n   ℹ️  PROXY_URL and SPOTIFY_PROXY_URL are both set; the long name wins. "
+            "You can delete PROXY_URL."
+        )
+    if missing:
+        print(f"\n   ❌ Missing but required: {', '.join(sorted(missing))}")
+    print()
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     cfg = Config.load(args.config)
     secrets = Secrets.from_env()
@@ -113,11 +213,16 @@ def cmd_check(args: argparse.Namespace) -> int:
                 )
     except ConfigError as exc:
         problems.append(f"Config: {exc}")
+    _audit_secrets(secrets, cfg)
+    problems.extend(_audit_problems)
     try:
         secrets.validate(require_youtube=cfg.youtube_enabled)
         print("✅ Required secrets present")
     except ConfigError as exc:
         problems.append(str(exc))
+
+    for problem in secrets.token_problems():
+        problems.append(problem)
 
     # Early Spotify cookie parse check (no network) — catches the
     # common \"Could not find sp_dc\" mistake even without --live.
@@ -136,7 +241,11 @@ def cmd_check(args: argparse.Namespace) -> int:
             )
     from .spotify import _with_proxy, proxy_headers
 
-    proxy = os.environ.get("SPOTIFY_PROXY_URL", "").strip() or cfg.spotify_proxy_url
+    proxy = (
+        os.environ.get("SPOTIFY_PROXY_URL", "").strip()
+        or os.environ.get("PROXY_URL", "").strip()  # the short name people actually save
+        or cfg.spotify_proxy_url
+    )
     if proxy:
         mode = "header mode (x-proxy-secret)" if proxy_headers() else "query mode"
         print(f"🔗 Spotify route: proxy {proxy} — {mode}")

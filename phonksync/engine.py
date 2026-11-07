@@ -86,6 +86,7 @@ class RunReport:
     # (display name, seconds, methods tried) for every matched track
     track_times: list[tuple[str, float, int]] = field(default_factory=list)
     candidate_pool: int = 0  # near-misses kept for a later, reviewed add
+    youtube_auth_failed: bool = False  # credential refused before any work
     free_matches: int = 0
     spotify_throttled: bool = False
     searches_used: int = 0
@@ -320,6 +321,32 @@ class SyncEngine:
 
     # ------------------------------------------------------------------ run
 
+    def _preflight_youtube(self, report: RunReport) -> None:
+        """Prove the write path once, before any track spends a search.
+
+        Two real failures this prevents:
+          * an OAuth client id without its secret (a half-filled pair) — every
+            insert would fail after its 50 quota units were already counted;
+          * a swapped/expired-shape token (ya29… in YT_REFRESH_TOKEN).
+        """
+        yt = self.youtube
+        if yt is None or not getattr(yt, "can_write", False):
+            return
+        try:
+            yt._ensure_token()
+        except AuthError as exc:
+            report.youtube_write_problem = str(exc)
+            report.youtube_auth_failed = True
+            self._detail(
+                report,
+                "✍️ YouTube writes are paused for this run — the credential was "
+                f"refused before a single track was processed ({escape(str(exc))})",
+            )
+            log.warning("YouTube credential refused: %s", exc)
+            return
+        except Exception as exc:  # never let the preflight kill a run
+            log.warning("YouTube preflight skipped: %s", exc)
+
     def _youtube_write_problem(self) -> str:
         """Why writes are off, in terms of the credential actually missing."""
         yt = self.youtube
@@ -458,6 +485,7 @@ class SyncEngine:
             return report
 
         if not cfg.dry_run:
+            self._preflight_youtube(report)
             self._flush_pending_youtube(report)
 
         if cfg.youtube_writes_only:
@@ -1077,6 +1105,15 @@ class SyncEngine:
             except QuotaExceeded as exc:
                 report.quota_reason = str(exc)
                 break
+            except AuthError as exc:  # credential refused: stop once, not 50x
+                report.youtube_auth_failed = True
+                report.youtube_write_problem = str(exc)
+                self._detail(
+                    report,
+                    "✍️ YouTube writes stopped at the first refusal — nothing else "
+                    f"was attempted ({escape(str(exc))})",
+                )
+                break
             except Exception as exc:  # keep the rest for the next run
                 log.warning("Could not add pending %s: %s", video_id, exc)
                 break
@@ -1191,7 +1228,7 @@ class SyncEngine:
         if not spotify_done:
             self._add_spotify(track, target_spotify_ids, report)
         if video_id and not youtube_done:
-            if getattr(self.youtube, "can_write", True):
+            if getattr(self.youtube, "can_write", True) and not report.youtube_auth_failed:
                 self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
                 target_youtube_ids.add(video_id)
             elif not report.quota_reason:

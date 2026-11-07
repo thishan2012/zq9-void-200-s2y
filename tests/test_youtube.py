@@ -921,3 +921,38 @@ def test_check_refresh_token_tries_each_known_client():
         assert check_refresh_token("1//token", session=session) == 0
     finally:
         o.usable_client_secrets = original
+
+
+# ------------------------------------------- half-filled / swapped credentials
+def test_a_client_id_without_its_secret_fails_before_any_insert():
+    """YT_CLIENT_ID set, YT_CLIENT_SECRET empty: say it once, no quota spent."""
+    from phonksync.errors import AuthError
+    from phonksync.youtube import YouTubeClient
+
+    session = _TokenSession(ok_client="anything")
+    yt = YouTubeClient(
+        client_id="1234-abcdef.apps.googleusercontent.com",
+        client_secret="",
+        refresh_token="1//token",
+        session=session,
+        free_search=False,
+    )
+    with pytest.raises(AuthError) as exc:
+        yt._ensure_token()
+    msg = str(exc.value)
+    assert "no client secret" in msg and "YT_CLIENT_SECRET" in msg
+    assert yt.client_secret_missing is True
+    assert session.requests == []          # nothing was sent to Google
+
+
+def test_swapped_token_types_are_reported_by_the_config_layer(tmp_path, monkeypatch):
+    from phonksync.settings import Config
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "ya29.access-token-in-the-wrong-slot")
+    Config.load(cfg_path)  # noqa: F841  (env is what matters)
+    from phonksync.settings import Secrets
+
+    problems = Secrets.from_env().token_problems()
+    assert problems and "access token" in problems[0]
