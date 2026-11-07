@@ -1658,3 +1658,28 @@ def test_a_write_that_really_landed_is_marked_added(monkeypatch, cfg):
     assert waiting.id not in eng.state.pending_spotify()
     assert eng.state.data["synced"][waiting.id]["spotify_added"] is True
     assert "are NOT in the target playlist" not in report.summary_text()
+
+
+def test_a_refused_batch_records_why_in_the_state_file(monkeypatch, cfg):
+    """So the reason is readable from data/sync-state.json, with no log at all."""
+    from phonksync.models import Track
+
+    cfg.youtube_enabled = False
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: _many_tracks(1)})
+
+    def refuse(playlist_id, uris):
+        spotify.last_write_error = "Spotify refused the write on both routes — test"
+        raise RuntimeError("refused")
+
+    spotify.add_tracks = refuse
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    waiting = Track(id="nope0000000000000000001", name="LUZ", artists=["HDN"],
+                    uri="spotify:track:nope0000000000000000001")
+    eng.state.add_manual(waiting, reason="Spotify asked to slow down")
+    eng.state.add_pending_spotify(waiting)
+    report = eng.run()
+
+    recorded = eng.state.last_write_problem()
+    assert "both routes" in recorded["message"]
+    assert report.parked_spotify == 1
+    assert "both routes" in report.summary_text()

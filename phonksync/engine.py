@@ -1258,10 +1258,27 @@ class SyncEngine:
         try:
             self.spotify.add_tracks(self.config.spotify_target_playlist, uris)
         except Exception as exc:
+            problem = getattr(self.spotify, "last_write_error", "") or str(exc)
             log.warning(
-                "Still could not add %d parked Spotify track(s): %s", len(uris), exc
+                "Still could not add %d parked Spotify track(s): %s", len(uris), problem
+            )
+            self.state.note_write_problem(
+                problem,
+                route=getattr(self.spotify, "last_write_route", ""),
+                account=getattr(self.spotify, "account_username", ""),
             )
             report.parked_spotify = len(uris)
+            hint = ""
+            try:
+                hint = self.spotify.permission_hint(self.config.spotify_target_playlist)
+            except Exception:  # best effort: never hide the real error
+                hint = ""
+            report.spotify_note = "ℹ️ write refused: " + escape(problem[:300])
+            if hint:
+                report.spotify_note += "\nℹ️ " + escape(hint)
+                self.state.note_write_problem(f"{problem} | {hint}",
+                                              route=getattr(self.spotify, "last_write_route", ""),
+                                              account=getattr(self.spotify, "account_username", ""))
             return
         landed = self._confirm_spotify_writes(uris, report)
         if landed is None:  # could not check: trust the API answer
