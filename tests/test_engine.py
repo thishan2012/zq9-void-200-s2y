@@ -1179,3 +1179,111 @@ def test_youtube_problem_separates_not_set_from_unusable(monkeypatch, cfg):
     engine2 = build_engine(monkeypatch, cfg, spotify, BadCookie())
     problem = engine2._youtube_write_problem()
     assert "set but unusable" in problem and "SAPISID" in problem
+
+
+# ------------------------------------------- a write credential appears later
+def test_unmatched_track_keeps_its_best_candidate_without_writing(monkeypatch, cfg):
+    """A near-miss is remembered for review — never added, never re-searched."""
+    cfg.youtube_enabled = True
+    track = make_track(id="track000000000000000081", name="AWE - SLOWED", artists=["NVRVYN"])
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    # A promo upload with the right title words: found, but the artist evidence
+    # is not good enough for the checks.
+    close = make_candidate(
+        "vidAWE00001", "NVRVYN - AWE (Super Slowed)", channel="promo channel"
+    )
+    youtube = EngineYouTube(catalog={"vidAWE00001": close},
+                            search_map={"nvrvyn awe - slowed": ["vidAWE00001"]})
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = engine.run()
+
+    assert report.unmatched == 1                     # still a miss
+    assert youtube.inserted == []                    # nothing was written
+    saved = engine.state.candidates()
+    assert len(saved) == 1
+    assert saved[0]["video_id"] == "vidAWE00001"
+    assert report.candidate_pool == 1
+
+
+def test_pending_lists_waiting_matches_and_adds_no_duplicates(monkeypatch, cfg, tmp_path, capsys):
+    import phonksync.__main__ as main
+    from phonksync.db import StateDB
+
+    cfg.youtube_target_playlist = "PLtarget"
+    monkeypatch.setenv("SPOTIFY_COOKIE", "sp_dc=" + "a" * 60)
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//refresh")
+    monkeypatch.setenv("YT_CLIENT_ID", "cid")
+    monkeypatch.setenv("YT_CLIENT_SECRET", "secret")
+
+    db = StateDB(cfg.state_path)
+    track = make_track(id="track000000000000000091", name="WAITING ONE")
+    db.mark_synced(track, "vidWAIT00001", "STRICT", True, False)
+    db.save()
+
+    class FakeYT:
+        can_write = True
+
+        def __init__(self, *a, **kw):
+            self.added = []
+
+        def playlist_video_ids(self, playlist_id):
+            return set()  # not there yet
+
+        def add_to_playlist(self, playlist_id, video_id):
+            self.added.append(video_id)
+
+    import phonksync.youtube as yt_mod
+
+    fake = FakeYT()
+    monkeypatch.setattr(yt_mod, "YouTubeClient", lambda *a, **kw: fake)
+    monkeypatch.setattr(main, "Config", type("C", (), {"load": classmethod(lambda cls, p: cfg)}))
+
+    assert main.main(["pending"]) == 0
+    out = capsys.readouterr().out
+    assert "1 matched video(s) waiting" in out
+    assert fake.added == []          # listing never writes
+
+    assert main.main(["pending", "--add"]) == 0
+    assert fake.added == ["vidWAIT00001"]
+    assert StateDB(cfg.state_path).pending_youtube() == []
+
+
+def test_pending_add_skips_videos_that_are_already_in_the_playlist(monkeypatch, cfg, capsys):
+    import phonksync.__main__ as main
+    from phonksync.db import StateDB
+
+    cfg.youtube_target_playlist = "PLtarget"
+    monkeypatch.setenv("SPOTIFY_COOKIE", "sp_dc=" + "a" * 60)
+    db = StateDB(cfg.state_path)
+    db.mark_synced(make_track(id="track000000000000000092"), "vidDUP000001", "STRICT", True, False)
+    db.save()
+
+    class FakeYT:
+        can_write = True
+
+        def __init__(self, *a, **kw):
+            self.added = []
+
+        def playlist_video_ids(self, playlist_id):
+            return {"vidDUP000001"}     # already added on YouTube earlier
+
+        def add_to_playlist(self, playlist_id, video_id):
+            self.added.append(video_id)
+
+    import phonksync.youtube as yt_mod
+
+    fake = FakeYT()
+    monkeypatch.setattr(yt_mod, "YouTubeClient", lambda *a, **kw: fake)
+    monkeypatch.setattr(main, "Config", type("C", (), {"load": classmethod(lambda cls, p: cfg)}))
+
+    assert main.main(["pending", "--add"]) == 0
+    assert fake.added == []                       # no duplicate write
+    assert "already there 1" in capsys.readouterr().out
+
+
+def test_summary_mentions_the_near_miss_pool(monkeypatch, cfg):
+    from phonksync.engine import RunReport
+
+    report = RunReport(started_at="now")
+    report.candidate_pool = 3
+    assert "3" in report.summary_text()

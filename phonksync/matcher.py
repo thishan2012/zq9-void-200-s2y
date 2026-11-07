@@ -101,6 +101,8 @@ class Matcher:
         self.exact_duration_tolerance = exact_duration_tolerance
         self.last_tried: list[str] = []
         self.last_won: str = ""
+        # The candidates a failed track actually produced (safe to show later).
+        self.last_pool: list[Candidate] = []
 
     # ------------------------------------------------------------- searching
 
@@ -647,6 +649,7 @@ class Matcher:
         ctx = MatchContext(track=track)
         self.last_tried = []
         self.last_won = ""
+        self.last_pool = []
         early = self._free_pass(ctx)
         if early is not None:
             return early
@@ -664,4 +667,5 @@ class Matcher:
             if hit:
                 self.last_won = code
                 return MatchResult(candidate=hit, method=code, tried=list(self.last_tried))
+        self.last_pool = ctx.candidates()
         return None

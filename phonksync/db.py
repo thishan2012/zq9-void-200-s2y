@@ -35,6 +35,9 @@ class StateDB:
             "stats": {"methods": {}, "runs": 0, "total_added": 0},
             "quota": {},
             "spotify": {},
+            # near-misses: found video, failed the safety checks. Never added
+            # automatically — `phonksync pending --add` is an explicit opt-in.
+            "candidates": {},
         }
         self._load()
 
@@ -51,6 +54,7 @@ class StateDB:
         self.data.setdefault("synced", {})
         self.data.setdefault("unmatched", {})
         self.data.setdefault("skipped", {})
+        self.data.setdefault("candidates", {})
         self.data.setdefault("stats", {"methods": {}, "runs": 0, "total_added": 0})
         self.data["stats"].setdefault("methods", {})
 
@@ -225,6 +229,37 @@ class StateDB:
         already_counted = bool(prev and (prev.get("spotify_added") or prev.get("youtube_added")))
         if (spotify_added or youtube_added) and not already_counted:
             self.data["stats"]["total_added"] = self.data["stats"].get("total_added", 0) + 1
+
+    # ------------------------------------------------------ near-miss pool
+
+    def add_candidate(
+        self,
+        track: Track,
+        *,
+        video_id: str,
+        title: str,
+        channel: str,
+        duration_s: int,
+        methods: int,
+    ) -> None:
+        """Remember the closest candidate of an unmatched track (no writes)."""
+        self.data["candidates"][track.id] = {
+            "spotify_id": track.id,
+            "name": track.name,
+            "artists": track.artists,
+            "video_id": video_id,
+            "title": title,
+            "channel": channel,
+            "duration_s": int(duration_s or 0),
+            "methods": int(methods or 0),
+            "seen_at": _now(),
+        }
+
+    def candidates(self) -> list[dict[str, Any]]:
+        return list(self.data.get("candidates", {}).values())
+
+    def drop_candidate(self, spotify_id: str) -> None:
+        self.data.get("candidates", {}).pop(spotify_id, None)
 
     # ------------------------------------------------------------- unmatched
 

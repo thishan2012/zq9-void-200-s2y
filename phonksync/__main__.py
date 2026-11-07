@@ -724,7 +724,8 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
         print(f"🔑 using client id from {'the command line' if args.client_id else 'YT_CLIENT_ID'}")
         if args.doctor:
             return doctor(
-                client_json="", client_id=client_id, client_secret=secret
+                client_json="", client_id=client_id, client_secret=secret,
+                live=getattr(args, "live", False),
             )
         # Hand the flow an inline JSON so every sub-mode works from an id alone.
         try:
@@ -738,6 +739,7 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
             client_json=source,
             client_id=args.client_id or os.environ.get("YT_CLIENT_ID", ""),
             client_secret=args.client_secret or os.environ.get("YT_CLIENT_SECRET", ""),
+            live=getattr(args, "live", False),
         )
     if args.device:
         return run_device_flow(source)
@@ -746,6 +748,86 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
     if args.code:
         return exchange_code(source, args.code, args.redirect_uri)
     return run_oauth_flow(source, port=args.port, redirect_uri=args.redirect_uri)
+
+
+def cmd_pending(args: argparse.Namespace) -> int:
+    """Show (and optionally add) what is waiting for a YouTube write credential."""
+    from .db import StateDB
+    from .settings import Secrets
+    from .youtube import YouTubeClient
+
+    cfg = Config.load(args.config)
+    db = StateDB(cfg.state_path)
+    waiting = db.pending_youtube()
+    near = db.candidates()
+
+    if not waiting and not near:
+        print("✅ Nothing pending — every matched track already reached YouTube.")
+        return 0
+
+    if waiting:
+        print(f"✍️  {len(waiting)} matched video(s) waiting for a write credential:")
+        for entry in waiting[: args.limit]:
+            print(f"   • {entry.get('name', '?')} — {entry.get('artists', '')}")
+            print(f"     https://www.youtube.com/watch?v={entry.get('youtube_video_id', '')}")
+    if near:
+        print(
+            f"\n❓ {len(near)} near-miss candidate(s): the checks said no, so they are "
+            "NEVER added automatically"
+        )
+        for entry in near[: args.limit]:
+            print(f"   • {entry.get('name', '?')} — {entry.get('artists', '')}")
+            print(
+                f"     → {entry.get('title', '?')} "
+                f"[{entry.get('channel', '?')}] "
+                f"https://www.youtube.com/watch?v={entry.get('video_id', '')}"
+            )
+
+    if not args.add:
+        print("\n👉 `phonksync pending --add` writes the waiting ones to the YouTube playlist.")
+        print("   Pin a near-miss you trust instead: `phonksync manual --track <id> --video <id>`")
+        return 0
+
+    secrets = Secrets.from_env()
+    yt = YouTubeClient(
+        client_json=secrets.youtube_client_json,
+        client_id=secrets.youtube_client_id,
+        client_secret=secrets.youtube_client_secret,
+        refresh_token=secrets.youtube_refresh_token,
+        token_json=secrets.youtube_token_json,
+        api_key=secrets.youtube_api_key,
+        cookie=secrets.youtube_cookie,
+        authuser=secrets.youtube_authuser,
+        free_search=False,
+    )
+    if not yt.can_write:
+        print("❌ Still no write credential — set YT_REFRESH_TOKEN or YT_COOKIE first.")
+        return 1
+    if not cfg.youtube_target_playlist:
+        print("❌ youtube_target_playlist is not configured.")
+        return 1
+    existing = yt.playlist_video_ids(cfg.youtube_target_playlist)
+    added = skipped = failed = 0
+    for entry in waiting[: args.limit]:
+        video_id = entry.get("youtube_video_id", "")
+        if not video_id:
+            continue
+        if video_id in existing:  # never create a duplicate
+            entry["youtube_added"] = True
+            skipped += 1
+            continue
+        try:
+            yt.add_to_playlist(cfg.youtube_target_playlist, video_id)
+        except Exception as exc:  # no retry: a duplicate is worse than a miss
+            print(f"⚠️  {entry.get('name', '?')}: {exc}")
+            failed += 1
+            continue
+        entry["youtube_added"] = True
+        existing.add(video_id)
+        added += 1
+        db.save()  # flush per track: a crash must not double-add
+    print(f"\n✅ Added {added}, already there {skipped}, failed {failed}.")
+    return 0 if not failed else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -838,6 +920,15 @@ def main(argv: list[str] | None = None) -> int:
     p_fix.add_argument("--out", default="", help="Write the sp_dc value to this file")
     p_fix.set_defaults(func=cmd_cookie_fix)
 
+    p_pending = sub.add_parser(
+        "pending", help="Show (and add) matches waiting for a YouTube write credential"
+    )
+    p_pending.add_argument(
+        "--add", action="store_true", help="Write them to the YouTube playlist now (no duplicates)"
+    )
+    p_pending.add_argument("--limit", type=int, default=50, help="How many to show/add")
+    p_pending.set_defaults(func=cmd_pending)
+
     p_auth = sub.add_parser("youtube-auth", help="One-time YouTube OAuth setup (get refresh token)")
     p_auth.add_argument(
         "--client-json",
@@ -873,6 +964,11 @@ def main(argv: list[str] | None = None) -> int:
         "--doctor",
         action="store_true",
         help="Only report what is missing for YouTube writes",
+    )
+    p_auth.add_argument(
+        "--live",
+        action="store_true",
+        help="With --doctor: actually exchange the refresh token and read the playlist",
     )
     p_auth.add_argument(
         "--cookie-help",
