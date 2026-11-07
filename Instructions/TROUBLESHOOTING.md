@@ -304,6 +304,33 @@ looks wrong, open the job summary first, then the artifact.
 If you see that often, lower `spotify_max_requests_per_run` (default 40) — a
 preview of 30 tracks then needs ~2 calls, not a page-turn loop.
 
+## `YT_CLIENT_SECRET` is set — why did it say it is missing?
+
+Three real causes, and the log now names the one you have:
+
+| symptom in the log | cause | fix |
+|---|---|---|
+| `YT_CLIENT_SECRET exists but its value is empty` | the secret was created but nothing was pasted into it (the GitHub list shows a name + a date either way) | open it → **Update** → paste |
+| `… its value is a placeholder` | `none` / `todo` / `changeme` / `xxxxxxxx` | paste the real value |
+| the id and the secret come from **different** OAuth clients | `invalid_client` on every exchange | use the id **and** secret of the same client |
+
+And the one that used to be silent: when `YT_CLIENT_JSON` (or
+`YOUTUBE_OAUTH_TOKEN_JSON`) is present, its client used to *override*
+`YT_CLIENT_ID`/`YT_CLIENT_SECRET` completely — so a perfectly good secret was
+never tried. Now the JSON client is tried first and **then** the pair, and the
+run prints which client actually worked:
+
+```
+✍️ YouTube writes: OAuth via client 1234-…apps.googleusercontent.com (the token works with this client)
+```
+
+Proof that the current state is fine, without guessing:
+
+```bash
+python -m phonksync check --live            # audits names, then really exchanges the token
+python -m phonksync youtube-auth --check-token   # only the token → which client accepts it
+```
+
 ## Which secrets do I actually need? (`check` prints the list)
 
 Every run now starts with a names-only audit — no value is ever printed:

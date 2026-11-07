@@ -96,12 +96,37 @@ def _audit_secrets(secrets, cfg) -> None:
     ]
     missing = [n for n, _, s in _SECRET_NOTES if s == "required" and not configured.get(n)]
 
+    def _looks_unset(value: str) -> str:
+        """A secret that EXISTS but is empty/placeholder is worse than missing.
+
+        Length is never judged: a short value is still the user's value, and a
+        false alarm is worse than no alarm (that was the lesson of this page).
+        """
+        text = (value or "").strip()
+        if not text:
+            return "empty"
+        if text.lower() in {"none", "null", "todo", "changeme", "placeholder", "xxx", "-"}:
+            return "a placeholder"
+        return ""
+
+    suspicious = {
+        name: _looks_unset(os.environ.get(name, ""))
+        for name in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN",
+                     "SPOTIFY_COOKIE", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
+                     "SPOTIFY_SOURCE_PLAYLISTS", "SPOTIFY_TARGET_PLAYLIST")
+        if name in os.environ  # only a *present* secret can be present-but-empty
+    }
+    suspicious = {k: v for k, v in suspicious.items() if v}
+
     print("\n🔑 Secrets found in this run (names only — values are never printed)")
     if rows:
         for name, note, status in rows:
             bad = status == "typo/rename"
             if status == "needs secret" and not has_secret:
                 bad = True
+            if name in suspicious:
+                bad = True
+                note = f"the value is {suspicious[name]} — {note}"
             print(f"   {'⚠️' if bad else '✅'} {name:26} [{status:12}] {note}")
     else:
         print("   (none)")
@@ -131,9 +156,20 @@ def _audit_secrets(secrets, cfg) -> None:
         if has_refresh and has_cookie:
             print("   ℹ️  Both YT_REFRESH_TOKEN and YT_COOKIE are set; OAuth wins.")
         if has_json and has_pair:
-            print("   ℹ️  YT_CLIENT_JSON and YT_CLIENT_ID/SECRET are set; the JSON wins.")
+            print(
+                "   ℹ️  YT_CLIENT_JSON and YT_CLIENT_ID/SECRET are both set: the JSON "
+                "client is tried first, then the pair (so a token from either works)."
+            )
         if has_json and has_refresh:
-            print("   ℹ️  YouTube token JSON already carries the client and the token.")
+            print(
+                "   ℹ️  YOUTUBE_OAUTH_TOKEN_JSON carries its own client; "
+                "YT_REFRESH_TOKEN is the token that will be used."
+            )
+    for name, why in suspicious.items():
+        _audit_problems.append(
+            f"{name} exists but its value is {why} — re-paste it "
+            "(a blank or placeholder secret fails in a way that looks like a bug)."
+        )
     if has_id_only:
         _audit_problems.append(
             "YT_CLIENT_ID is set but YT_CLIENT_SECRET is missing — a refresh token "
@@ -324,7 +360,11 @@ def cmd_check(args: argparse.Namespace) -> int:
                     print(f"🍪 {diag()}")
                 if yt.has_oauth:
                     yt.playlist_video_ids(cfg.youtube_target_playlist)
-                    print("✅ YouTube OAuth valid, target playlist readable (writes enabled)")
+                    used = getattr(yt, "client_used", "") or yt.client_id
+                    print(
+                        "✅ YouTube OAuth valid, target playlist readable (writes enabled)"
+                    )
+                    print(f"   client in use: {used[:22]}… (that is the one that works)")
                 elif yt.can_write:
                     # Prove the cookie can actually read the private playlist.
                     ids = yt.playlist_video_ids(cfg.youtube_target_playlist)
@@ -340,9 +380,17 @@ def cmd_check(args: argparse.Namespace) -> int:
                     )
             except Exception as exc:
                 problems.append(f"YouTube live check: {exc}")
+        else:
+            print(
+                "ℹ️  YouTube writes: nothing configured to check live "
+                "(no YT_REFRESH_TOKEN / client pair / cookie)."
+            )
 
-    for p in problems:
-        print(f"❌ {p}")
+    if problems:
+        print("\n❌ Problems found:")
+        for p in problems:
+            print(f"   ❌ {p}")
+        print("\n👉 Fix the ❌ lines above, then re-run `phonksync check --live`.")
     return 1 if problems else 0
 
 

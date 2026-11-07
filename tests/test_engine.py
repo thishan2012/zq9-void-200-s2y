@@ -1374,3 +1374,66 @@ def test_a_swapped_token_fails_the_check(monkeypatch, capsys):
     )
     assert code == 1
     assert "access token" in out
+
+
+def test_a_present_but_empty_secret_is_reported(monkeypatch, capsys):
+    """The GitHub UI hides blank secrets, so the run must say it out loud."""
+    code, out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN="1//t",
+        YT_CLIENT_ID="1234-abcdefghijklmnop.apps.googleusercontent.com",
+        YT_CLIENT_SECRET="",  # exists in Settings, empty here
+    )
+    assert code == 1
+    assert "YT_CLIENT_SECRET exists but its value is empty" in out
+
+
+def test_short_but_real_values_are_not_nagged(monkeypatch, capsys):
+    code, out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN="1//t",
+        YT_CLIENT_ID="1234-abcdefghijklmnop.apps.googleusercontent.com",
+        YT_CLIENT_SECRET="s",  # 1 char, but it is the user's value
+    )
+    assert code == 0, out
+    assert "too short" not in out
+
+
+def test_a_client_json_does_not_hide_the_explicit_pair(monkeypatch):
+    """The failure mode when "the secret was already set": the JSON wins."""
+    from phonksync.youtube import YouTubeClient
+
+    json_client = "2222-jsonclient.apps.googleusercontent.com"
+    client_json = (
+        '{"installed": {"client_id": "%s", "client_secret": "jsonsecret"}}' % json_client
+    )
+    seen = []
+
+    class Session:
+        headers = {}
+
+        def post(self, url, data=None, timeout=None):
+            seen.append(dict(data or {}))
+
+            class R:
+                # only the *pair* may redeem this token
+                status_code = 200 if (data or {}).get("client_id") == "pair-client" else 400
+                text = "{}"
+                headers = {}
+
+                def json(self_inner):
+                    return {"access_token": "ya29.ok", "expires_in": 3600}
+
+            return R()
+
+    yt = YouTubeClient(
+        client_json=client_json,
+        client_id="pair-client",
+        client_secret="pair-secret",
+        refresh_token="1//token",
+        session=Session(),
+        free_search=False,
+    )
+    assert yt._ensure_token() == "ya29.ok"
+    assert [c["client_id"] for c in seen] == [json_client, "pair-client"]
+    assert yt.client_used == "pair-client"
