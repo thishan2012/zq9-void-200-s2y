@@ -971,6 +971,8 @@ class SpotifyClient:
         self.proxy_url = os.environ.get("SPOTIFY_PROXY_URL", "").strip()
         self.proxy_used = 0
         self.direct_used = 0
+        self.last_token_route = ""  # "proxy" | "direct", for the diagnostic
+        self.proxy_forced_direct = False  # the proxy answered as logged-out
         # Set once pathfinder has been seen to work for this account: plays the
         # same role as a "backend" switch (rest -> web player).
         self.pathfinder_ok = os.environ.get("SPOTIFY_BACKEND", "").strip().lower() in {
@@ -1005,6 +1007,19 @@ class SpotifyClient:
         return params
 
     def _token_request(self) -> dict[str, Any]:
+        """Get a web-player token; never let the proxy turn a good cookie anonymous."""
+        data = self._token_request_once(use_proxy=bool(self.proxy_url))
+        if data.get("isAnonymous") and self.proxy_url:
+            log.warning(
+                "The proxy route returned a logged-out Spotify token — retrying over a "
+                "direct connection (the proxy is dropping or truncating the Cookie)"
+            )
+            self.proxy_forced_direct = True
+            self.last_token_route = "direct"
+            data = self._token_request_once(use_proxy=False)
+        return data
+
+    def _token_request_once(self, use_proxy: bool) -> dict[str, Any]:
         """Ask Spotify for a web-player token, retrying the known variants."""
         _refresh_totp_secrets(self.session)
         ver = _totp_version()
@@ -1028,7 +1043,7 @@ class SpotifyClient:
         # The token endpoint answers 429 too (and it is the *first* call of a
         # run, which is why a throttled token used to look like a broken
         # cookie).  Wait out short windows, park the run on a long one.
-        use_proxy = bool(self.proxy_url)
+        self.last_token_route = "proxy" if use_proxy else "direct"
         for url, params, label in attempts:
             resp = None
             for _round in range(3):
@@ -1212,15 +1227,18 @@ class SpotifyClient:
     ) -> requests.Response:
         """One token request, through the proxy or direct."""
         if use_proxy:
-            # A CORS proxy cannot relay the cookie jar, so sp_dc travels as a
-            # real Cookie header (header mode forwards it untouched).
+            # A forwarding proxy relays headers but not a cookie jar, so sp_dc
+            # travels as a plain Cookie header. `sp_dc=` + ClientToken only is
+            # a *complete* login cookie for the web player; the browser's full
+            # header (with sp_key/sp_t…) is not needed and CORS proxies tend to
+            # mangle or truncate long Cookie values (that is what produced an
+            # anonymous token while the direct route worked).
             resp = self.session.get(
                 _with_proxy(self.proxy_url, url, params or None),
                 headers={
                     **token_headers,
                     **proxy_headers(),
-                    # A CORS proxy cannot relay the cookie jar.
-                    "Cookie": f"sp_dc={self.sp_dc}",
+                    "Cookie": f"sp_dc={self.sp_dc}; sp_dc_csrf=1",
                 },
                 timeout=30,
             )
@@ -1241,15 +1259,58 @@ class SpotifyClient:
             return self._access_token
         data = self._token_request()
         if data.get("isAnonymous"):
-            raise AuthError(
-                "Spotify returned an anonymous (logged-out) token. The sp_dc cookie is "
-                "invalid or expired — copy a fresh Cookie header from a logged-in "
-                "open.spotify.com tab."
-            )
+            # The cookie in use is dead but another account may still work. This
+            # used to raise immediately, so a stale SPOTIFY_COOKIE hid a perfectly
+            # good SPOTIFY_COOKIE_2.
+            if self._rotate_cookie():
+                data = self._token_request()
+            if data.get("isAnonymous"):
+                raise AuthError(self._anonymous_message())
         self._access_token = data["accessToken"]
         expires_ms = data.get("accessTokenExpirationTimestampMs", 0)
         self._access_expiry = (expires_ms / 1000) if expires_ms else time.time() + 3000
         return self._access_token
+
+    def _anonymous_message(self) -> str:
+        """Why the token came back logged-out, in the order of real causes."""
+        where = self.last_token_route or "direct"
+        lines = [
+            "Spotify returned an anonymous (logged-out) token.",
+            "",
+            f"Cookie tried: #{self._cookie_index + 1} of {len(self._cookie_pool)} "
+            f"(sp_dc {len(self.sp_dc)} chars) via the {where} route.",
+        ]
+        if self.proxy_forced_direct:
+            lines.insert(
+                1,
+                "The proxy route answered logged-out first, so it was retried "
+                "direct and that failed too.",
+            )
+        if self.proxy_url and (where == "proxy" or self.proxy_forced_direct):
+            lines += [
+                "",
+                "The proxy route is the prime suspect: a CORS/forwarding proxy can "
+                "drop or truncate the Cookie header, which makes Spotify answer as "
+                "logged-out for a cookie that works direct.",
+                "Try one run with the proxy off (empty SPOTIFY_PROXY_URL / PROXY_URL).",
+            ]
+        if len(self._cookie_pool) > 1:
+            lines.append(
+                f"Both cookies were tried ({len(self._cookie_pool)}), so this is not "
+                "just a stale spare."
+            )
+        else:
+            lines.append(
+                "Only one cookie is configured: SPOTIFY_COOKIE_2 is empty or was "
+                "ignored, so a stale SPOTIFY_COOKIE has nothing to fall back to."
+            )
+        lines += [
+            "",
+            "How to get a good value: open.spotify.com in a private window → log in "
+            "→ DevTools → Network → any request → copy the whole `Cookie:` header → "
+            "`python -m phonksync cookie-fix --show` → paste ONLY the sp_dc value.",
+        ]
+        return "\n".join(lines)
 
     def _park_or_rotate(self, retry_after: float) -> None:
         """A long Retry-After: use a spare account, or stop this run at once.
