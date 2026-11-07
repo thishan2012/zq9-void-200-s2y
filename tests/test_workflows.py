@@ -80,3 +80,18 @@ def test_the_sync_job_has_a_manual_switch_for_youtube_writes_only():
     env = _steps(doc)["Run sync"]["env"]
     assert "writes_only" in inputs
     assert "inputs.writes_only" in env.get("YOUTUBE_WRITES_ONLY", "")
+
+
+def test_the_wall_clock_line_names_the_pacing_it_actually_used():
+    """`pause= results=` read like "zero pause"; empty means "use config.json"."""
+    step = _steps(_load("sync.yml"))["Run time"]
+    assert "YOUTUBE_FREE_SEARCH_PAUSE" in str(step.get("env", {}))
+    script = step["run"]
+    assert "YOUTUBE_FREE_SEARCH_PAUSE:-" in script
+    assert "config.json" in script
+    assert 'pause=${{ inputs.free_search_pause }}' not in script
+
+
+def test_a_writes_only_run_is_visible_in_the_summary():
+    script = _steps(_load("sync.yml"))["Run time"]["run"]
+    assert "inputs.writes_only" in script
