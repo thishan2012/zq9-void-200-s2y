@@ -488,6 +488,8 @@ def test_a_throttled_add_is_never_recorded_as_added(monkeypatch, cfg):
     import time as _time
 
     cfg.youtube_enabled = False
+    # never write into the repo's real data/ files from a test
+    cfg.manual_queue_path = cfg.state_path.replace("state.json", "manual.txt")
     tracks = _many_tracks(4)
     spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
 
