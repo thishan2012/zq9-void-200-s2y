@@ -447,6 +447,29 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## YouTube got the tracks but the Spotify playlist is empty
+
+Read the summary line the run prints now:
+
+```
+⚠️ Spotify rate limited (429): wrote what it could — wait a few minutes and run again
+ℹ️ reason: Spotify blocked this session for ~1h 0m; 1 Spotify write(s), 12
+   request(s) before it; the player queue was refused (Premium-only call) — set
+   SPOTIFY_WRITE_MODE=direct to skip it; pacing 2s/call, 40 calls per run
+```
+
+* **`the player queue was refused`** → the queue endpoint (`me/player/queue`) is
+  Premium-only. A free account answers 403/404, the engine falls back to direct
+  playlist writes, and those are throttled harder. Set
+  `SPOTIFY_WRITE_MODE=direct`.
+* **`1 write(s), N request(s)`** → how much of the run's Web API budget was
+  already spent before the first write. Raise `SPOTIFY_MAX_REQUESTS_PER_RUN` or
+  lower `REQUEST_DELAY_SECONDS`, or read playlists from the web-player route.
+* **Parked tracks are not lost.** They are flushed in **one batch at the start
+  of the next run** (`♻️ Added N track(s) an earlier run had to park`) — before
+  anything can throttle the run again — and they stay in
+  `data/manual-queue.txt` until that batch succeeds.
+
 ## "Parked for the next run" — why a track was not added
 
 A throttled run (Spotify 429 / slow-down) does **not** claim the track was

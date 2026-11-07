@@ -78,6 +78,8 @@ class RunReport:
     parked_spotify: int = 0  # still waiting (Spotify refused again)
     parked_saved: int = 0    # parked by an earlier run, added in this one
     parked_repaired: int = 0  # state-file entries fixed (parked but marked added)
+    spotify_note: str = ""   # why Spotify refused the writes (one line)
+    spotify_note_writes: bool = False  # the note is about a refused *write*
     skipped: int = 0
     web_reads: int = 0
     stale_reads: int = 0
@@ -218,16 +220,22 @@ class RunReport:
                 f"🗄 Stale cache reads replayed: {self.stale_reads} "
                 "(no Spotify calls used — refresh by running with a clear cache)"
             )
-        if self.spotify_throttled and not self.inserted and not self.added:
-            lines.append(
-                "⚠️ Spotify's Web API was throttled (429) — the run used the web "
-                "player route instead. Nothing to fix; the next run continues."
-            )
-        elif self.spotify_throttled:
-            lines.append(
-                "⚠️ Spotify rate limited (429): wrote what it could — "
-                "wait a few minutes and run again to continue"
-            )
+        # Three different stories share the phrase "Spotify 429": a read that fell
+        # back to the web player (harmless), a write that was refused (the log
+        # said "Added: 5" while the playlist stayed empty), and a stalled run.
+        if self.spotify_throttled:
+            if not self.inserted and not self.added and not self.spotify_note_writes:
+                lines.append(
+                    "⚠️ Spotify's Web API was throttled (429) — the run used the web "
+                    "player route instead. Nothing to fix; the next run continues."
+                )
+            else:
+                lines.append(
+                    "⚠️ Spotify rate limited (429): wrote what it could — "
+                    "wait a few minutes and run again to continue"
+                )
+        if self.spotify_note:
+            lines.append(self.spotify_note)
         if self.quota_stopped:
             lines.append(f"⚠️ Stopped early: {escape(self.quota_reason or 'YouTube quota budget reached')}")
         elif self.inserted:
@@ -525,6 +533,9 @@ class SyncEngine:
             report.errors.append(str(exc))
             report.spotify_throttled = True
             report.quota_reason = str(exc)
+            self._spotify_reason = str(exc)
+            report.spotify_note = self._spotify_diagnosis()
+            report.spotify_note_writes = True
             self.telegram.error(f"Spotify rate limit: {escape(str(exc))}")
             report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self._send_single(report)
@@ -533,6 +544,10 @@ class SyncEngine:
         if not cfg.dry_run:
             self._preflight_youtube(report)
             self._flush_pending_youtube(report)
+            # The parked backlog goes first: it is one batch, it needs no search,
+            # and a Spotify slow-down later in the run must not swallow it again.
+            report.parked_repaired = self._repair_parked_bucket()
+            self._retry_pending_spotify(report)
 
         if cfg.youtube_writes_only:
             # Nothing is searched: the run only turns remembered matches into
@@ -636,6 +651,9 @@ class SyncEngine:
         blocked_until = getattr(self.spotify, "blocked_until", 0.0)
         if blocked_until:
             report.spotify_throttled = True
+            self._spotify_reason = report.quota_reason or ""
+            report.spotify_note = self._spotify_diagnosis()
+            report.spotify_note_writes = True
             report.quota_reason = (
                 "Spotify asked to slow down until "
                 + datetime.fromtimestamp(blocked_until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -649,8 +667,6 @@ class SyncEngine:
         if not cfg.dry_run:
             self._flush_queue()
             self._retry_pending_queue()
-            report.parked_repaired = self._repair_parked_bucket()
-            self._retry_pending_spotify(report)
             if self.state.manual_items():
                 self.state.write_manual_queue(cfg.manual_queue_path)
 
@@ -1092,6 +1108,37 @@ class SyncEngine:
                 "added — they will be added now", repaired
             )
         return repaired
+
+    def _spotify_diagnosis(self) -> str:
+        """One line that says *why* a Spotify write was refused.
+
+        The same symptom (nothing in the playlist) has three very different
+        causes, and the summary has to name the one that happened.
+        """
+        cfg = self.config
+        bits: list[str] = []
+        reason = str(getattr(self, "_spotify_reason", "") or "").strip()
+        first = reason.splitlines()[0][:160] if reason else ""
+        if first:
+            bits.append(f"reason: {escape(first)}")
+        writes = int(getattr(self.spotify, "writes_this_run", 0) or 0)
+        requests = int(getattr(self.spotify, "requests_made", 0) or 0)
+        bits.append(f"{writes} Spotify write(s), {requests} request(s) before it")
+        if cfg.spotify_write_mode == "queue" and not getattr(
+            self.spotify, "queue_supported", True
+        ):
+            bits.append(
+                "the player queue was refused (Premium-only call) — set "
+                "SPOTIFY_WRITE_MODE=direct to skip it"
+            )
+        delay = getattr(cfg, "spotify_request_delay_seconds", 0) or 0
+        if delay:
+            cap = getattr(cfg, "spotify_max_requests_per_run", 0) or 0
+            bits.append(
+                f"pacing {delay:g}s/call"
+                + (f", {cap} calls per run" if cap else "")
+            )
+        return "ℹ️ " + "; ".join(bits)
 
     def _retry_pending_spotify(self, report: RunReport) -> None:
         """Add the tracks an earlier throttled run could only park.

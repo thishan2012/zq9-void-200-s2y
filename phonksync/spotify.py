@@ -956,6 +956,7 @@ class SpotifyClient:
         self.cookie_switches = 0
         self._request_count = 0
         self._rate_limited_this_run = False
+        self.writes_this_run = 0  # playlist/queue writes attempted
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -1612,6 +1613,7 @@ class SpotifyClient:
         """
         if len(self._queued) >= max_items:
             return False
+        self.writes_this_run += 1
         self._request(
             "POST", "me/player/queue", params={"uri": uri}, allow_404=True
         )
@@ -1634,6 +1636,7 @@ class SpotifyClient:
         return sent
 
     def add_tracks(self, playlist_id: str, uris: list[str]) -> None:
+        self.writes_this_run += 1
         if getattr(self, "prefer_pathfinder", False):
             self._pathfinder_add(playlist_id, uris)
             return
