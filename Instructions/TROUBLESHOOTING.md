@@ -447,6 +447,23 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## Where the web-player mutation details come from
+
+The working values are the ones a real browser session uses (and an older
+cookie-based syncer of ours used in production):
+
+| piece | value |
+|---|---|
+| operation | `addToPlaylist` |
+| persisted-query hash | `b907ad6b088d5bf7680fa81198996d58398c2d55dfcdf59fcc959e0be98a418a` |
+| variables | `playlistUri`, `playlistItemUris[]`, `newPosition`, **`interactionId`** |
+| success check | `data.addItemsToPlaylist.__typename == "AddItemsToPlaylistPayload"` |
+| read operation | `fetchPlaylist` (with `enableWatchFeedEntrypoint`, `includeEpisodeContentRatingsV2`), fallback `fetchPlaylistContents` |
+
+A wrong hash returns HTTP 200 with an empty `data` — a silent no-op, which is
+indistinguishable from success unless the mutation payload is checked. The
+self-healing scrape now matches `"query"` **and** `"mutation"` registrations.
+
 ## Spotify refuses every write but reads work (collaborative playlist)
 
 A **collaborative** playlist is writable by its owner plus the collaborators

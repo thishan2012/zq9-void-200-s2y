@@ -1042,13 +1042,18 @@ def test_pathfinder_add_writes_through_the_web_player(monkeypatch):
     import phonksync.spotify as sp
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
-    client, seen = _pf_client(monkeypatch, [{"data": {"addToPlaylist": {"__typename": "Mutation"}}}])
+    client, seen = _pf_client(monkeypatch, [{"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}}])
     client._pathfinder_add("PL9", ["spotify:track:aaa", "spotify:track:bbb"])
-    assert len(seen) == 2
+    # One mutation for the batch, like the browser sends (fewer calls, less 429).
+    assert len(seen) == 1
     first = seen[0]["payload"]
     assert first["operationName"] == "addToPlaylist"
     assert first["variables"]["playlistUri"] == "spotify:playlist:PL9"
-    assert first["variables"]["playlistItemUris"] == ["spotify:track:aaa"]
+    assert first["variables"]["playlistItemUris"] == [
+        "spotify:track:aaa",
+        "spotify:track:bbb",
+    ]
+    assert first["variables"]["interactionId"] is None
     assert first["variables"]["newPosition"]["moveType"] == "BOTTOM_OF_PLAYLIST"
     assert first["extensions"]["persistedQuery"]["sha256Hash"] == sp._OP_HASHES["addToPlaylist"]
 
@@ -1058,7 +1063,7 @@ def test_write_falls_back_to_pathfinder_when_the_api_429s(monkeypatch):
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
     client, seen = _pf_client(
-        monkeypatch, [{"data": {"addToPlaylist": {"__typename": "Mutation"}}}]
+        monkeypatch, [{"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}}]
     )
 
     def boom(*a, **kw):
@@ -1386,7 +1391,7 @@ def test_add_to_playlist_is_verified_and_heals_a_rotated_hash(monkeypatch):
         calls.append(body["extensions"]["persistedQuery"]["sha256Hash"])
         if len(calls) == 1:
             return _json.dumps({"errors": [{"message": "PersistedQueryNotFound"}]})
-        return _json.dumps({"data": {"addToPlaylist": {"__typename": "Mutation"}}})
+        return _json.dumps({"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}})
 
     monkeypatch.setattr(sp, "_proxy_post", fake_post)
     monkeypatch.setattr(
@@ -1470,3 +1475,67 @@ def test_the_permission_hint_clears_the_owner(monkeypatch):
     )
     client.account_username = "phonkbot"
     assert "OWNS the playlist" in client.permission_hint("PL1")
+
+
+def test_the_hash_scrape_finds_a_mutation_not_only_a_query(monkeypatch):
+    """addToPlaylist is registered as a *mutation*: matching only "query" made
+    the self-healing scrape useless for every write."""
+    import phonksync.spotify as sp
+
+    html = (
+        '<script src="https://open.spotifycdn.com/cdn/build/web-player/'
+        'web-player.0123456789abcdef.js"></script>'
+    )
+    bundle = (
+        'x.l("fetchPlaylist","query","' + "a" * 64 + '");'
+        'x.l("addToPlaylist","mutation","' + "b" * 64 + '");'
+    )
+
+    class Resp:
+        def __init__(self, text):
+            self.text = text
+
+    monkeypatch.setattr(
+        sp.requests,
+        "get",
+        lambda url, *a, **kw: Resp(bundle if "web-player" in str(url) else html),
+    )
+    found = sp._discover_persisted_hashes_once(["addToPlaylist", "fetchPlaylist"])
+    assert found["addToPlaylist"] == "b" * 64
+    assert found["fetchPlaylist"] == "a" * 64
+
+
+def test_the_add_uses_the_proven_hash_and_confirms_on_the_payload():
+    """The hash and the confirmation field a working syncer uses."""
+    import phonksync.spotify as sp
+
+    assert sp._OP_HASHES["addToPlaylist"] == (
+        "b907ad6b088d5bf7680fa81198996d58398c2d55dfcdf59fcc959e0be98a418a"
+    )
+
+
+def test_a_playlist_read_falls_back_to_the_browser_operation(monkeypatch):
+    """When `fetchPlaylistContents` answers nothing, try what the browser uses."""
+    import phonksync.spotify as sp
+
+    calls = []
+
+    def fake_post(url, payload, headers):
+        op = payload["operationName"]
+        calls.append(op)
+        if op == "fetchPlaylist":
+            return (
+                '{"data": {"playlistV2": {"content": {"totalCount": 1, "items": '
+                '[{"itemV2": {"data": {"uri": "spotify:track:abc", "name": "LUZ", '
+                '"artists": {"items": []}}}}]}}}}'
+            )
+        return '{"data": {"playlistV2": {"content": {"totalCount": 0, "items": []}}}}'
+
+    monkeypatch.setattr(sp, "_proxy_post", fake_post)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=_TokSession())
+    tracks = client._pathfinder_tracks("PL1")
+    assert [t.id for t in tracks] == ["abc"]
+    assert calls[0] == "fetchPlaylistContents"
+    assert "fetchPlaylist" in calls
+    assert client._read_op_name == "fetchPlaylist"
