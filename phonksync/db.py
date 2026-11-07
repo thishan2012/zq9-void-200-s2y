@@ -89,36 +89,96 @@ class StateDB:
         if self.spotify.pop("cooldown_until", None) is not None:
             self.spotify["cooldown_cleared_at"] = _now()
 
-    def add_manual(self, track: Track) -> None:
+    def add_manual(self, track: Track, reason: str = "") -> None:
         bucket = self.spotify.setdefault("manual", {})
         bucket[track.id] = {
             "name": track.name,
             "artists": track.artists,
             "uri": track.uri or f"spotify:track:{track.id}",
             "queued_at": _now(),
+            "reason": reason,
         }
+
+    def manual_items(self) -> dict[str, Any]:
+        return self.spotify.get("manual") or {}
+
+    def manual_uris(self, skip_ids: set[str] | None = None) -> list[str]:
+        """Track URIs waiting in the manual bucket, minus the already-added ones."""
+        skip_ids = skip_ids or set()
+        return [
+            entry.get("uri", "")
+            for key, entry in self.manual_items().items()
+            if key not in skip_ids and entry.get("uri")
+        ]
+
+    # ------------------------------------------------- pending Spotify writes
+    # A track parked while Spotify was cooling down is *not* added, so the next
+    # run retries it from here — it is never recorded as ``spotify_added``.
+    def add_pending_spotify(self, track: Track) -> None:
+        bucket = self.spotify.setdefault("pending", {})
+        bucket[track.id] = {
+            "name": track.name,
+            "artists": track.artists,
+            "uri": track.uri or f"spotify:track:{track.id}",
+            "held_at": _now(),
+        }
+
+    def pending_spotify(self) -> dict[str, Any]:
+        return self.spotify.get("pending") or {}
+
+    def clear_pending_spotify(self, ids: list[str] | None = None) -> int:
+        bucket = self.spotify.get("pending") or {}
+        if ids is None:
+            removed = len(bucket)
+            self.spotify.pop("pending", None)
+            return removed
+        removed = 0
+        for track_id in ids:
+            if bucket.pop(track_id, None) is not None:
+                removed += 1
+        if not bucket:
+            self.spotify.pop("pending", None)
+        return removed
 
     def write_manual_queue(self, path: str | Path) -> int:
         """Dump the manual bucket as spotify:track: URIs (copy-paste friendly)."""
-        items = self.spotify.get("manual") or {}
+        items = self.manual_items()
         if not items:
             return 0
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
-            f"# {len(items)} tracks that could not be added automatically "
+            f"# {len(items)} track(s) that could not be added automatically "
             f"({_now()})."
         ]
-        lines.append("# Paste these into the target playlist (or run "
-                     "`python -m phonksync manual --apply`).")
+        lines.append("# Paste these into the target playlist, or let the next run "
+                     "retry them (`python -m phonksync manual --apply`).")
         for entry in items.values():
-            lines.append(f"{entry.get('uri', '')}  # {', '.join(entry.get('artists', []))} "
-                         f"- {entry.get('name', '')}")
+            reason = entry.get("reason") or ""
+            note = f"  ({reason})" if reason else ""
+            lines.append(
+                f"{entry.get('uri', '')}  # {', '.join(entry.get('artists', []))} "
+                f"- {entry.get('name', '')}{note}"
+            )
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return len(items)
 
-    def clear_manual(self) -> None:
-        self.spotify.pop("manual", None)
+    def clear_manual(self, ids: list[str] | None = None) -> int:
+        """Drop the bucket (or just the given tracks); returns how many were cleared."""
+        bucket = self.manual_items()
+        if ids is None:
+            removed = len(bucket)
+            self.spotify.pop("manual", None)
+            self.spotify["manual_cleared_at"] = _now()
+            return removed
+        removed = 0
+        for track_id in ids:
+            if bucket.pop(track_id, None) is not None:
+                removed += 1
+        if not bucket:
+            self.spotify.pop("manual", None)
+            self.spotify["manual_cleared_at"] = _now()
+        return removed
 
     # ------------------------------------------------------------ collection
 

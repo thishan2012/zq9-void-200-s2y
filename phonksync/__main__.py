@@ -776,7 +776,9 @@ def cmd_manual(args: argparse.Namespace) -> int:
 
     cfg = Config.load(args.config)
     db = StateDB(cfg.state_path)
-    items = db.spotify.get("manual") or {}
+    manual = db.manual_items()
+    pending = db.pending_spotify()
+    items = manual or pending
     if not items:
         print("✅ Manual bucket is empty.")
         return 0
@@ -785,19 +787,41 @@ def cmd_manual(args: argparse.Namespace) -> int:
         if not secrets.spotify_cookie:
             print("❌ SPOTIFY_COOKIE is required to apply the bucket.", file=sys.stderr)
             return 2
-        uris = [e.get("uri", "") for e in items.values() if e.get("uri")]
+        # The target playlist is the truth: never re-add a track that is already
+        # in it (the DB may say otherwise after a throttled run).
         client = SpotifyClient(secrets.spotify_cookie)
+        try:
+            already = client.playlist_track_ids(cfg.spotify_target_playlist)
+        except Exception as exc:  # pragma: no cover - network/permission
+            print(f"⚠️ Could not read the target playlist ({exc}); adding anyway.")
+            already = set()
+        ids = [k for k in items if k not in already]
+        uris = [items[k].get("uri", "") for k in ids if items[k].get("uri")]
         for i in range(0, len(uris), 100):
             client.add_tracks(cfg.spotify_target_playlist, uris[i : i + 100])
-        db.clear_manual()
+        for track_id in ids:
+            state = db.data["synced"].get(track_id)
+            if state:
+                state["spotify_added"] = True
+        db.clear_manual(list(items))
+        db.clear_pending_spotify(list(items))
+        db.write_manual_queue(cfg.manual_queue_path)
         db.save()
-        print(f"✅ Added {len(uris)} tracks to {cfg.spotify_target_playlist} and emptied the bucket.")
+        print(
+            f"✅ Added {len(uris)} track(s) to {cfg.spotify_target_playlist} and emptied "
+            f"the bucket."
+            + (f" ({len(items) - len(ids)} were already there)" if len(items) > len(ids) else "")
+        )
         return 0
     count = db.write_manual_queue(cfg.manual_queue_path)
-    print(f"📋 {count} tracks waiting in {cfg.manual_queue_path}")
+    print(f"📋 {count} track(s) waiting in {cfg.manual_queue_path}")
     print("   Apply them with: python -m phonksync manual --apply")
     for entry in list(items.values())[:10]:
-        print(f"   • {', '.join(entry.get('artists', []))} — {entry.get('name', '')}")
+        reason = entry.get("reason") or ""
+        suffix = f" ({reason})" if reason else ""
+        print(
+            f"   • {', '.join(entry.get('artists', []))} — {entry.get('name', '')}{suffix}"
+        )
     if count > 10:
         print(f"   … and {count - 10} more")
     return 0

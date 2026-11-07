@@ -447,6 +447,28 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## "Parked for the next run" — why a track was not added
+
+A throttled run (Spotify 429 / slow-down) does **not** claim the track was
+added any more. It goes to `data/manual-queue.txt` and to the state file's
+pending list, and the next run adds it in one batch:
+
+```
+📋 Parked for the next run: 5 track(s) — queue full or Spotify slow-down
+♻️ Added 5 track(s) an earlier run had to park
+```
+
+Older versions recorded a parked track as `spotify_added: true` **and** parked
+it, so no later run would ever retry it. State files from that version are
+repaired automatically on the next run (one line in the log:
+`Re-queued N track(s) that an older run parked but recorded as added`).
+
+* See the backlog any time: `python -m phonksync manual`
+* Add it by hand now: `python -m phonksync manual --apply` (it reads the target
+  playlist first, so nothing is added twice)
+* Every real run also prints the backlog in the GitHub job summary
+  (`### 📋 Spotify backlog`).
+
 ## `YT_COOKIE … no usable SAPISID`
 
 The cookie name is `__Secure-3PAPISID`, but browsers and export tools mangle it

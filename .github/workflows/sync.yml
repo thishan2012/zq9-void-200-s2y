@@ -210,6 +210,19 @@ jobs:
 
       # No API token is ever needed for this: `gh run view --log` and
       # "Download log archive" both work as long as the run has a log archive.
+      - name: Parked Spotify backlog
+        # Reads the state file only (no network, no secrets): shows what a
+        # throttled run had to park, so it is never silently forgotten.
+        if: ${{ always() && !inputs.dry_run && !inputs.fill_cache && !inputs.writes_only }}
+        run: |
+          {
+            echo "### 📋 Spotify backlog"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          python -m phonksync manual >> /tmp/manual.txt 2>&1 || true
+          sed -e 's/^/    /' /tmp/manual.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Keep the run log
         if: ${{ always() && !inputs.fill_cache }}
         uses: actions/upload-artifact@v4

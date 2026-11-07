@@ -107,6 +107,8 @@ def cfg(tmp_path):
     c.overrides_path = str(tmp_path / "overrides.json")
     c.cache_path = str(tmp_path / "cache.json")
     c.source_cache_path = str(tmp_path / "source-cache.json")
+    # every run() rewrites the manual bucket — never the repo's real file
+    c.manual_queue_path = str(tmp_path / "manual-queue.txt")
     (tmp_path / "overrides.json").write_text('{"overrides": {}}')
     return c
 
@@ -455,6 +457,7 @@ def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
             raise RateLimited(3600, "Spotify blocked this session for ~1h 0m")
         spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
         target_ids.add(track.id)
+        return True
 
     monkeypatch.setattr(eng, "_add_spotify", add_one)
     report = eng.run()
@@ -468,9 +471,62 @@ def test_long_block_mid_run_records_resume_point(monkeypatch, cfg):
     spotify.blocked_until = 0.0
     eng.state.save()
     eng2 = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
-    report2 = eng2.run()
-    assert report2.added == 3  # tracks 2, 3, 4
+    eng2.run()
+    # Every track is added exactly once, whether the run that parked it
+    # recovered it straight away or the next run did.
+    assert len(spotify.added) == len(tracks)
+    # (the fake tracks share one URI, so count calls, not set size)
+    assert all(v.get("spotify_added") for v in eng2.state.data["synced"].values())
     assert not eng2.state.get_resume_point()
+
+
+def test_a_throttled_add_is_never_recorded_as_added(monkeypatch, cfg):
+    """The DB used to say `spotify_added: true` for a track it only parked.
+
+    That is what the real run on 2026-11-07 did: Spotify was throttled, every
+    track went to the manual bucket, and every one was written as added — so no
+    later run would ever retry them.
+    """
+    import time as _time
+
+    cfg.youtube_enabled = False
+    tracks = _many_tracks(4)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+
+    calls = {"n": 0}
+
+    def add_tracks(playlist_id, uris):
+        calls["n"] += 1
+        if calls["n"] == 1:  # the first write is throttled, for an hour
+            spotify.blocked_until = _time.time() + 3600
+            raise RateLimited(3600, "Spotify blocked this session for ~1h 0m")
+        spotify.added.extend(uris)  # pragma: no cover - must never happen now
+
+    monkeypatch.setattr(spotify, "add_tracks", add_tracks)
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = eng.run()
+
+    # The rest of the run is parked, not written off as done.
+    assert report.manual_queued == 3
+    assert report.added == 0
+    assert not any(v.get("spotify_added") for v in eng.state.data["synced"].values()), (
+        "a parked track was recorded as added — it will never be retried"
+    )
+    assert len(eng.state.pending_spotify()) == 3
+    assert len(eng.state.manual_items()) == 3
+    assert "Parked for the next run: 3 track(s)" in report.summary_text()
+
+    # Next run, cooldown over: every track is added exactly once.
+    spotify.blocked_until = 0.0
+    spotify.added.clear()
+    calls["n"] = 99  # the cooldown is over: no write is refused any more
+    eng.state.save()
+    eng2 = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    eng2.run()
+    assert len(spotify.added) == len(tracks)
+    assert not eng2.state.pending_spotify()
+    assert not eng2.state.manual_items()
+    assert all(v.get("spotify_added") for v in eng2.state.data["synced"].values())
 
 
 class _WebReader:
@@ -1455,3 +1511,31 @@ def test_a_setup_failure_is_printed_and_summarised(monkeypatch, cfg, capsys):
     assert report.setup_failed is True
     assert "Nothing could run" in report.summary_text()
     assert "Spotify refused" in capsys.readouterr().err
+
+
+def test_the_old_parked_but_added_state_is_repaired_once(monkeypatch, cfg):
+    """State written by the buggy version: parked AND marked added, same instant."""
+
+    cfg.youtube_enabled = False
+    tracks = _many_tracks(2)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    for track in tracks:
+        eng.state.add_manual(track, reason="Spotify asked to slow down")
+        eng.state.mark_synced(track, "", "", True, False)  # the old lie
+        entry = eng.state.manual_items()[track.id]
+        eng.state.data["synced"][track.id]["added_at"] = entry["queued_at"]
+    assert len(eng.state.pending_spotify()) == 0
+
+    repaired = eng._repair_parked_bucket()
+    assert repaired == len(tracks)
+    assert len(eng.state.pending_spotify()) == len(tracks)
+    assert not any(v["spotify_added"] for v in eng.state.data["synced"].values())
+
+    # A later genuine add (parked long ago, added this run) is left alone.
+    old = tracks[0]
+    eng.state.data["synced"][old.id]["spotify_added"] = True
+    eng.state.data["synced"][old.id]["added_at"] = "2030-01-01T00:00:00+00:00"
+    eng.state.clear_pending_spotify()
+    assert eng._repair_parked_bucket() == 0
