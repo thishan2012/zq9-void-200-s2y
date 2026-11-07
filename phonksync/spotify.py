@@ -935,6 +935,7 @@ class SpotifyClient:
         cookie_header: str,
         session: requests.Session | None = None,
         extra_cookies: list[str] | None = None,
+        prefer_web_player: bool = False,
     ):
         _apply_cipher_override()
         self.sp_dc = extract_sp_dc(cookie_header)
@@ -957,6 +958,8 @@ class SpotifyClient:
         self._request_count = 0
         self._rate_limited_this_run = False
         self.writes_this_run = 0  # playlist/queue writes attempted
+        self.writes_landed = 0    # writes confirmed by the web-player endpoint
+        self.verify_write_result = False
         self.request_delay = request_delay_seconds()
         self._queued: list[str] = []
         self.queue_saves = 0
@@ -976,10 +979,22 @@ class SpotifyClient:
         self.proxy_forced_direct = False  # the proxy answered as logged-out
         # Set once pathfinder has been seen to work for this account: plays the
         # same role as a "backend" switch (rest -> web player).
-        self.pathfinder_ok = os.environ.get("SPOTIFY_BACKEND", "").strip().lower() in {
+        #
+        # A free (non-Premium) account — which every bot account is — gets a 403
+        # from the queue (Premium-only) and a fast 429 from the Web API, while the
+        # web player's own endpoint does neither. Start there instead of waiting
+        # for the first refusal.
+        self.prefer_web_player = bool(prefer_web_player)
+        self.queue_supported = not self.prefer_web_player
+        self.pathfinder_ok = self.prefer_web_player or os.environ.get("SPOTIFY_BACKEND", "").strip().lower() in {
             "web-player", "webplayer", "pathfinder", "graphql",
         }
         self.prefer_pathfinder = self.pathfinder_ok
+        if self.prefer_web_player:
+            log.info(
+                "Spotify writes: web-player route from the start (free account — "
+                "no Premium queue, no Web API write budget)"
+            )
         self.backend = "web-player" if self.prefer_pathfinder else "rest"
 
     # ------------------------------------------------------------------ auth
@@ -1176,6 +1191,76 @@ class SpotifyClient:
             return payload.get("data") or {}
         raise RuntimeError(f"pathfinder {op} failed: {last or 'no usable answer'}")
 
+    def _pathfinder_write(self, playlist_id: str, uri: str) -> bool:
+        """Add one track via addToPlaylist; verified, and hash-healed like reads.
+
+        Reads and writes must fail the same way: a rotating persisted-query hash
+        (it happened for reads) would otherwise kill every write silently while
+        the playlist stays empty.
+        """
+        self.verify_write_result = True
+        hashes = dict(_OP_HASHES)
+        for name, value in _hash_overrides().items():
+            hashes[name] = value
+        variables = {
+            "playlistUri": f"spotify:playlist:{playlist_id}",
+            "playlistItemUris": [uri],
+            "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
+        }
+        refreshed_hash = False
+        refreshed_auth = False
+        last = ""
+        for _ in range(3):
+            body = {
+                "variables": variables,
+                "operationName": "addToPlaylist",
+                "extensions": {
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": hashes.get("addToPlaylist", ""),
+                    }
+                },
+            }
+            headers = dict(_PLAY_HEADERS)
+            headers["User-Agent"] = _HTML_UA
+            headers["Authorization"] = f"Bearer {self._ensure_token()}"
+            headers.update(proxy_headers())
+            try:
+                text = _proxy_post(_PATHFINDER_URL, body, headers)
+            except requests.RequestException as exc:
+                raise RateLimited(5, f"pathfinder write unreachable: {exc}") from exc
+            try:
+                payload = json.loads(text) if text else {}
+            except ValueError:
+                last = f"non-JSON answer ({text[:120]!r})"
+                continue
+            errors = payload.get("errors") or []
+            message = json.dumps(errors)[:300] if errors else ""
+            if errors and "persisted" in message.lower() and not refreshed_hash:
+                fresh = _discover_persisted_hashes(["addToPlaylist"])
+                if fresh.get("addToPlaylist"):
+                    hashes["addToPlaylist"] = fresh["addToPlaylist"]
+                refreshed_hash = True
+                continue
+            if errors and ("401" in message or "unauthor" in message.lower()):
+                if refreshed_auth:
+                    raise AuthError(f"pathfinder write rejected the token: {message}")
+                self._access_token = ""
+                refreshed_auth = True
+                continue
+            if errors:
+                raise RuntimeError(f"pathfinder addToPlaylist error: {message}")
+            # No errors is not proof: check the operation's own status fields.
+            data = (payload.get("data") or {}).get("playlistV2") or {}
+            status = data.get("__typename") or ""
+            if status.startswith("Error") or (
+                "add" in data and not (data.get("add") or {}).get("__typename")
+            ):
+                last = f"operation answered {status or 'nothing'}"
+                continue
+            return True
+        raise RuntimeError(f"pathfinder addToPlaylist failed: {last or 'no usable answer'}")
+
     def _pathfinder_tracks(self, playlist_id: str, max_tracks: int = 0) -> list[Track]:
         """Read a playlist through the web player endpoint (paged)."""
         tracks: dict[str, Track] = {}
@@ -1209,15 +1294,25 @@ class SpotifyClient:
     def _pathfinder_add(self, playlist_id: str, uris: list[str]) -> None:
         """Add tracks through the web player (no Web API, no 30s rolling window)."""
         for uri in uris:
-            self._pathfinder(
-                "addToPlaylist",
-                {
-                    "playlistUri": f"spotify:playlist:{playlist_id}",
-                    "playlistItemUris": [uri],
-                    "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
-                },
-            )
+            self._pathfinder_write(playlist_id, uri)
+            self.writes_landed += 1
             self._pace()
+
+    def verify_added(self, playlist_id: str, uris: list[str]) -> list[str]:
+        """Re-read the playlist and return the URIs that are really in it.
+
+        A silent no-op is the worst failure mode here: five tracks were reported
+        as added while the playlist stayed empty. This is the only proof.
+        """
+        try:
+            tracks = self._pathfinder_tracks(playlist_id)
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("Could not verify the playlist contents: %s", exc)
+            return []
+        present = {
+            (t.uri or f"spotify:track:{t.id}") for t in tracks
+        } | {f"spotify:track:{t.id}" for t in tracks}
+        return [uri for uri in uris if uri in present]
 
     def _token_http(
         self,

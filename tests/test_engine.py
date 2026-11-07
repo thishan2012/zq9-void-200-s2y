@@ -1603,3 +1603,58 @@ def test_the_summary_says_why_spotify_refused(monkeypatch, cfg):
     assert "player queue was refused" in text
     assert "SPOTIFY_WRITE_MODE=direct" in text
     assert "pacing 2s/call" in text
+
+
+def test_a_write_spotify_accepts_but_drops_is_never_marked_added(monkeypatch, cfg):
+    """The real failure: the call "worked", the playlist stayed empty."""
+    from phonksync.models import Track
+
+    cfg.youtube_enabled = False
+    tracks = _many_tracks(2)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
+    spotify.verify_added = lambda playlist_id, uris: []  # nothing lands
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    waiting = Track(id="ghost000000000000000001", name="LUZ", artists=["HDN"],
+                    uri="spotify:track:ghost000000000000000001")
+    eng.state.add_manual(waiting, reason="Spotify asked to slow down")
+    eng.state.add_pending_spotify(waiting)
+    eng.state.save()
+
+    report = eng.run()
+
+    assert waiting.id not in {
+        k for k, v in eng.state.data["synced"].items() if v.get("spotify_added")
+    }, "the ghost write was recorded as added"
+    assert report.spotify_writes_missing >= 1
+    assert report.parked_spotify >= 1
+    assert "are NOT in the target playlist" in report.summary_text()
+
+
+def test_a_write_that_really_landed_is_marked_added(monkeypatch, cfg):
+    from phonksync.models import Track
+
+    cfg.youtube_enabled = False
+    source = _many_tracks(1)
+    source[0].uri = f"spotify:track:{source[0].id}"  # the fake reuses one URI
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: source})
+    added: list[str] = []
+
+    def add_tracks(playlist_id, uris):
+        added.extend(uris)
+
+    spotify.add_tracks = add_tracks
+    spotify.verify_added = lambda playlist_id, uris: [u for u in uris if u in added]
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    waiting = Track(id="real0000000000000000001", name="LUZ", artists=["HDN"],
+                    uri="spotify:track:real0000000000000000001")
+    eng.state.add_manual(waiting, reason="Spotify asked to slow down")
+    eng.state.add_pending_spotify(waiting)
+    eng.state.save()
+
+    report = eng.run()
+    assert report.parked_saved == 1
+    assert waiting.id not in eng.state.pending_spotify()
+    assert eng.state.data["synced"][waiting.id]["spotify_added"] is True
+    assert "are NOT in the target playlist" not in report.summary_text()

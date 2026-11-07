@@ -1349,3 +1349,55 @@ def test_the_proxy_sends_a_plain_cookie_header(monkeypatch):
     client._ensure_token()
     assert seen["cookie"].startswith("sp_dc=" + "z" * 60)
     assert seen["cookies"] is None  # the jar cannot cross a CORS proxy
+
+
+# ---------------------------------------------------- free account / web player
+def test_a_free_account_starts_on_the_web_player_route():
+    """A bot account is never Premium: no queue call, no Web API write budget."""
+    import phonksync.spotify as sp
+
+    client = sp.SpotifyClient("sp_dc=" + "z" * 60, prefer_web_player=True)
+    assert client.queue_supported is False
+    assert client.prefer_pathfinder is True
+    assert client.backend == "web-player"
+    # SPOTIFY_BACKEND=rest is still an explicit opt-out
+    other = sp.SpotifyClient("sp_dc=" + "z" * 60)
+    assert other.queue_supported is True
+
+
+def test_add_to_playlist_is_verified_and_heals_a_rotated_hash(monkeypatch):
+    """A write must fail like a read does: retry on a stale persisted query."""
+    import json as _json
+
+    import phonksync.spotify as sp
+
+    calls = []
+
+    def fake_post(url, body, headers):
+        calls.append(body["extensions"]["persistedQuery"]["sha256Hash"])
+        if len(calls) == 1:
+            return _json.dumps({"errors": [{"message": "PersistedQueryNotFound"}]})
+        return _json.dumps({"data": {"playlistV2": {"__typename": "Playlist"}}})
+
+    monkeypatch.setattr(sp, "_proxy_post", fake_post)
+    monkeypatch.setattr(
+        sp, "_discover_persisted_hashes", lambda ops: {"addToPlaylist": "freshhash"}, raising=False
+    )
+    client = sp.SpotifyClient("sp_dc=" + "z" * 60, prefer_web_player=True)
+    client._ensure_token = lambda: "token"
+    assert client._pathfinder_write("pl" * 11, "spotify:track:abc") is True
+    assert calls[0] != calls[1]  # the healed hash was used
+    assert client.writes_this_run == 0  # counted by add_tracks, not here
+
+
+def test_verify_added_reports_only_what_is_really_in_the_playlist(monkeypatch):
+    import phonksync.spotify as sp
+    from phonksync.models import Track
+
+    client = sp.SpotifyClient("sp_dc=" + "z" * 60, prefer_web_player=True)
+    client._pathfinder_tracks = lambda playlist_id, max_tracks=0: [
+        Track(id="abc", name="in", artists=["a"], uri="spotify:track:abc")
+    ]
+    assert client.verify_added("pl", ["spotify:track:abc", "spotify:track:gone"]) == [
+        "spotify:track:abc"
+    ]
