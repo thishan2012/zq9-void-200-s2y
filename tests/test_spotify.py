@@ -1206,3 +1206,146 @@ def test_a_flapping_short_block_stops_after_two_knocks(monkeypatch):
         client.playlist_tracks("x", max_tracks=10)
     assert session.calls == 2
     assert sum(slept) <= 60  # one Retry-After (+jitter), not two minutes
+
+
+# ------------------------------------------------ anonymous token / proxy route
+class _AnonSession:
+    """Cookie #1 is dead (anonymous); only the good value gets a real token."""
+
+    def __init__(self, good):
+        self.good = good
+        self.headers = {}
+        self.cookies_seen = []
+        # _server_time() probes HEAD and expects a response with headers
+        self.head = lambda *a, **kw: type(
+            "R", (), {"headers": {}, "status_code": 200}
+        )()
+
+    def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+        value = (cookies or {}).get("sp_dc") or ""
+        if not value:
+            header = (headers or {}).get("Cookie", "")
+            for part in header.split(";"):
+                key, _, val = part.strip().partition("=")
+                if key.strip() == "sp_dc":
+                    value = val
+        self.cookies_seen.append(value)
+
+        class R:
+            status_code = 200
+            text = "{}"
+            headers = {}
+
+            def json(self_inner):
+                if value == self.good:
+                    return {"accessToken": "ya29.good", "isAnonymous": False}
+                return {"accessToken": "anon", "isAnonymous": True}
+
+        return R()
+
+    def post(self, *a, **kw):  # not used
+        raise AssertionError
+
+
+def test_a_dead_cookie_falls_back_to_the_spare(monkeypatch):
+    """A stale SPOTIFY_COOKIE used to hide a perfectly good SPOTIFY_COOKIE_2."""
+    import phonksync.spotify as sp
+
+    session = _AnonSession(good="good-cookie")
+    client = sp.SpotifyClient(
+        "sp_dc=dead-cookie", extra_cookies=["sp_dc=good-cookie"], session=session
+    )
+    assert client._ensure_token() == "ya29.good"
+    assert client.cookie_switches == 1
+    assert session.cookies_seen[0] == "dead-cookie"
+
+
+def test_anonymous_for_every_cookie_says_which_one_and_why(monkeypatch):
+    import phonksync.spotify as sp
+    from phonksync.errors import AuthError
+
+    session = _AnonSession(good="nobody")
+    client = sp.SpotifyClient(
+        "sp_dc=dead-one", extra_cookies=["sp_dc=dead-two"], session=session
+    )
+    with pytest.raises(AuthError) as exc:
+        client._ensure_token()
+    msg = str(exc.value)
+    assert "Cookie tried: #2 of 2" in msg
+    assert "Both cookies were tried" in msg
+    assert "cookie-fix --show" in msg
+
+
+def test_anonymous_with_a_single_cookie_points_at_the_spare(monkeypatch):
+    import phonksync.spotify as sp
+    from phonksync.errors import AuthError
+
+    session = _AnonSession(good="nobody")
+    client = sp.SpotifyClient("sp_dc=dead", session=session)
+    with pytest.raises(AuthError) as exc:
+        client._ensure_token()
+    assert "SPOTIFY_COOKIE_2 is empty" in str(exc.value)
+
+
+def test_a_proxy_that_answers_anonymous_is_retried_direct(monkeypatch):
+    """The proxy is the prime suspect: never fail while direct is untried."""
+    import phonksync.spotify as sp
+
+    session = _AnonSession(good="nobody")  # anonymous for every cookie
+    client = sp.SpotifyClient("sp_dc=dead", session=session)
+    client.proxy_url = "https://proxy.example/"
+    data = client._token_request()          # no raise: it just reports anonymous
+    assert data["isAnonymous"] is True
+    assert client.proxy_forced_direct is True
+    assert client.last_token_route == "direct"
+
+
+def test_the_proxy_message_blames_the_proxy_when_direct_also_failed(monkeypatch):
+    import phonksync.spotify as sp
+    from phonksync.errors import AuthError
+
+    session = _AnonSession(good="nobody")
+    client = sp.SpotifyClient("sp_dc=dead", session=session)
+    client.proxy_url = "https://proxy.example/"
+    client.proxy_forced_direct = True
+    client.last_token_route = "proxy"
+    with pytest.raises(AuthError) as exc:
+        client._ensure_token()
+    msg = str(exc.value)
+    assert "The proxy route answered logged-out first" in msg
+    assert "proxy off" in msg
+
+
+def test_the_proxy_sends_a_plain_cookie_header(monkeypatch):
+    """The proxy gets `sp_dc=<value>`; a CORS proxy mangles a full browser header."""
+    import phonksync.spotify as sp
+
+    seen = {}
+
+    class Session:
+        def __init__(self):
+            self.headers = {}
+
+        def head(self, *a, **kw):
+            return type("R", (), {"headers": {}, "status_code": 200})()
+
+        def get(self, url, params=None, headers=None, cookies=None, timeout=None):
+            seen["cookie"] = (headers or {}).get("Cookie", "")
+            seen["cookies"] = cookies
+
+            class R:
+                status_code = 200
+                text = "{}"
+                headers = {}
+
+                def json(self_inner):
+                    return {"accessToken": "t", "isAnonymous": False}
+
+            return R()
+
+    monkeypatch.setenv("SPOTIFY_PROXY_URL", "https://proxy.example/")
+    client = sp.SpotifyClient("sp_dc=" + "z" * 60, session=Session())
+    client.proxy_url = "https://proxy.example/"
+    client._ensure_token()
+    assert seen["cookie"].startswith("sp_dc=" + "z" * 60)
+    assert seen["cookies"] is None  # the jar cannot cross a CORS proxy

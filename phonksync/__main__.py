@@ -503,19 +503,37 @@ def cmd_diag(args: argparse.Namespace) -> int:
     secrets = Secrets.from_env()
     if secrets.spotify_cookie:
         try:
-            client = SpotifyClient(secrets.spotify_cookie)
+            client = SpotifyClient(
+                secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
+            )
             client._ensure_token()
             print("1️⃣  Web API token : ✅")
+            if getattr(client, "proxy_forced_direct", False):
+                print(
+                    "    ⚠️  the proxy route answered logged-out; the direct route is "
+                    "what works — clear SPOTIFY_PROXY_URL / PROXY_URL"
+                )
+            if client.cookie_switches:
+                print(
+                    f"    ℹ️  cookie #{client._cookie_index + 1} works "
+                    f"({client.cookie_switches} switch(es)) — SPOTIFY_COOKIE itself is stale"
+                )
         except Exception as exc:
             first = str(exc).splitlines()[0][:150]
             print(f"1️⃣  Web API token : ❌ {first}")
+            # `client` may not exist if the constructor itself failed.
+            where = getattr(locals().get("client"), "last_token_route", "") or ""
+            if where:
+                print(f"    last route tried: {where} (proxy first, then direct)")
     else:
         print("1️⃣  Web API token : skipped (no SPOTIFY_COOKIE)")
 
     # 2) the web player backend with the account's bearer (the route that works)
     if secrets.spotify_cookie:
         try:
-            client = SpotifyClient(secrets.spotify_cookie)
+            client = SpotifyClient(
+                secrets.spotify_cookie, extra_cookies=secrets.spotify_spare_cookies
+            )
             if playlist:
                 tracks = client._pathfinder_tracks(playlist)
                 print(f"1️⃣b web player    : {'✅' if tracks else '❌'} "

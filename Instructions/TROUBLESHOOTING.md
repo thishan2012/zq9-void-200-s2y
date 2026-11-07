@@ -423,6 +423,30 @@ python -m phonksync pending                     # shows the candidates
 python -m phonksync manual --track <spotify id> --video <video id>
 ```
 
+## "anonymous (logged-out) token" right after updating the cookie
+
+Four causes, checked in this order by the code now:
+
+1. **The proxy route.** A CORS/forwarding proxy can drop or truncate the
+   `Cookie` header, so Spotify answers logged-out for a cookie that works
+   direct. The run now retries **direct** automatically and says so in `diag`:
+   ```
+   ⚠️  the proxy route answered logged-out; the direct route is what works
+       — clear SPOTIFY_PROXY_URL / PROXY_URL
+   ```
+   The proxy request also sends a plain `sp_dc=<value>` header (a complete
+   web-player login cookie); the full browser header is not needed and proxies
+   tend to mangle long values.
+2. **A stale `SPOTIFY_COOKIE` with a good `SPOTIFY_COOKIE_2`.** The client now
+   switches accounts on a logged-out answer instead of raising:
+   ```
+   ℹ️  cookie #2 works (1 switch(es)) — SPOTIFY_COOKIE itself is stale
+   ```
+3. **Only one cookie configured.** The error says it:
+   `SPOTIFY_COOKIE_2 is empty or was ignored, so a stale SPOTIFY_COOKIE has nothing to fall back to.`
+4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
+   only the `sp_dc` value it prints.
+
 ## `YT_COOKIE … no usable SAPISID`
 
 The cookie name is `__Secure-3PAPISID`, but browsers and export tools mangle it
