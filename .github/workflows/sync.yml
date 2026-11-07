@@ -223,6 +223,9 @@ jobs:
 
       - name: Run time
         if: ${{ !cancelled() }}
+        env:
+          YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
+          SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
         run: |
           {
             echo "### ⏱ Wall clock"
@@ -231,8 +234,10 @@ jobs:
             echo "- finished: $(date -u '+%H:%M:%S') UTC"
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
             echo ""
-            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}"
-            echo "Pacing: pause=${{ inputs.free_search_pause }} results=${{ inputs.results_per_query }}"
+            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}${{ inputs.writes_only && ' writes_only=true' || '' }}"
+            # Empty inputs inherit config.json — name the value that was really used
+            # instead of printing `pause= results=` (which reads like "zero pause").
+            echo "Pacing: pause=${YOUTUBE_FREE_SEARCH_PAUSE:-(=config.json)}s results=${SEARCH_RESULTS_PER_QUERY:-(=config.json)}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state
