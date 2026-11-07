@@ -7,7 +7,7 @@
       "0": 11
     },
     "searches": 0,
-    "units_used": 513
+    "units_used": 514
   },
   "skipped": {},
   "spotify": {
@@ -19,7 +19,8 @@
           "Dj Samir"
         ],
         "name": "SPOOKY 3 - Slowed",
-        "queued_at": "2026-11-07T21:23:21+00:00",
+        "queued_at": "2026-11-07T23:06:21+00:00",
+        "reason": "Spotify asked to slow down",
         "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
       },
       "1HOfVRxlZSrRxwdU9khv6p": {
@@ -38,7 +39,8 @@
           "HDN"
         ],
         "name": "LUZ",
-        "queued_at": "2026-11-07T21:23:34+00:00",
+        "queued_at": "2026-11-07T23:06:21+00:00",
+        "reason": "Spotify asked to slow down",
         "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
       },
       "1kZvBIepQFlgUywAub2h56": {
@@ -76,7 +78,8 @@
           "DJ AURAXÉ"
         ],
         "name": "MONTAGEM BREAKDOWN",
-        "queued_at": "2026-11-07T21:22:54+00:00",
+        "queued_at": "2026-11-07T23:06:21+00:00",
+        "reason": "Spotify asked to slow down",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
       "5zeZGRzOBKAoxVO6LwX9Dq": {
@@ -85,7 +88,8 @@
           "NXDLS"
         ],
         "name": "FUNK MISTERIO",
-        "queued_at": "2026-11-07T21:23:07+00:00",
+        "queued_at": "2026-11-07T23:06:21+00:00",
+        "reason": "Spotify asked to slow down",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
       "61zBVwzhLskripTriL7aVR": {
@@ -94,7 +98,8 @@
           "DJ HuTao"
         ],
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
-        "queued_at": "2026-11-07T21:22:41+00:00",
+        "queued_at": "2026-11-07T23:06:21+00:00",
+        "reason": "Spotify asked to slow down",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
       "6JYZTjE9mQrTmRZuNkqpwj": {
@@ -115,7 +120,7 @@
           "DJ ALEX",
           "Dj Samir"
         ],
-        "held_at": "2026-11-07T22:09:21+00:00",
+        "held_at": "2026-11-07T23:06:21+00:00",
         "name": "SPOOKY 3 - Slowed",
         "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
       },
@@ -133,7 +138,7 @@
         "artists": [
           "HDN"
         ],
-        "held_at": "2026-11-07T22:09:21+00:00",
+        "held_at": "2026-11-07T23:06:21+00:00",
         "name": "LUZ",
         "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
       },
@@ -168,7 +173,7 @@
           "SUXMII",
           "DJ AURAXÉ"
         ],
-        "held_at": "2026-11-07T22:09:21+00:00",
+        "held_at": "2026-11-07T23:06:21+00:00",
         "name": "MONTAGEM BREAKDOWN",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
@@ -177,7 +182,7 @@
           "h6itam",
           "NXDLS"
         ],
-        "held_at": "2026-11-07T22:09:21+00:00",
+        "held_at": "2026-11-07T23:06:21+00:00",
         "name": "FUNK MISTERIO",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
@@ -186,7 +191,7 @@
           "WXRTNAX",
           "DJ HuTao"
         ],
-        "held_at": "2026-11-07T22:09:21+00:00",
+        "held_at": "2026-11-07T23:06:21+00:00",
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
@@ -228,12 +233,12 @@
         "won": 0
       }
     },
-    "runs": 2,
+    "runs": 3,
     "total_added": 10
   },
   "synced": {
     "0g3rBLGiHXo9hDEqVaL5sM": {
-      "added_at": "2026-11-07T21:23:21+00:00",
+      "added_at": "2026-11-07T23:06:21+00:00",
       "artists": [
         "fennecxx",
         "DJ ALEX",
@@ -263,7 +268,7 @@
       "youtube_video_id": "IqMWg54nlzU"
     },
     "1RD6UmOALWhLSXAe8GNczs": {
-      "added_at": "2026-11-07T21:23:34+00:00",
+      "added_at": "2026-11-07T23:06:21+00:00",
       "artists": [
         "HDN"
       ],
@@ -317,7 +322,7 @@
       "youtube_video_id": "Jd-vdVOwTXs"
     },
     "4SOpgVtAoZGiSULa9eU74e": {
-      "added_at": "2026-11-07T21:22:54+00:00",
+      "added_at": "2026-11-07T23:06:21+00:00",
       "artists": [
         "SUXMII",
         "DJ AURAXÉ"
@@ -331,7 +336,7 @@
       "youtube_video_id": "Y2Z9gg1gcJ0"
     },
     "5zeZGRzOBKAoxVO6LwX9Dq": {
-      "added_at": "2026-11-07T21:23:08+00:00",
+      "added_at": "2026-11-07T23:06:21+00:00",
       "artists": [
         "h6itam",
         "NXDLS"
@@ -345,7 +350,7 @@
       "youtube_video_id": "xn7KfgXZedc"
     },
     "61zBVwzhLskripTriL7aVR": {
-      "added_at": "2026-11-07T21:22:41+00:00",
+      "added_at": "2026-11-07T23:06:21+00:00",
       "artists": [
         "WXRTNAX",
         "DJ HuTao"
@@ -374,6 +379,6 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-07T22:10:29+00:00",
+  "updated_at": "2026-11-07T23:06:21+00:00",
   "version": 1
 }

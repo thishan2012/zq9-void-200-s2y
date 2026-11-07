@@ -1,12 +1,12 @@
-# 10 track(s) that could not be added automatically (2026-11-07T22:10:30+00:00).
+# 10 track(s) that could not be added automatically (2026-11-07T23:06:22+00:00).
 # Paste these into the target playlist, or let the next run retry them (`python -m phonksync manual --apply`).
-spotify:track:0g3rBLGiHXo9hDEqVaL5sM  # fennecxx, DJ ALEX, Dj Samir - SPOOKY 3 - Slowed
+spotify:track:0g3rBLGiHXo9hDEqVaL5sM  # fennecxx, DJ ALEX, Dj Samir - SPOOKY 3 - Slowed  (Spotify asked to slow down)
 spotify:track:1HOfVRxlZSrRxwdU9khv6p  # h6itam, Penkramin, SNYSTA - MONTAGEM VALKARO - Slowed  (Spotify asked to slow down)
-spotify:track:1RD6UmOALWhLSXAe8GNczs  # HDN - LUZ
+spotify:track:1RD6UmOALWhLSXAe8GNczs  # HDN - LUZ  (Spotify asked to slow down)
 spotify:track:1kZvBIepQFlgUywAub2h56  # ASTXR, MC ETERNA - TURAN 2 - Slowed  (Spotify asked to slow down)
 spotify:track:23AD8PYw2abHfy3UVGC2FC  # Nulteex, ewyx - SHAKA - SLOWED  (Spotify asked to slow down)
 spotify:track:3hkqp9V8ulFGAiWSmBy8FZ  # IXZIYOL - MONTAGEM MANADO - Slowed  (Spotify asked to slow down)
-spotify:track:4SOpgVtAoZGiSULa9eU74e  # SUXMII, DJ AURAXÉ - MONTAGEM BREAKDOWN
-spotify:track:5zeZGRzOBKAoxVO6LwX9Dq  # h6itam, NXDLS - FUNK MISTERIO
-spotify:track:61zBVwzhLskripTriL7aVR  # WXRTNAX, DJ HuTao - MONTAGEM GALACTO LOCONA - Ultra Slowed
+spotify:track:4SOpgVtAoZGiSULa9eU74e  # SUXMII, DJ AURAXÉ - MONTAGEM BREAKDOWN  (Spotify asked to slow down)
+spotify:track:5zeZGRzOBKAoxVO6LwX9Dq  # h6itam, NXDLS - FUNK MISTERIO  (Spotify asked to slow down)
+spotify:track:61zBVwzhLskripTriL7aVR  # WXRTNAX, DJ HuTao - MONTAGEM GALACTO LOCONA - Ultra Slowed  (Spotify asked to slow down)
 spotify:track:6JYZTjE9mQrTmRZuNkqpwj  # Zericxxn, vultury - MALEMO - Slowed  (Spotify asked to slow down)
