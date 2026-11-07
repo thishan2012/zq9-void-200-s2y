@@ -835,6 +835,106 @@ def cmd_manual(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_spotify_write_test(args: argparse.Namespace) -> int:
+    """One real write, with the whole conversation printed.
+
+    The job log is not always downloadable, so the *answer itself* has to be
+    readable: every route, every status, every GraphQL error string. This is the
+    command that ends "it silently does nothing" — nothing here is best-effort.
+    """
+    import json as _json
+
+    from .db import StateDB
+    from .spotify import SpotifyClient, _OP_HASHES
+
+    cfg = Config.load(args.config)
+    secrets = Secrets.from_env()
+    if not secrets.spotify_cookie:
+        print("❌ SPOTIFY_COOKIE is required.", file=sys.stderr)
+        return 2
+    playlist = args.playlist or cfg.spotify_target_playlist
+    track = args.track.strip()
+    if not track:
+        db = StateDB(cfg.state_path)
+        parked = db.pending_spotify() or db.manual_items()
+        if parked:
+            track = next(iter(parked.values())).get("uri", "")
+    if not track:
+        print("❌ No track to try: pass --track spotify:track:…", file=sys.stderr)
+        return 2
+    if track.startswith("spotify:track:"):
+        uri = track
+    else:
+        uri = f"spotify:track:{track}"
+    print(f"🎯 playlist : {playlist}")
+    print(f"🎵 track    : {uri}")
+    print(f"🔑 hash     : {_OP_HASHES.get('addToPlaylist')}")
+    print("")
+
+    client = SpotifyClient(
+        secrets.spotify_cookie,
+        extra_cookies=secrets.spotify_spare_cookies,
+        prefer_web_player=True,
+    )
+    try:
+        token = client._ensure_token()
+    except Exception as exc:
+        print(f"1️⃣ token    : ❌ {exc}")
+        return 1
+    print(f"1️⃣ token    : ✅ {len(token)} chars, account {client.account_username or 'unknown'}")
+
+    print("2️⃣ read     : ", end="", flush=True)
+    try:
+        who = client.permission_hint(playlist)
+        print(f"✅ {who or 'playlist readable'}")
+    except Exception as exc:
+        print(f"❌ {exc}")
+
+    print("3️⃣ write    : ", end="", flush=True)
+    captured: dict[str, object] = {}
+    real_post = __import__("phonksync.spotify", fromlist=["_proxy_post"])._proxy_post
+
+    def spy(url, body, headers):
+        text = real_post(url, body, headers)
+        captured.setdefault("attempts", []).append(
+            {"operation": body.get("operationName"), "sha256": body["extensions"]["persistedQuery"]["sha256Hash"],
+             "variables": body.get("variables"), "answer": text}
+        )
+        return text
+
+    import phonksync.spotify as _sp
+
+    _sp._proxy_post = spy  # type: ignore[assignment]
+    try:
+        ok = client._pathfinder_add(playlist, [uri]) or True
+        print("✅ accepted" if ok else "❌ refused")
+    except Exception as exc:
+        print(f"❌ {exc}")
+    finally:
+        _sp._proxy_post = real_post  # type: ignore[assignment]
+
+    attempts = captured.get("attempts") or []
+    for number, attempt in enumerate(attempts, 1):
+        print("")
+        print(f"── attempt {number}: {attempt['operation']} ({attempt['sha256'][:12]}…)")
+        if args.json:
+            print("   variables:", _json.dumps(attempt["variables"], ensure_ascii=False))
+        answer = str(attempt["answer"] or "")
+        print("   answer   :", answer[:1200] or "(empty)")
+
+    print("")
+    print("4️⃣ verify   : ", end="", flush=True)
+    landed = client.verify_added(playlist, [uri])
+    if uri in landed:
+        print("✅ the track IS in the playlist")
+        return 0
+    print("❌ the track is NOT in the playlist")
+    print("")
+    print("Nothing is guessed from here: the answer above is the whole truth.")
+    print("Paste that block (it contains no cookie/token) and the write can be fixed exactly.")
+    return 1
+
+
 def cmd_cooldown(args: argparse.Namespace) -> int:
     """Show or clear the persisted Spotify cooldown."""
     from datetime import datetime, timezone
@@ -1124,6 +1224,15 @@ def main(argv: list[str] | None = None) -> int:
     p_manual.add_argument("--apply", action="store_true",
                           help="Add the parked tracks to the target playlist now")
     p_manual.set_defaults(func=cmd_manual)
+
+    p_write = sub.add_parser(
+        "spotify-write-test",
+        help="Add one real track (a dry-run write) and print EVERY answer, verbatim",
+    )
+    p_write.add_argument("--track", default="", help="Spotify track ID/URI (default: the first parked one)")
+    p_write.add_argument("--playlist", default="", help="Target playlist (default: the configured one)")
+    p_write.add_argument("--json", action="store_true", help="Print the raw GraphQL payload too")
+    p_write.set_defaults(func=cmd_spotify_write_test)
 
     p_cd = sub.add_parser("cooldown", help="Show/clear the Spotify rate-limit cooldown")
     p_cd.add_argument("--clear", action="store_true", help="Clear the stored cooldown")

@@ -95,3 +95,19 @@ def test_the_wall_clock_line_names_the_pacing_it_actually_used():
 def test_a_writes_only_run_is_visible_in_the_summary():
     script = _steps(_load("sync.yml"))["Run time"]["run"]
     assert "inputs.writes_only" in script
+
+
+def test_the_spotify_write_probe_is_manual_only_and_publishes_its_answer():
+    """Logs are not downloadable here; the probe writes its answer to a branch."""
+    doc = _load("tests.yml")
+    triggers = doc[True]
+    assert "workflow_dispatch" in triggers, "the probe needs a manual trigger"
+    probe = doc["jobs"]["spotify-write-probe"]
+    assert "inputs.spotify_write_probe" in str(probe.get("if", ""))
+    steps = {s.get("name", ""): s for s in probe["steps"]}
+    run = next(v for k, v in steps.items() if "One real write" in k)
+    assert "spotify-write-test" in run["run"]
+    assert "GITHUB_STEP_SUMMARY" in run["run"]
+    publish = next(v for k, v in steps.items() if "Commit the answer" in k)
+    assert "diagnostics/spotify-write-probe-" in publish["run"]
+    assert "git push" in publish["run"]
