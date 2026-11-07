@@ -1,0 +1,159 @@
+{
+  "candidates": {},
+  "quota": {
+    "date": "2026-11-07",
+    "inserts": 5,
+    "keys": {
+      "0": 5
+    },
+    "searches": 0,
+    "units_used": 256
+  },
+  "skipped": {},
+  "spotify": {
+    "manual": {
+      "0g3rBLGiHXo9hDEqVaL5sM": {
+        "artists": [
+          "fennecxx",
+          "DJ ALEX",
+          "Dj Samir"
+        ],
+        "name": "SPOOKY 3 - Slowed",
+        "queued_at": "2026-11-07T21:23:21+00:00",
+        "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
+      },
+      "1RD6UmOALWhLSXAe8GNczs": {
+        "artists": [
+          "HDN"
+        ],
+        "name": "LUZ",
+        "queued_at": "2026-11-07T21:23:34+00:00",
+        "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
+      },
+      "4SOpgVtAoZGiSULa9eU74e": {
+        "artists": [
+          "SUXMII",
+          "DJ AURAXÉ"
+        ],
+        "name": "MONTAGEM BREAKDOWN",
+        "queued_at": "2026-11-07T21:22:54+00:00",
+        "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
+      },
+      "5zeZGRzOBKAoxVO6LwX9Dq": {
+        "artists": [
+          "h6itam",
+          "NXDLS"
+        ],
+        "name": "FUNK MISTERIO",
+        "queued_at": "2026-11-07T21:23:07+00:00",
+        "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
+      },
+      "61zBVwzhLskripTriL7aVR": {
+        "artists": [
+          "WXRTNAX",
+          "DJ HuTao"
+        ],
+        "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
+        "queued_at": "2026-11-07T21:22:41+00:00",
+        "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
+      }
+    }
+  },
+  "stats": {
+    "methods": {
+      "DETAIL": {
+        "tried": 5,
+        "won": 0
+      },
+      "LOOSE": {
+        "tried": 5,
+        "won": 0
+      },
+      "REVERSED": {
+        "tried": 5,
+        "won": 5
+      },
+      "STRICT": {
+        "tried": 5,
+        "won": 0
+      }
+    },
+    "runs": 1,
+    "total_added": 5
+  },
+  "synced": {
+    "0g3rBLGiHXo9hDEqVaL5sM": {
+      "added_at": "2026-11-07T21:23:21+00:00",
+      "artists": [
+        "fennecxx",
+        "DJ ALEX",
+        "Dj Samir"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "SPOOKY 3 - Slowed",
+      "spotify_added": true,
+      "spotify_id": "0g3rBLGiHXo9hDEqVaL5sM",
+      "youtube_added": true,
+      "youtube_video_id": "yJ4hfEX7XjI"
+    },
+    "1RD6UmOALWhLSXAe8GNczs": {
+      "added_at": "2026-11-07T21:23:34+00:00",
+      "artists": [
+        "HDN"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "LUZ",
+      "spotify_added": true,
+      "spotify_id": "1RD6UmOALWhLSXAe8GNczs",
+      "youtube_added": true,
+      "youtube_video_id": "Jfyy3XcdxkM"
+    },
+    "4SOpgVtAoZGiSULa9eU74e": {
+      "added_at": "2026-11-07T21:22:54+00:00",
+      "artists": [
+        "SUXMII",
+        "DJ AURAXÉ"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM BREAKDOWN",
+      "spotify_added": true,
+      "spotify_id": "4SOpgVtAoZGiSULa9eU74e",
+      "youtube_added": true,
+      "youtube_video_id": "Y2Z9gg1gcJ0"
+    },
+    "5zeZGRzOBKAoxVO6LwX9Dq": {
+      "added_at": "2026-11-07T21:23:08+00:00",
+      "artists": [
+        "h6itam",
+        "NXDLS"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "FUNK MISTERIO",
+      "spotify_added": true,
+      "spotify_id": "5zeZGRzOBKAoxVO6LwX9Dq",
+      "youtube_added": true,
+      "youtube_video_id": "xn7KfgXZedc"
+    },
+    "61zBVwzhLskripTriL7aVR": {
+      "added_at": "2026-11-07T21:22:41+00:00",
+      "artists": [
+        "WXRTNAX",
+        "DJ HuTao"
+      ],
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
+      "spotify_added": true,
+      "spotify_id": "61zBVwzhLskripTriL7aVR",
+      "youtube_added": true,
+      "youtube_video_id": "QeJYH2tVfCk"
+    }
+  },
+  "unmatched": {},
+  "updated_at": "2026-11-07T21:23:34+00:00",
+  "version": 1
+}
