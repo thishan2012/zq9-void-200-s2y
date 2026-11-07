@@ -31,6 +31,16 @@ from .telegram import TelegramLogger, escape
 from .youtube import YouTubeClient
 
 
+def _same_instant(first: str, second: str, tolerance: float = 5.0) -> bool:
+    """True when two ISO timestamps are within a few seconds of each other."""
+    try:
+        a = datetime.fromisoformat(first)
+        b = datetime.fromisoformat(second)
+    except (TypeError, ValueError):
+        return False
+    return abs((a - b).total_seconds()) <= tolerance
+
+
 def _human_wait(seconds: float) -> str:
     seconds = int(max(0, seconds))
     hours, rest = divmod(seconds, 3600)
@@ -65,6 +75,9 @@ class RunReport:
     queued: int = 0
     queued_flushes: int = 0
     manual_queued: int = 0
+    parked_spotify: int = 0  # still waiting (Spotify refused again)
+    parked_saved: int = 0    # parked by an earlier run, added in this one
+    parked_repaired: int = 0  # state-file entries fixed (parked but marked added)
     skipped: int = 0
     web_reads: int = 0
     stale_reads: int = 0
@@ -177,8 +190,22 @@ class RunReport:
             )
         if self.manual_queued:
             lines.append(
-                f"📋 Manual bucket: {self.manual_queued} tracks in "
-                "data/manual-queue.txt (Spotify was cooling down)"
+                f"📋 Parked for the next run: {self.manual_queued} track(s) — queue "
+                "full or Spotify slow-down (`phonksync manual`)"
+            )
+        if self.parked_saved:
+            lines.append(
+                f"♻️ Added {self.parked_saved} track(s) an earlier run had to park"
+            )
+        if self.parked_spotify and not self.parked_repaired:
+            lines.append(
+                f"📋 Still parked: {self.parked_spotify} track(s) — Spotify asked to "
+                "slow down; the next run adds them"
+            )
+        if self.parked_repaired and not self.parked_saved and self.parked_spotify:
+            lines.append(
+                f"🩹 Re-queued {self.parked_repaired} track(s) an older run parked but "
+                "recorded as added (still throttled — next run adds them)"
             )
         if self.backend:
             lines.append(f"🔀 Spotify backend: {self.backend}")
@@ -622,7 +649,9 @@ class SyncEngine:
         if not cfg.dry_run:
             self._flush_queue()
             self._retry_pending_queue()
-            if report.manual_queued:
+            report.parked_repaired = self._repair_parked_bucket()
+            self._retry_pending_spotify(report)
+            if self.state.manual_items():
                 self.state.write_manual_queue(cfg.manual_queue_path)
 
         # Record method statistics for every method that was exercised.
@@ -983,21 +1012,27 @@ class SyncEngine:
 
     # ------------------------------------------------------- spotify writes
 
-    def _add_spotify(self, track: Track, target_ids: set[str], report: RunReport) -> None:
+    def _add_spotify(self, track: Track, target_ids: set[str], report: RunReport) -> bool:
         """Add one track to the Spotify target, cheaply.
 
         In ``queue`` mode (default) the track is parked in the player queue and
         the queue is flushed into the playlist in batches: Spotify then
         de-duplicates server side, so a 200-track run costs ~5 calls instead of
         200. Any queue failure falls back to a normal add, so nothing is lost.
+
+        Returns True only when Spotify really took the track. A throttled run
+        parks it instead (manual bucket + pending queue) — and the caller must
+        then NOT record it as ``spotify_added``, or the DB reports a success
+        that never happened and every later run skips the track forever.
         """
         cfg = self.config
         if getattr(self.spotify, "blocked_until", 0.0):
             # Spotify is cooling down: park the track in the manual bucket so a
             # human (or the next run) can drop it in without re-reading Spotify.
-            self.state.add_manual(track)
+            self.state.add_manual(track, reason="Spotify asked to slow down")
+            self.state.add_pending_spotify(track)
             report.manual_queued += 1
-            return
+            return False
         if cfg.spotify_write_mode == "queue" and getattr(
             self.spotify, "queue_supported", False
         ):
@@ -1011,7 +1046,7 @@ class SyncEngine:
                         )
                         report.queued_flushes += 1
                         log.info("Saved %d queued tracks into the target playlist", sent)
-                    return
+                    return True
             except Exception as exc:
                 log.warning(
                     "Queue add failed (%s) — switching this run to direct adds", exc
@@ -1020,6 +1055,103 @@ class SyncEngine:
                 self._flush_queue()
         self.spotify.add_tracks(cfg.spotify_target_playlist, [track.uri])
         target_ids.add(track.id)
+        # It is added now, so any parked copy is stale — never add it twice.
+        self.state.clear_manual([track.id])
+        self.state.clear_pending_spotify([track.id])
+        return True
+
+    def _repair_parked_bucket(self) -> int:
+        """Fix the state file a throttled run used to write.
+
+        Until this version, a parked track was *also* recorded as
+        ``spotify_added`` — so the backlog existed only in the manual bucket and
+        no run would ever retry it. A track that is both parked and "added" can
+        only come from that bug, so it is re-queued once, here.
+        """
+        repaired = 0
+        for track_id, entry in self.state.manual_items().items():
+            state = self.state.data["synced"].get(track_id) or {}
+            if not state.get("spotify_added"):
+                continue
+            if not _same_instant(entry.get("queued_at"), state.get("added_at")):
+                # Parked and really added at different times: a later run did
+                # add it. Only the one-instant case is the old bug.
+                continue
+            state["spotify_added"] = False
+            track = Track(
+                id=track_id,
+                name=entry.get("name", ""),
+                artists=list(entry.get("artists") or []),
+                uri=entry.get("uri", ""),
+            )
+            self.state.add_pending_spotify(track)
+            repaired += 1
+        if repaired:
+            log.warning(
+                "Re-queued %d track(s) that an older run parked but recorded as "
+                "added — they will be added now", repaired
+            )
+        return repaired
+
+    def _retry_pending_spotify(self, report: RunReport) -> None:
+        """Add the tracks an earlier throttled run could only park.
+
+        These were never added (that is why they are not ``spotify_added``), so
+        this is a plain add, in one batch, at the end of the run — not a search.
+        """
+        pending = self.state.pending_spotify()
+        if not pending:
+            return
+        if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+            # Still throttled: trying now would be one more refused write.
+            report.parked_spotify = len(pending)
+            log.info("Keeping %d parked track(s) for the next run", len(pending))
+            return
+        # A later run may already have added some of them (the resume point made
+        # it start past the cooldown): never add those twice.
+        done = [
+            track_id
+            for track_id in pending
+            if (self.state.data["synced"].get(track_id) or {}).get("spotify_added")
+        ]
+        if done:
+            self.state.clear_pending_spotify(done)
+            self.state.clear_manual(done)
+            pending = self.state.pending_spotify()
+        if not pending:
+            return
+        uris = [entry.get("uri", "") for entry in pending.values() if entry.get("uri")]
+        if not uris:
+            self.state.clear_pending_spotify()
+            return
+        try:
+            self.spotify.add_tracks(self.config.spotify_target_playlist, uris)
+        except Exception as exc:
+            log.warning(
+                "Still could not add %d parked Spotify track(s): %s", len(uris), exc
+            )
+            report.parked_spotify = len(uris)
+            return
+        for track_id, entry in pending.items():
+            track = Track(
+                id=track_id,
+                name=entry.get("name", ""),
+                artists=list(entry.get("artists") or []),
+                uri=entry.get("uri", ""),
+            )
+            entry_state = self.state.data["synced"].get(track_id) or {}
+            if entry_state:
+                entry_state["spotify_added"] = True
+            else:
+                self.state.mark_synced(track, "", "", True, False)
+        self.state.clear_pending_spotify()
+        self.state.clear_manual(list(pending))
+        report.parked_spotify = 0
+        report.parked_saved = len(uris)
+        log.info(
+            "Added %d track(s) that an earlier run had to park (Spotify cooldown)",
+            len(uris),
+        )
 
     def _retry_pending_queue(self) -> None:
         """A previous run could not save its queue — try again now."""
@@ -1046,11 +1178,12 @@ class SyncEngine:
             return 0
 
     def _park_remaining(self, remaining: list[Track], report: RunReport) -> None:
-        """Park the not-yet-processed source tracks in the manual bucket."""
+        """Park the not-yet-processed source tracks so the next run retries them."""
         for track in remaining:
             key = self.state.data["synced"].get(track.id) or {}
             if not key.get("spotify_added"):
-                self.state.add_manual(track)
+                self.state.add_manual(track, reason="Spotify asked to slow down")
+                self.state.add_pending_spotify(track)
                 report.manual_queued += 1
 
     def _hold_resume_point(self, track: Track) -> bool:
@@ -1222,10 +1355,12 @@ class SyncEngine:
                 if cfg.require_youtube_match_for_spotify:
                     return
                 # Spotify side is exact (same track ID) — still add it.
-                if not spotify_done and not cfg.dry_run:
-                    self._add_spotify(track, target_spotify_ids, report)
+                if not cfg.dry_run and not spotify_done:
+                    spotify_added = self._add_spotify(track, target_spotify_ids, report)
+                else:
+                    spotify_added = spotify_done
                 if not cfg.dry_run:
-                    self.state.mark_synced(track, "", "", True, False)
+                    self.state.mark_synced(track, "", "", spotify_added, False)
                 return
             if getattr(result, "free", False):
                 self._free_matches += 1
@@ -1245,7 +1380,9 @@ class SyncEngine:
             return
 
         if not spotify_done:
-            self._add_spotify(track, target_spotify_ids, report)
+            spotify_added = self._add_spotify(track, target_spotify_ids, report)
+        else:
+            spotify_added = True
         if video_id and not youtube_done:
             if getattr(self.youtube, "can_write", True) and not report.youtube_auth_failed:
                 self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
@@ -1257,8 +1394,11 @@ class SyncEngine:
                 )
                 report.youtube_readonly += 1
 
+        # Only claim what actually happened: a parked track keeps
+        # spotify_added=False so the next run retries it instead of skipping it
+        # as "already synced" forever.
         self.state.mark_synced(
-            track, video_id, method, True,
+            track, video_id, method, spotify_added,
             bool(video_id) and getattr(self.youtube, "can_write", True),
         )
         if track.isrc:
@@ -1298,8 +1438,8 @@ class SyncEngine:
             )
             return
 
-        self._add_spotify(track, target_spotify_ids, report)
-        self.state.mark_synced(track, "", "", True, False)
+        added = self._add_spotify(track, target_spotify_ids, report)
+        self.state.mark_synced(track, "", "", added, False)
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
         report.added += 1

@@ -62,3 +62,26 @@ def test_quota_counters_persist_across_runs(tmp_path):
     assert again.inserts == 10
     assert again.date == quota.date
     assert QuotaState.from_dict(again.to_dict()).searches == 79
+
+
+def test_a_parked_track_is_queued_for_the_next_run(tmp_path):
+    """Parking is not adding: the track must stay retryable."""
+    from phonksync.db import StateDB
+    from phonksync.models import Track
+
+    db = StateDB(tmp_path / "state.json")
+    track = Track(id="parked000000000000000001", name="LUZ", artists=["HDN"],
+                  uri="spotify:track:parked000000000000000001")
+    db.add_manual(track, reason="Spotify asked to slow down")
+    db.add_pending_spotify(track)
+    db.save()
+
+    assert db.manual_uris() == ["spotify:track:parked000000000000000001"]
+    assert (db.manual_items()[track.id]["reason"]) == "Spotify asked to slow down"
+
+    # Applying only what is still missing keeps the rest for a later attempt.
+    assert db.clear_manual([track.id]) == 1
+    assert db.manual_items() == {}
+    assert db.pending_spotify()  # untouched
+    assert db.clear_pending_spotify([track.id]) == 1
+    assert db.pending_spotify() == {}
