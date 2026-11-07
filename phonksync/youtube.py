@@ -234,6 +234,8 @@ class YouTubeClient:
         # tried as well — see `_refresh_access_token`.
         self._client_candidates: list[dict[str, str]] = []
         self._token_works = False
+        self.client_used = ""
+        self._explicit_pair: dict[str, str] = {}
         # Set when a client id exists but no secret: the exchange must fail
         # honestly instead of posting an empty secret.
         self.client_secret_missing = False
@@ -258,6 +260,16 @@ class YouTubeClient:
             self.client_id = (client_id or "").strip()
         if not self.client_secret:
             self.client_secret = (client_secret or "").strip()
+        # A client JSON (or a whole token.json) wins over YT_CLIENT_ID/SECRET — but
+        # if the refresh token belongs to the *other* client, the pair must still
+        # be tried. This is why "the secret was already set" can still fail.
+        explicit_id = (client_id or "").strip()
+        explicit_secret = (client_secret or "").strip()
+        self._explicit_pair = (
+            {"client_id": explicit_id, "client_secret": explicit_secret}
+            if explicit_id and explicit_id != self.client_id
+            else {}
+        )
         if not self.refresh_token:
             # Token JSONs keep refresh_token at the top level; be lenient and
             # also look inside the installed/web section.
@@ -657,6 +669,8 @@ class YouTubeClient:
         attempts = []
         if self.client_id:
             attempts.append({"client_id": self.client_id, "client_secret": self.client_secret})
+        if self._explicit_pair:
+            attempts.append(dict(self._explicit_pair))
         attempts.extend(self._client_candidates)
         if not attempts:
             raise AuthError(
@@ -684,6 +698,7 @@ class YouTubeClient:
             self._access_token = data["access_token"]
             self._access_expiry = time.time() + int(data.get("expires_in", 3600))
             self._token_works = True
+            self.client_used = pair["client_id"]
             if not self.client_id:
                 # Remember where it worked: one exchange per run, not per call.
                 self.client_id = pair["client_id"]

@@ -346,6 +346,14 @@ class SyncEngine:
             return
         except Exception as exc:  # never let the preflight kill a run
             log.warning("YouTube preflight skipped: %s", exc)
+            return
+        used = getattr(yt, "client_used", "") or getattr(yt, "client_id", "")
+        if used:
+            self._detail(
+                report,
+                f"✍️ YouTube writes: OAuth via client <code>{escape(used[:22])}…</code> "
+                "(the token works with this client)",
+            )
 
     def _youtube_write_problem(self) -> str:
         """Why writes are off, in terms of the credential actually missing."""
