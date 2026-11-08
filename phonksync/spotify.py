@@ -1245,12 +1245,19 @@ class SpotifyClient:
             hashes[name] = value
         # The browser sends the whole batch in ONE call, an explicit interactionId,
         # and confirms on `addItemsToPlaylist.__typename`.
+        # The browser sends the same object twice: `playlistItemUris` for the
+        # mutation and `uris` for the optimistic UI update. Sending only one of
+        # them is answered `AddItemsToPlaylistPayload` while the playlist does
+        # not change — an accepted no-op, the worst kind of "success".
+        items = list(uris) if isinstance(uris, list) else [uris]
         variables = {
             "playlistUri": f"spotify:playlist:{playlist_id}",
-            "playlistItemUris": list(uris) if isinstance(uris, list) else [uris],
+            "playlistItemUris": items,
+            "uris": items,
             "newPosition": {"moveType": "BOTTOM_OF_PLAYLIST", "fromUid": None},
             "interactionId": None,
         }
+        self.last_write_variables = sorted(variables)
         refreshed_hash = False
         refreshed_auth = False
         last = ""

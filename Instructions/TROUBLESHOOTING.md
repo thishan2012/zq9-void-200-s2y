@@ -481,6 +481,36 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+## Accepted no-op: the write is answered ✅ and nothing lands
+
+The worst failure this bot has met, and the one that produced weeks of "Spotify
+add වෙලා නෑ":
+
+* `addToPlaylist` answers `AddItemsToPlaylistPayload` — no error, no exception,
+* the playlist is unchanged, and
+* `diagnostics` stays `null`, because nothing was *refused*.
+
+Evidence it is a no-op and not a slow playlist: in one run three URIs of a batch
+landed and six did not, and the six were still absent days later.
+
+Two things now make it visible instead of silent:
+
+1. **`🧾 last write: sent N → landed M`** — recorded in `data/sync-state.json`
+   (`diagnostics.last_write_receipt`) on every run that writes, printed by
+   `python -m phonksync manual`, and raised as a `::warning` annotation on the
+   run page when `M = 0`.
+2. **The probe says it out loud**: if the playlist size does not change it
+   prints `🚨 ACCEPTED NO-OP` and tells you to re-run with `--batch 1`.
+
+The write now sends the **browser's own variables** — `playlistItemUris` *and*
+`uris` (the browser sends the same list twice; one of them drives the mutation,
+the other the UI update). A payload with only half of them is exactly the shape
+that answers ✅ and changes nothing.
+
+If a run still reports `sent 6 → landed 0`, run the probe with `--batch 1`. One
+landing and two not landing means the mutation accepts single URIs only for this
+account — then the fix is in `_pathfinder_add`, not in the hash.
+
 ## The probe: "1 → 4" is the verdict
 
 The probe prints the target playlist's size **before** and **after** the write:

@@ -819,6 +819,18 @@ def cmd_manual(args: argparse.Namespace) -> int:
             + (f" ({len(items) - len(ids)} were already there)" if len(items) > len(ids) else "")
         )
         return 0
+    receipt = db.last_write_receipt()
+    if receipt:
+        print(
+            f"🧾 last write: sent {receipt.get('sent')} → landed "
+            f"{receipt.get('landed')} (route: {receipt.get('route') or 'n/a'}, "
+            f"{receipt.get('when', '')})"
+        )
+        if receipt.get("sent") and not receipt.get("landed"):
+            print(
+                "   ⚠️  the write was accepted but NOTHING landed — see "
+                "TROUBLESHOOTING: 'accepted no-op'"
+            )
     problem = db.last_write_problem()
     if problem:
         print(
@@ -953,6 +965,18 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
             print(f"   ❌ {one}")
     if len(added_ids) == len(uris):
         return 0
+    # The write was answered `AddItemsToPlaylistPayload` and the playlist still
+    # did not change. That is the one failure with no exception: name it.
+    print("")
+    print(
+        f"🚨 ACCEPTED NO-OP: Spotify echoed success but the playlist is unchanged "
+        f"({len(before)} → {len(after)})."
+    )
+    print("   This is why the sync keeps 'adding' the same tracks: nothing landed.")
+    print(
+        "   Next: Re-run this probe with --batch 1. If one track lands and two do "
+        "not, the mutation accepts only single URIs for this account."
+    )
     print("")
     print("Nothing is guessed from here: the answer above is the whole truth.")
     print("Paste that block (it contains no cookie/token) and the write can be fixed exactly.")
