@@ -344,11 +344,15 @@ jobs:
             echo '```'
             tail -n 120 run.log
             echo '```'
-            if [ -s run.log ]; then
+            if [ "$code" -ne 0 ] && [ -s run.log ]; then
               echo "### ❌ What went wrong"
               echo ""
-              grep -m3 -E "Setup failed|refused|❌|ERROR|Traceback" run.log \
+              grep -m3 -E "Setup failed|refused|❌|ERROR|Traceback|🛑" run.log \
                 | sed 's/^/    /' || echo "    (no reason line found — open the log above)"
+            elif [ "$code" -ne 0 ]; then
+              echo "### ❌ The step failed but produced no log output"
+            else
+              echo "### ✅ The sync command exited 0 — see the counts above for song-level results"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" -ne 0 ] && [ -s run.log ]; then

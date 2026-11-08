@@ -1077,7 +1077,7 @@ def test_summary_shows_counts_and_only_the_unadded_tracks():
     text = report.summary_text()
     assert "Added: <b>4</b>" in text
     assert "Skipped by choice: 3" in text
-    assert "Failed / unmatched: 2" in text
+    assert "❌ Failed / unmatched: 2" in text
     assert "<b>Not added</b> (1):" in text
     assert "Nulteex — hd" in text
     # no added-song listing at all
@@ -1853,3 +1853,15 @@ def test_parked_backlog_is_retried_on_the_web_player_during_a_cooldown(monkeypat
     assert spotify.web_added == [parked.uri], "the backlog waited for no reason"
     assert not eng.state.pending_spotify()
     assert not eng.state.manual_items()
+
+
+def test_a_zero_unmatched_count_is_not_printed_as_a_failure():
+    """The old summary put a red ❌ next to `Failed / unmatched: 0`.
+
+    A clean run then looked broken in Telegram and in the GitHub log tail.
+    """
+    from phonksync.engine import RunReport
+
+    text = RunReport(added=1, unmatched=0).summary_text()
+    assert "✅ Failed / unmatched: 0" in text
+    assert "❌ Failed / unmatched: 0" not in text

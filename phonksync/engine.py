@@ -134,7 +134,9 @@ class RunReport:
             f"✅ {added_word}: <b>{self.added}</b>"
             + (f" (YouTube inserts: {self.youtube_inserted})" if self.youtube_inserted else ""),
             f"⏭ Skipped by choice: {self.skipped_by_choice}",
-            f"❌ Failed / unmatched: {self.unmatched}",
+            # A zero count is not a failure. The old red ❌ next to
+            # "Failed / unmatched: 0" made a clean run read like a broken one.
+            f"{'❌' if self.unmatched else '✅'} Failed / unmatched: {self.unmatched}",
         ]
         if self.oauth_switches:
             lines.append(
