@@ -1360,6 +1360,12 @@ class SyncEngine:
         landed = self._confirm_spotify_writes(uris, report)
         if landed is None:  # could not check: trust the API answer
             landed = list(uris)
+        self.state.note_write_receipt(
+            len(uris), len(landed),
+            getattr(self.spotify, "last_write_route", "")
+            + " | vars=" + ",".join(getattr(self.spotify, "last_write_variables", []) or []),
+            note="parked backlog" if len(landed) == len(uris) else "parked backlog, partial",
+        )
         self.spotify.last_add_accepted = bool(landed)
         missing = [u for u in uris if u not in landed]
         if missing:
@@ -1370,6 +1376,11 @@ class SyncEngine:
                 "retry", len(missing), len(uris),
             )
             report.parked_spotify = len(missing)
+            self.state.note_write_problem(
+                f"Spotify accepted the batch but {len(missing)} of {len(uris)} parked "
+                f"track(s) are not in the playlist",
+                route=getattr(self.spotify, "last_write_route", ""),
+            )
             uris = landed
             pending = {k: v for k, v in pending.items() if k not in keep}
         for track_id, entry in pending.items():

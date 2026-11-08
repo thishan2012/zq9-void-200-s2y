@@ -1581,3 +1581,24 @@ def test_a_refused_batch_falls_back_to_single_adds(monkeypatch):
     assert ["spotify:track:bbb"] in calls[1:]
     assert ["spotify:track:ccc"] in calls[1:]
     assert client.writes_landed == 3
+
+
+def test_the_write_sends_the_browser_variables(monkeypatch):
+    """The browser sends `uris` as well as `playlistItemUris` — an accepted no-op
+    happens when only one of the two is present."""
+    import phonksync.spotify as sp
+
+    seen = {}
+
+    def fake_post(url, payload, headers):
+        seen.update(payload["variables"])
+        return '{"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}}'
+
+    monkeypatch.setattr(sp, "_proxy_post", fake_post)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, prefer_web_player=True)
+    client._pathfinder_write_many("PL1", ["spotify:track:aaa"])
+
+    assert seen["playlistItemUris"] == ["spotify:track:aaa"]
+    assert seen["uris"] == ["spotify:track:aaa"]
+    assert client.last_write_variables == sorted(seen)

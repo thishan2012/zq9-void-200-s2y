@@ -252,6 +252,14 @@ jobs:
           grep -m1 '^   ' /tmp/manual.txt | sed 's/^   //' | while IFS= read -r line; do
             echo "::error title=Spotify write refused::${line}"
           done
+          # The receipt is sent → landed: an accepted no-op has no error to show,
+          # so this is the only place it becomes visible on the run page.
+          grep -m1 '^🧾' /tmp/manual.txt | while IFS= read -r line; do
+            echo "::notice title=Spotify write receipt::${line#🧾 }"
+          done
+          grep -m1 '^   ⚠️' /tmp/manual.txt | sed 's/^   //' | while IFS= read -r line; do
+            echo "::warning title=Spotify reported success but nothing landed::${line}"
+          done
 
       - name: Keep the run log
         if: ${{ always() && !inputs.fill_cache }}

@@ -200,6 +200,24 @@ class StateDB:
             "account": account,
         }
 
+    def note_write_receipt(self, sent: int, landed: int, route: str = "", note: str = "") -> None:
+        """What the write path actually did, on every run that writes.
+
+        The job log is not readable from here, and an accepted-but-absent write
+        has *no* exception to record. This is the receipt: sent vs. really-in-
+        playlist, kept whether it went right or not.
+        """
+        self.data.setdefault("diagnostics", {})["last_write_receipt"] = {
+            "when": _now(),
+            "sent": int(sent),
+            "landed": int(landed),
+            "route": route,
+            "note": note[:500],
+        }
+
+    def last_write_receipt(self) -> dict[str, Any]:
+        return (self.data.get("diagnostics") or {}).get("last_write_receipt") or {}
+
     def last_write_problem(self) -> dict[str, Any]:
         return (self.data.get("diagnostics") or {}).get("last_write_problem") or {}
 

@@ -1711,3 +1711,29 @@ def test_a_parked_track_already_in_the_playlist_is_counted_not_added_twice(monke
     assert done.id not in eng.state.pending_spotify()
     assert eng.state.data["synced"][done.id]["spotify_added"] is True
     assert "were already in the playlist" in report.summary_text()
+
+
+
+def test_a_parked_batch_that_does_not_land_keeps_a_receipt(monkeypatch, cfg):
+    """An accepted-but-absent write has no exception: the receipt must exist."""
+    from conftest import make_track
+
+    source = [make_track(id="ssssssssssssssssssssss", name="MALEMO",
+                         uri="spotify:track:ssssssssssssssssssssss")]
+    spotify = FakeSpotify({"src111111111111111111111": source}, {"target"})
+    spotify.target_ids = {t.id for t in source}          # nothing to add
+    spotify.verify_added = lambda playlist, uris: []     # nothing ever lands
+    youtube = EngineYouTube()
+    engine = build_engine(monkeypatch, cfg, spotify, youtube)
+    engine.state.add_pending_spotify(
+        make_track(id="pppppppppppppppppppppp", name="MALEMO",
+                   uri="spotify:track:pppppppppppppppppppppp")
+    )
+    report = engine.run()
+
+    receipt = engine.state.last_write_receipt()
+    assert receipt["sent"] == 1, "the write was never attempted"
+    assert receipt["landed"] == 0, "a write that did not land must not say it did"
+    assert receipt["route"], "the receipt must name the route that was used"
+    assert report.parked_spotify >= 1, "the track must stay in the backlog"
+    assert engine.state.pending_spotify(), "and must be retried next run"
