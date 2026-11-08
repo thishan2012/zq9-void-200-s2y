@@ -339,12 +339,14 @@ Separate multiple sources with commas or newlines. Spotify URLs, `spotify:playli
 
 ## 7. Verify everything ✅
 
+- **No terminal:** In GitHub go to **Actions → Credential Check → Run workflow**. It is read-only: it tests the stored Spotify cookie and (if present) exchanges `YT_REFRESH_TOKEN` with Google, then prints a redacted ✅/❌ summary. It does not add songs or commit anything.
 - In GitHub: **Actions → Phonk Sync → Run workflow** with `dry_run = true`. The `Validate config and secrets` step must pass.
 - Locally: put the same values in a `.env` file (git-ignored) and run:
   ```bash
   python -m phonksync check --live
+  python -m phonksync youtube-auth --check-token   # tests YT_REFRESH_TOKEN from .env
   ```
-  You should see `✅ Spotify cookie valid`, `✅ YouTube OAuth valid`.
+  You should see `✅ Spotify cookie valid`, `✅ YouTube OAuth valid`, and `✅ Works with client …` for the refresh token.
 
 ## 🚫 Security rules
 

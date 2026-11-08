@@ -144,6 +144,25 @@ def test_the_probe_can_reproduce_a_batch_write():
     assert "--batch" in run and "inputs.spotify_probe_batch" in run
 
 
+def test_credential_check_is_manual_readonly_and_live():
+    """A one-click secret check must not sync, write, or leak token prefixes."""
+    doc = _load("credential-check.yml")
+    triggers = doc[True]
+    assert "workflow_dispatch" in triggers
+    assert "schedule" not in triggers and "push" not in triggers
+    assert doc["permissions"]["contents"] == "read"
+    steps = _steps(doc, job="check")
+    run = steps["Live credential check (read-only)"]["run"]
+    assert "phonksync check --live" in run
+    assert "youtube-auth --check-token" in run
+    assert "GITHUB_STEP_SUMMARY" in run
+    assert "redact" in run
+    for name, step in steps.items():
+        assert "secrets." not in name
+        if "with" in step and "name" in step["with"]:
+            assert "secrets." not in str(step["with"]["name"])
+
+
 def test_the_run_summary_says_whether_the_run_could_write():
     """Run 27: 59s, green, 'Run sync: success' — and `Commit sync state: skipped`.
     A dry run and a missing secret look identical from outside; the summary must

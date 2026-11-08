@@ -50,10 +50,11 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 1. Push this repository to GitHub (public is fine — no secrets are in the code).
 2. **Actions** tab → enable workflows if prompted.
-3. Run it once manually: **Actions → Phonk Sync → Run workflow**.
+3. Verify the secrets first: **Actions → Credential Check → Run workflow** (read-only, no song writes).
+4. Run the sync manually: **Actions → Phonk Sync → Run workflow**.
    - First run: tick `dry_run` to preview matches without writing anything. Dry runs read only the first 200 source tracks (`dry_run_track_limit` in `config.json`).
    - Then run it live. Live syncs read the full source playlists.
-4. Automatic scheduled runs are currently **paused**. The workflow only runs when you manually trigger it (`.github/workflows/sync.yml`). To re-enable automatic runs, add a `schedule:` cron trigger back to that workflow.
+5. Automatic scheduled runs are currently **paused**. The workflow only runs when you manually trigger it (`.github/workflows/sync.yml`). To re-enable automatic runs, add a `schedule:` cron trigger back to that workflow.
 
 Each live run commits `data/sync-state.json` back to the repo — that is the database that prevents duplicate adds.
 
