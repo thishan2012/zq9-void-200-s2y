@@ -362,6 +362,15 @@ it once (same steps as §2 and §3), then add these three secrets:
 | `YT_CLIENT_SECRET_2` | the new client's secret |
 | `YT_REFRESH_TOKEN_2` | the refresh token you got for it |
 
+> ⚠️ **All three are needed — a refresh token on its own cannot write.** It only
+> works with the OAuth client that issued it, so `YT_REFRESH_TOKEN_2` by itself
+> leaves account 2 unusable. If you have the JSON, `YT_CLIENT_JSON_2` +
+> `YT_REFRESH_TOKEN_2` is the same thing with one less secret (see Option A2).
+>
+> An incomplete spare is **never handed the run**: account 1 keeps working
+> exactly as before, and the credential check says
+> `OAuth account #2: has a refresh token but no OAuth client.`
+
 The workflow reads `_2` through `_5`. Numbering may have gaps — `_2` and `_4`
 both work. Leave the secrets you do not use out entirely; empty ones are ignored.
 

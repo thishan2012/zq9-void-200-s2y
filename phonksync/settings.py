@@ -471,6 +471,17 @@ class Secrets:
                 continue
             for problem in check_token_types(token, ""):
                 problems.append(f"OAuth account #{n}: {problem}")
+            # A refresh token only works with the OAuth client that issued it.
+            # YT_REFRESH_TOKEN_2 on its own leaves account 2 unable to write,
+            # and the failure would otherwise land mid-run at the handover.
+            if not (extra.get("client_id") or extra.get("client_json")
+                    or extra.get("token_json")):
+                problems.append(
+                    f"OAuth account #{n}: has a refresh token but no OAuth client. "
+                    f"Add YT_CLIENT_JSON_{n} (the JSON you downloaded for that "
+                    f"project), or YT_CLIENT_ID_{n} + YT_CLIENT_SECRET_{n}. "
+                    "A refresh token only works with the client that issued it."
+                )
         return problems
 
     def validate(self, require_telegram: bool = False, require_youtube: bool = False) -> None:
