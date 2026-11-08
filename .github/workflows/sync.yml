@@ -97,7 +97,11 @@ jobs:
         env:
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
+          # Never take the proxy from a stale repository variable: a CORS proxy
+          # that drops the Cookie header makes Spotify answer logged-out, which
+          # is the one difference between "the probe writes" and "the sync does
+          # not". Use the dispatch input, or a proxy secret you set on purpose.
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
@@ -128,7 +132,11 @@ jobs:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
+          # Never take the proxy from a stale repository variable: a CORS proxy
+          # that drops the Cookie header makes Spotify answer logged-out, which
+          # is the one difference between "the probe writes" and "the sync does
+          # not". Use the dispatch input, or a proxy secret you set on purpose.
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
         run: |
@@ -149,7 +157,11 @@ jobs:
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
+          # Never take the proxy from a stale repository variable: a CORS proxy
+          # that drops the Cookie header makes Spotify answer logged-out, which
+          # is the one difference between "the probe writes" and "the sync does
+          # not". Use the dispatch input, or a proxy secret you set on purpose.
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
         run: python -m phonksync cache-fill
 
@@ -189,8 +201,18 @@ jobs:
           REQUEST_DELAY_SECONDS: ${{ inputs.request_delay }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
-          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || vars.SPOTIFY_PROXY_URL || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
+          # Never take the proxy from a stale repository variable: a CORS proxy
+          # that drops the Cookie header makes Spotify answer logged-out, which
+          # is the one difference between "the probe writes" and "the sync does
+          # not". Use the dispatch input, or a proxy secret you set on purpose.
+          SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
+          # Same names the write probe uses, so the two entry points cannot
+          # differ silently. Empty secrets are fine (they are optional).
+          SPOTIFY_TOTP_VER: ${{ secrets.SPOTIFY_TOTP_VER }}
+          SPOTIFY_TOTP_CIPHER: ${{ secrets.SPOTIFY_TOTP_CIPHER }}
+          SPOTIFY_WEB_TOKEN: ${{ secrets.SPOTIFY_WEB_TOKEN }}
+          SPOTIFY_ENCRYPTED_TOKEN: ${{ secrets.SPOTIFY_ENCRYPTED_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run }}
           MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
@@ -296,6 +318,8 @@ jobs:
             echo "- SPOTIFY_COOKIE: $([ -n "${SPOTIFY_COOKIE:-}" ] && echo "set (${#SPOTIFY_COOKIE} chars)" || echo "**MISSING**")"
             echo "- target playlist: ${SPOTIFY_TARGET_PLAYLIST:-(MISSING)}"
             echo "- state commit: $([ "${{ inputs.dry_run }}" = "true" ] && echo "skipped (dry run)" || echo "will commit")"
+            echo "- Spotify proxy: $([ -n "${SPOTIFY_PROXY_URL:-}" ] && echo "**on** (a CORS proxy can silently log the cookie out)" || echo "off (direct)")"
+            echo "- TOTP override: $([ -n "${SPOTIFY_TOTP_VER:-}${SPOTIFY_TOTP_CIPHER:-}" ] && echo "set" || echo "embedded defaults")"
             # Empty inputs inherit config.json — name the value that was really used
             # instead of printing `pause= results=` (which reads like "zero pause").
             echo "Pacing: pause=${YOUTUBE_FREE_SEARCH_PAUSE:-(=config.json)}s results=${SEARCH_RESULTS_PER_QUERY:-(=config.json)}"

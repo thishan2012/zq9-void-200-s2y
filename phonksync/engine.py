@@ -1208,6 +1208,20 @@ class SyncEngine:
         writes = int(getattr(self.spotify, "writes_this_run", 0) or 0)
         requests = int(getattr(self.spotify, "requests_made", 0) or 0)
         bits.append(f"{writes} Spotify write(s), {requests} request(s) before it")
+        # A run that never got a token cannot write, whatever else is configured:
+        # name the exact answer instead of "Spotify asked to slow down".
+        token_errors = getattr(self.spotify, "last_token_errors", []) or []
+        if token_errors and not getattr(self.spotify, "_access_token", ""):
+            bits.append(
+                "no token: " + escape("; ".join(token_errors[:3])[:300])
+            )
+            bits.append(
+                f"route: {getattr(self.spotify, 'last_token_route', '') or 'direct'}, "
+                f"proxy {'set' if getattr(self.spotify, 'proxy_url', '') else 'off'}, "
+                f"cookie #{getattr(self.spotify, '_cookie_index', 0) + 1} of "
+                f"{len(getattr(self.spotify, '_cookie_pool', []) or [''])} "
+                f"({len(getattr(self.spotify, 'sp_dc', '') or '')} chars)"
+            )
         if cfg.spotify_write_mode == "queue" and not getattr(
             self.spotify, "queue_supported", True
         ):

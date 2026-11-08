@@ -1737,3 +1737,27 @@ def test_a_parked_batch_that_does_not_land_keeps_a_receipt(monkeypatch, cfg):
     assert receipt["route"], "the receipt must name the route that was used"
     assert report.parked_spotify >= 1, "the track must stay in the backlog"
     assert engine.state.pending_spotify(), "and must be retried next run"
+
+
+def test_a_run_without_a_token_says_so_in_the_diagnosis(monkeypatch, cfg):
+    """'Spotify asked to slow down' hides the real cause: no token at all."""
+    from conftest import make_track
+
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.last_token_errors = ["https://open.spotify.com/api/token (transport, "
+                                 "totp v12): HTTP 429", "legacy: HTTP 400"]
+    spotify.last_token_route = "proxy"
+    spotify.proxy_url = "https://corsly-proxy2.camdvr.org"
+    spotify._cookie_index = 0
+    spotify._cookie_pool = ["a" * 60]
+    spotify.sp_dc = "a" * 60
+    spotify._access_token = ""
+    spotify.blocked_until = time.time() + 300
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    engine.state.add_pending_spotify(make_track(id="q" * 22, name="MALEMO",
+                                                uri=f"spotify:track:{'q' * 22}"))
+    engine.run()
+    note = engine._spotify_diagnosis()
+    assert "no token" in note
+    assert "429" in note, "the token endpoint's own answer must be named"
+    assert "proxy" in note
