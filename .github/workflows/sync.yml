@@ -234,8 +234,10 @@ jobs:
       # "Download log archive" both work as long as the run has a log archive.
       - name: Parked Spotify backlog
         # Reads the state file only (no network, no secrets): shows what a
-        # throttled run had to park, so it is never silently forgotten.
-        if: ${{ always() && !inputs.dry_run && !inputs.fill_cache && !inputs.writes_only }}
+        # throttled run had to park, so it is never silently forgotten. It also
+        # prints the write receipt (`sent → landed`), which is the only visible
+        # trace of an accepted-but-absent write — so it must not be skipped.
+        if: ${{ always() && !inputs.fill_cache }}
         run: |
           {
             echo "### 📋 Spotify backlog"
@@ -287,6 +289,13 @@ jobs:
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
             echo ""
             echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}${{ inputs.writes_only && ' writes_only=true' || '' }} spotify=${SPOTIFY_BACKEND:-web-player}"
+            echo ""
+            echo "### 🔎 What this run could write"
+            echo ""
+            echo "- dry_run: **${{ inputs.dry_run }}** (true = nothing is ever written)"
+            echo "- SPOTIFY_COOKIE: $([ -n "${SPOTIFY_COOKIE:-}" ] && echo "set (${#SPOTIFY_COOKIE} chars)" || echo "**MISSING**")"
+            echo "- target playlist: ${SPOTIFY_TARGET_PLAYLIST:-(MISSING)}"
+            echo "- state commit: $([ "${{ inputs.dry_run }}" = "true" ] && echo "skipped (dry run)" || echo "will commit")"
             # Empty inputs inherit config.json — name the value that was really used
             # instead of printing `pause= results=` (which reads like "zero pause").
             echo "Pacing: pause=${YOUTUBE_FREE_SEARCH_PAUSE:-(=config.json)}s results=${SEARCH_RESULTS_PER_QUERY:-(=config.json)}"

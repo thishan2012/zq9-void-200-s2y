@@ -499,6 +499,11 @@ class SyncEngine:
         )
 
         self._warn_if_youtube_writes_are_off()
+        # Why did a run that looked live write nothing? A missing/blank secret
+        # and a real dry run produce the same silence, so name the inputs.
+        self._detail(report, self._write_capability_line())
+
+
 
         # A remembered cooldown is a *hint*, never a wall. The run always happens:
         # a hint only means "do not spend Web API calls yet" — the web-player
@@ -946,6 +951,19 @@ class SyncEngine:
             return True
         started = getattr(self, "_prework_started", 0.0)
         return (time.time() - started) < budget
+
+    def _write_capability_line(self) -> str:
+        """One line that says whether this run *could* write, and to what."""
+        cookie = getattr(self.secrets, "spotify_cookie", "") or ""
+        parts = [
+            f"cookie {'set' if cookie else 'MISSING'} ({len(cookie)} chars)",
+            f"target {self.config.spotify_target_playlist or 'MISSING'}",
+            f"route {'web-player' if getattr(self.spotify, 'prefer_pathfinder', False) else 'rest'}",
+            f"proxy {'on' if (getattr(self.spotify, 'proxy_url', '') or '') else 'off'}",
+        ]
+        if self.config.dry_run:
+            parts.append("DRY RUN — nothing will be written")
+        return "🔑 " + "; ".join(parts)
 
     def _detail(self, report: RunReport, text: str) -> None:
         """A line for the end-of-run message (never a message of its own)."""
