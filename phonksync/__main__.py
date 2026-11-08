@@ -860,20 +860,21 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
         return 2
     playlist = args.playlist or cfg.spotify_target_playlist
     track = args.track.strip()
-    if not track:
+    uris: list[str] = []
+    if track:
+        uris = [track if track.startswith("spotify:track:") else f"spotify:track:{track}"]
+    else:
         db = StateDB(cfg.state_path)
         parked = db.pending_spotify() or db.manual_items()
-        if parked:
-            track = next(iter(parked.values())).get("uri", "")
-    if not track:
+        wanted = max(1, int(getattr(args, "batch", 0) or 1))
+        uris = [e.get("uri", "") for e in list(parked.values())[:wanted] if e.get("uri")]
+    if not uris:
         print("❌ No track to try: pass --track spotify:track:…", file=sys.stderr)
         return 2
-    if track.startswith("spotify:track:"):
-        uri = track
-    else:
-        uri = f"spotify:track:{track}"
     print(f"🎯 playlist : {playlist}")
-    print(f"🎵 track    : {uri}")
+    print(f"🎵 track(s) : {len(uris)}")
+    for one in uris:
+        print(f"   {one}")
     print(f"🔑 hash     : {_OP_HASHES.get('addToPlaylist')}")
     print("")
 
@@ -896,6 +897,14 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"❌ {exc}")
 
+    print("2️⃣b before   : ", end="", flush=True)
+    try:
+        before = {t.id for t in client._pathfinder_tracks(playlist)}
+        print(f"✅ {len(before)} track(s) in the playlist")
+    except Exception as exc:
+        before = set()
+        print(f"❌ could not read the playlist: {exc}")
+
     print("3️⃣ write    : ", end="", flush=True)
     captured: dict[str, object] = {}
     real_post = __import__("phonksync.spotify", fromlist=["_proxy_post"])._proxy_post
@@ -912,7 +921,7 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
 
     _sp._proxy_post = spy  # type: ignore[assignment]
     try:
-        ok = client._pathfinder_add(playlist, [uri]) or True
+        ok = client._pathfinder_add(playlist, uris) or True
         print("✅ accepted" if ok else "❌ refused")
     except Exception as exc:
         print(f"❌ {exc}")
@@ -930,11 +939,20 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
 
     print("")
     print("4️⃣ verify   : ", end="", flush=True)
-    landed = client.verify_added(playlist, [uri])
-    if uri in landed:
-        print("✅ the track IS in the playlist")
+    try:
+        after = {t.id for t in client._pathfinder_tracks(playlist)}
+    except Exception:
+        after = set()
+    added_ids = [u.split(":")[-1] for u in uris if u.split(":")[-1] in after]
+    print(f"{len(after)} track(s) in the playlist before/after: {len(before)} → {len(after)}")
+    print(f"   landed  : {len(added_ids)}/{len(uris)}")
+    for track_id in added_ids:
+        print(f"   ✅ {track_id}")
+    for one in uris:
+        if one.split(":")[-1] not in after:
+            print(f"   ❌ {one}")
+    if len(added_ids) == len(uris):
         return 0
-    print("❌ the track is NOT in the playlist")
     print("")
     print("Nothing is guessed from here: the answer above is the whole truth.")
     print("Paste that block (it contains no cookie/token) and the write can be fixed exactly.")
@@ -1312,6 +1330,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Add one real track (a dry-run write) and print EVERY answer, verbatim",
     )
     p_write.add_argument("--track", default="", help="Spotify track ID/URI (default: the first parked one)")
+    p_write.add_argument(
+        "--batch",
+        type=int,
+        default=0,
+        help="Use this many parked tracks in ONE call (0 = just one)",
+    )
     p_write.add_argument("--playlist", default="", help="Target playlist (default: the configured one)")
     p_write.add_argument("--json", action="store_true", help="Print the raw GraphQL payload too")
     p_write.set_defaults(func=cmd_spotify_write_test)

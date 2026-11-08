@@ -1373,16 +1373,32 @@ class SpotifyClient:
         """Add tracks through the web player (no Web API, no 30s rolling window)."""
         self.last_write_route = "web-player"
         # One mutation per 100 URIs, exactly like the browser: fewer calls, less
-        # rate limit, and no half-applied batch to reason about.
+        # rate limit, and nothing half-applied to reason about.
         for start in range(0, len(uris), 100):
             chunk = uris[start : start + 100]
             try:
                 self._pathfinder_write_many(playlist_id, chunk)
+                self.writes_landed += len(chunk)
+                self._pace()
+                continue
             except Exception as exc:
-                self.last_write_error = f"web-player: {str(exc)[:200]}"
-                raise
-            self.writes_landed += len(chunk)
-            self._pace()
+                self.last_write_error = f"web-player batch: {str(exc)[:200]}"
+                if len(chunk) == 1:
+                    raise
+                log.warning(
+                    "The %d-track batch was refused (%s) — trying them one by one",
+                    len(chunk), exc,
+                )
+            # A batch of one is the shape we know works. Never lose the whole
+            # chunk because the multi-URI call was refused.
+            for uri in chunk:
+                try:
+                    self._pathfinder_write_many(playlist_id, [uri])
+                except Exception as exc:
+                    self.last_write_error = f"web-player single: {str(exc)[:200]}"
+                    raise
+                self.writes_landed += 1
+                self._pace()
 
     def playlist_info(self, playlist_id: str) -> dict[str, str]:
         """Owner/name of a playlist, best effort — no extra endpoint.

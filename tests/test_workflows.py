@@ -126,3 +126,12 @@ def test_the_sync_workflow_can_reset_the_state_db():
     assert "GITHUB_STEP_SUMMARY" in step["run"]
     commit = steps["Commit sync state"]["run"]
     assert "sync-state.json.bak-" in commit, "the pre-reset copy was not committed"
+
+
+def test_the_probe_can_reproduce_a_batch_write():
+    doc = _load("tests.yml")
+    inputs = doc[True]["workflow_dispatch"]["inputs"]
+    assert "spotify_probe_batch" in inputs
+    steps = {s.get("name", ""): s for s in doc["jobs"]["spotify-write-probe"]["steps"]}
+    run = next(v for k, v in steps.items() if "One real write" in k)["run"]
+    assert "--batch" in run and "inputs.spotify_probe_batch" in run

@@ -11,6 +11,10 @@ on:
         description: "Make ONE real Spotify write and publish Spotify's own answer"
         type: boolean
         default: false
+      spotify_probe_batch:
+        description: "Write this many parked tracks in one call (0 = one track)"
+        type: string
+        default: "0"
 
 permissions:
   contents: read
@@ -82,7 +86,7 @@ jobs:
           SPOTIFY_PROXY_URL: ${{ vars.SPOTIFY_PROXY_URL }}
         run: |
           code=0
-          python -m phonksync spotify-write-test --json > probe.txt 2>&1 || code=$?
+          python -m phonksync spotify-write-test --json --batch "${{ inputs.spotify_probe_batch }}" > probe.txt 2>&1 || code=$?
           { echo "### Spotify write probe (exit $code)"; echo ""; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cat probe.txt >> "$GITHUB_STEP_SUMMARY"
           { echo '```'; echo ""; } >> "$GITHUB_STEP_SUMMARY"
