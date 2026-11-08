@@ -88,6 +88,39 @@ If it persists:
 - run smaller batches: `MAX_TRACKS_PER_RUN=50` (or the `max_tracks` input)
 - the YouTube search cache makes repeat runs much cheaper
 
+## Songs reach YouTube, but Spotify says "Parked for the next run" / "Spotify asked to slow down"
+
+**This was a bug, not your secrets.** Spotify has two independent write doors:
+
+| Door | Endpoint | Throttled by the 429? |
+|---|---|---|
+| Web API | `api.spotify.com/v1/playlists/<id>/tracks` | ✅ yes — this is what answers 429 |
+| Web player | `api-partner.spotify.com` → `addToPlaylist` | ❌ no — separate endpoint, separate budget |
+
+A 429 on the **Web API** used to park *every* remaining Spotify write for the run
+without ever trying the web-player door — even though the write probe
+(`spotify-write-test`) proved that door lands the track. That is why a run could
+report YouTube 10/10 and Spotify 4/10 with six tracks sitting in
+`data/manual-queue.txt`.
+
+Now a Web API cooldown **writes through the web player instead of parking**, and
+the parked backlog is retried on that route in the same run. The summary says so:
+
+```text
+🌐 Added 6 track(s) through the web player while the Spotify Web API was cooling down
+```
+
+A track is only parked when **both** doors refuse — and a parked track is never
+recorded as added, so nothing is lost:
+
+```bash
+python -m phonksync manual           # what is still parked, and why
+python -m phonksync manual --apply   # add them now
+```
+
+In Actions the same backlog is retried automatically on the next
+**Phonk Sync → Run workflow**. You do not need to change any secret for this.
+
 ## "Spotify returned an anonymous token" / 401 from Spotify
 The `sp_dc` cookie expired or was copied from a logged-out session.
 Fix: log into open.spotify.com again, copy the full Cookie header fresh, update `SPOTIFY_COOKIE`. Avoid logging out of that browser profile.

@@ -74,6 +74,7 @@ class RunReport:
     cached_sources: int = 0
     queued: int = 0
     queued_flushes: int = 0
+    web_player_writes: int = 0  # written via the web player during a Web API cooldown
     manual_queued: int = 0
     parked_spotify: int = 0  # still waiting (Spotify refused again)
     parked_saved: int = 0    # parked by an earlier run, added in this one
@@ -192,6 +193,11 @@ class RunReport:
             lines.append(
                 f"⏸ Skipped due to Spotify 429: {self.rate_limited_skips} — "
                 "resume point saved, continue next run"
+            )
+        if self.web_player_writes:
+            lines.append(
+                f"🌐 Added {self.web_player_writes} track(s) through the web player "
+                "while the Spotify Web API was cooling down"
             )
         if self.manual_queued:
             lines.append(
@@ -1087,13 +1093,30 @@ class SyncEngine:
         that never happened and every later run skips the track forever.
         """
         cfg = self.config
-        if getattr(self.spotify, "blocked_until", 0.0):
-            # Spotify is cooling down: park the track in the manual bucket so a
-            # human (or the next run) can drop it in without re-reading Spotify.
-            self.state.add_manual(track, reason="Spotify asked to slow down")
-            self.state.add_pending_spotify(track)
-            report.manual_queued += 1
-            return False
+        if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+            # The Web API is cooling down. That does NOT throttle the web
+            # player's own endpoint — the route the write probe proves — so try
+            # it before parking anything. Parking here unconditionally is what
+            # left tracks in the manual bucket while writes actually worked.
+            writer = getattr(self.spotify, "add_tracks_web_player", None)
+            if writer is None or not getattr(self.spotify, "web_player_write_ready", False):
+                return self._park_spotify(track, report)
+            try:
+                writer(cfg.spotify_target_playlist, [track.uri])
+            except Exception as exc:
+                log.warning(
+                    "Web player write refused during the Web API cooldown (%s) — "
+                    "parking this track", exc,
+                )
+                return self._park_spotify(track, report)
+            target_ids.add(track.id)
+            self.state.clear_manual([track.id])
+            self.state.clear_pending_spotify([track.id])
+            report.web_player_writes += 1
+            log.info(
+                "Added %s through the web player (Web API cooling down)", track.display()
+            )
+            return True
         if cfg.spotify_write_mode == "queue" and getattr(
             self.spotify, "queue_supported", False
         ):
@@ -1120,6 +1143,17 @@ class SyncEngine:
         self.state.clear_manual([track.id])
         self.state.clear_pending_spotify([track.id])
         return True
+
+    def _park_spotify(self, track: Track, report: RunReport) -> bool:
+        """Both write routes are closed: keep the track for a later run.
+
+        Nothing is lost and nothing is claimed: the track is NOT recorded as
+        ``spotify_added``, so a later run (or `phonksync manual --apply`) adds it.
+        """
+        self.state.add_manual(track, reason="Spotify asked to slow down")
+        self.state.add_pending_spotify(track)
+        report.manual_queued += 1
+        return False
 
     def _repair_parked_bucket(self) -> int:
         """Fix the state file a throttled run used to write.
@@ -1342,8 +1376,11 @@ class SyncEngine:
         pending = self.state.pending_spotify()
         if not pending:
             return
-        if getattr(self.spotify, "blocked_until", 0.0) > time.time():
-            # Still throttled: trying now would be one more refused write.
+        cooling = getattr(self.spotify, "blocked_until", 0.0) > time.time()
+        web_writer = getattr(self.spotify, "add_tracks_web_player", None)
+        web_ready = bool(getattr(self.spotify, "web_player_write_ready", False))
+        if cooling and (web_writer is None or not web_ready):
+            # Both routes are closed: trying now would be one more refused write.
             report.parked_spotify = len(pending)
             log.info("Keeping %d parked track(s) for the next run", len(pending))
             return
@@ -1365,7 +1402,17 @@ class SyncEngine:
             self.state.clear_pending_spotify()
             return
         try:
-            self.spotify.add_tracks(self.config.spotify_target_playlist, uris)
+            if cooling:
+                # The Web API is still throttled, but the backlog goes through
+                # the web player — the same route that just worked above.
+                log.info(
+                    "Adding %d parked track(s) through the web player "
+                    "(Web API cooling down)", len(uris),
+                )
+                web_writer(self.config.spotify_target_playlist, uris)
+                report.web_player_writes += len(uris)
+            else:
+                self.spotify.add_tracks(self.config.spotify_target_playlist, uris)
         except Exception as exc:
             problem = getattr(self.spotify, "last_write_error", "") or str(exc)
             log.warning(
@@ -1477,6 +1524,17 @@ class SyncEngine:
         """
         blocked_until = getattr(self.spotify, "blocked_until", 0.0)
         if not blocked_until:
+            return False
+        if getattr(self.spotify, "web_player_write_ready", False) and hasattr(
+            self.spotify, "add_tracks_web_player"
+        ):
+            # Only the Web API is blocked. The web player still writes, so the
+            # rest of the playlist must not be parked: keep going and let each
+            # track land on the route that works.
+            log.info(
+                "Spotify Web API is cooling down, but the web player still writes — "
+                "continuing instead of parking the rest of the run"
+            )
             return False
         # Keep the resume point (so the next run starts at this track) but never
         # store a cooldown: the next run must be free to try again immediately.

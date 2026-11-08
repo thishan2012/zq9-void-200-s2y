@@ -1603,3 +1603,42 @@ def test_the_write_sends_the_browser_variables(monkeypatch):
     assert seen["uris"] == ["spotify:track:aaa"]
     assert client.last_write_variables == sorted(seen)
 
+
+
+def test_web_player_write_route_stays_open_while_the_web_api_cools_down(monkeypatch):
+    """`blocked_until` belongs to api.spotify.com, not to the web player.
+
+    The write probe proves addToPlaylist lands the track; a Web API 429 must
+    therefore never close this route (that is what parked six real tracks).
+    """
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    client, seen = _pf_client(
+        monkeypatch,
+        [{"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}}],
+    )
+    client.blocked_until = time.time() + 3600  # the Web API is blocked for an hour
+
+    assert client.web_player_write_ready is True
+    client.add_tracks_web_player("PL9", ["spotify:track:aaa"])
+
+    assert len(seen) == 1
+    assert seen[0]["payload"]["operationName"] == "addToPlaylist"
+    assert client.last_write_route == "web-player"
+    assert client.web_player_write_ready is True
+    assert client.last_write_error == ""
+
+
+def test_a_refused_web_player_mutation_closes_only_that_route(monkeypatch):
+    import phonksync.spotify as sp
+
+    monkeypatch.setattr(sp.time, "sleep", lambda s: None)
+    client, _ = _pf_client(monkeypatch, [{"data": {"playlistV2": {"__typename": "Error"}}}])
+    client.blocked_until = time.time() + 3600
+
+    with pytest.raises(RuntimeError):
+        client.add_tracks_web_player("PL9", ["spotify:track:aaa"])
+
+    assert client.web_player_write_ready is False, "a refused mutation must not be retried"
+    assert "web-player" in client.last_write_error
