@@ -1,6 +1,5 @@
-# 10 track(s) that could not be added automatically (2026-11-07T23:06:22+00:00).
+# 9 track(s) that could not be added automatically (2026-11-08T07:42:21+00:00).
 # Paste these into the target playlist, or let the next run retry them (`python -m phonksync manual --apply`).
-spotify:track:0g3rBLGiHXo9hDEqVaL5sM  # fennecxx, DJ ALEX, Dj Samir - SPOOKY 3 - Slowed  (Spotify asked to slow down)
 spotify:track:1HOfVRxlZSrRxwdU9khv6p  # h6itam, Penkramin, SNYSTA - MONTAGEM VALKARO - Slowed  (Spotify asked to slow down)
 spotify:track:1RD6UmOALWhLSXAe8GNczs  # HDN - LUZ  (Spotify asked to slow down)
 spotify:track:1kZvBIepQFlgUywAub2h56  # ASTXR, MC ETERNA - TURAN 2 - Slowed  (Spotify asked to slow down)

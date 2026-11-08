@@ -1,28 +1,15 @@
 {
   "candidates": {},
   "quota": {
-    "date": "2026-11-07",
-    "inserts": 10,
-    "keys": {
-      "0": 11
-    },
+    "date": "2026-11-08",
+    "inserts": 0,
+    "keys": {},
     "searches": 0,
-    "units_used": 514
+    "units_used": 1
   },
   "skipped": {},
   "spotify": {
     "manual": {
-      "0g3rBLGiHXo9hDEqVaL5sM": {
-        "artists": [
-          "fennecxx",
-          "DJ ALEX",
-          "Dj Samir"
-        ],
-        "name": "SPOOKY 3 - Slowed",
-        "queued_at": "2026-11-07T23:06:21+00:00",
-        "reason": "Spotify asked to slow down",
-        "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
-      },
       "1HOfVRxlZSrRxwdU9khv6p": {
         "artists": [
           "h6itam",
@@ -39,7 +26,7 @@
           "HDN"
         ],
         "name": "LUZ",
-        "queued_at": "2026-11-07T23:06:21+00:00",
+        "queued_at": "2026-11-08T07:42:21+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
       },
@@ -49,7 +36,7 @@
           "MC ETERNA"
         ],
         "name": "TURAN 2 - Slowed",
-        "queued_at": "2026-11-07T22:09:36+00:00",
+        "queued_at": "2026-11-08T07:42:21+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
       },
@@ -78,7 +65,7 @@
           "DJ AURAXÉ"
         ],
         "name": "MONTAGEM BREAKDOWN",
-        "queued_at": "2026-11-07T23:06:21+00:00",
+        "queued_at": "2026-11-08T07:42:21+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
@@ -88,7 +75,7 @@
           "NXDLS"
         ],
         "name": "FUNK MISTERIO",
-        "queued_at": "2026-11-07T23:06:21+00:00",
+        "queued_at": "2026-11-08T07:42:21+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
@@ -98,7 +85,7 @@
           "DJ HuTao"
         ],
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
-        "queued_at": "2026-11-07T23:06:21+00:00",
+        "queued_at": "2026-11-08T07:42:21+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
@@ -114,16 +101,6 @@
       }
     },
     "pending": {
-      "0g3rBLGiHXo9hDEqVaL5sM": {
-        "artists": [
-          "fennecxx",
-          "DJ ALEX",
-          "Dj Samir"
-        ],
-        "held_at": "2026-11-07T23:06:21+00:00",
-        "name": "SPOOKY 3 - Slowed",
-        "uri": "spotify:track:0g3rBLGiHXo9hDEqVaL5sM"
-      },
       "1HOfVRxlZSrRxwdU9khv6p": {
         "artists": [
           "h6itam",
@@ -138,7 +115,7 @@
         "artists": [
           "HDN"
         ],
-        "held_at": "2026-11-07T23:06:21+00:00",
+        "held_at": "2026-11-08T07:42:21+00:00",
         "name": "LUZ",
         "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
       },
@@ -147,7 +124,7 @@
           "ASTXR",
           "MC ETERNA"
         ],
-        "held_at": "2026-11-07T22:09:36+00:00",
+        "held_at": "2026-11-08T07:42:21+00:00",
         "name": "TURAN 2 - Slowed",
         "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
       },
@@ -173,7 +150,7 @@
           "SUXMII",
           "DJ AURAXÉ"
         ],
-        "held_at": "2026-11-07T23:06:21+00:00",
+        "held_at": "2026-11-08T07:42:21+00:00",
         "name": "MONTAGEM BREAKDOWN",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
@@ -182,7 +159,7 @@
           "h6itam",
           "NXDLS"
         ],
-        "held_at": "2026-11-07T23:06:21+00:00",
+        "held_at": "2026-11-08T07:42:21+00:00",
         "name": "FUNK MISTERIO",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
@@ -191,7 +168,7 @@
           "WXRTNAX",
           "DJ HuTao"
         ],
-        "held_at": "2026-11-07T23:06:21+00:00",
+        "held_at": "2026-11-08T07:42:21+00:00",
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
@@ -233,7 +210,7 @@
         "won": 0
       }
     },
-    "runs": 3,
+    "runs": 4,
     "total_added": 10
   },
   "synced": {
@@ -247,7 +224,7 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "SPOOKY 3 - Slowed",
-      "spotify_added": false,
+      "spotify_added": true,
       "spotify_id": "0g3rBLGiHXo9hDEqVaL5sM",
       "youtube_added": true,
       "youtube_video_id": "yJ4hfEX7XjI"
@@ -268,7 +245,7 @@
       "youtube_video_id": "IqMWg54nlzU"
     },
     "1RD6UmOALWhLSXAe8GNczs": {
-      "added_at": "2026-11-07T23:06:21+00:00",
+      "added_at": "2026-11-08T07:42:21+00:00",
       "artists": [
         "HDN"
       ],
@@ -281,7 +258,7 @@
       "youtube_video_id": "Jfyy3XcdxkM"
     },
     "1kZvBIepQFlgUywAub2h56": {
-      "added_at": "2026-11-07T22:09:36+00:00",
+      "added_at": "2026-11-08T07:42:21+00:00",
       "artists": [
         "ASTXR",
         "MC ETERNA"
@@ -322,7 +299,7 @@
       "youtube_video_id": "Jd-vdVOwTXs"
     },
     "4SOpgVtAoZGiSULa9eU74e": {
-      "added_at": "2026-11-07T23:06:21+00:00",
+      "added_at": "2026-11-08T07:42:21+00:00",
       "artists": [
         "SUXMII",
         "DJ AURAXÉ"
@@ -336,7 +313,7 @@
       "youtube_video_id": "Y2Z9gg1gcJ0"
     },
     "5zeZGRzOBKAoxVO6LwX9Dq": {
-      "added_at": "2026-11-07T23:06:21+00:00",
+      "added_at": "2026-11-08T07:42:21+00:00",
       "artists": [
         "h6itam",
         "NXDLS"
@@ -350,7 +327,7 @@
       "youtube_video_id": "xn7KfgXZedc"
     },
     "61zBVwzhLskripTriL7aVR": {
-      "added_at": "2026-11-07T23:06:21+00:00",
+      "added_at": "2026-11-08T07:42:21+00:00",
       "artists": [
         "WXRTNAX",
         "DJ HuTao"
@@ -379,6 +356,6 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-07T23:06:21+00:00",
+  "updated_at": "2026-11-08T07:42:21+00:00",
   "version": 1
 }
