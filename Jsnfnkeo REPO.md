@@ -35,7 +35,7 @@
 3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
 4. Telegram බලන්න. ✅
 
-> Auto schedule pause කරලා තියෙන්නේ. manually run කරන්න විතරයි. `sync.yml` එකේ `schedule:` cron එක ආයේ දැම්මම auto හැදෙනවා.
+> Auto schedule එක දැන් **on**: දවසට 4 වතාවක්, පැය 6කට වරක් `America/Los_Angeles` 00:15, 06:15, 12:15, 18:15. Scheduled run එකකට tracks 100යි. Manual run එකත් Actions වලින් කරන්න පුළුවන්.
 
 ## 🧪 Local (terminal තියෙනවා නම්)
 
@@ -90,12 +90,12 @@ tests/                # offline tests
 ## ⚠️ Notes
 
 - Default Spotify-only නිසා YouTube quota වැය වෙන්නේ නෑ.
-- YouTube on කළොත් daily quota **10,000 units** (1 search = 100, 1 playlist add = 50). ඒක නිසා app එකේම cap දෙකක් තියෙනවා: **80 search/දවස** (8,000 units) + **40 add/දවස** (2,000 units). `data/sync-state.json` එකේ මේවා දවස අනුව save වෙනවා නිසා දවසට run කීපයක් කළත් limit එක පනින්නේ නෑ.
+- YouTube on කළොත් daily quota **10,000 units** (1 search = 100, 1 playlist add = 50). ඒක නිසා app එකේම insert target එකක් තියෙනවා: **OAuth account එකකට 195 add/දවස** (9,750 units). accounts 2ක් නම් ~390 add/දවස. `data/sync-state.json` එකේ මේවා Pacific දවස අනුව save වෙනවා නිසා දවසට run කීපයක් කළත් limit එක පනින්නේ නෑ.
 - **80 search මදි නම් (දවසට 80 ට වඩා ඕන නම්):** Google quota එක යන්නේ **project එකකට**, key එකකට නෙවෙයි. ඉතින් **වෙනම Google Cloud project එකකින් තව key එකක්** හදලා `YOUTUBE_API_KEY` එකේ comma එකෙන් වෙන් කරලා දාන්න:
   ```
   YOUTUBE_API_KEY = AIzaKey1...,AIzaKey2...
   ```
-  එතකොට 2 keys = **16,000 units/දවසකට = 160 search** (adds 40ක් සමඟ). Key එකක් ඉවර උනාම code එක ඉබේම ඊළඟ key එකට මාරු වෙනවා (403 `quotaExceeded` ආවත් run එක නවත්තන්නේ නෑ). Keys 3ක් = 240 search/දවස.
+  එතකොට 2 keys = **16,000 units/දවසකට = 160 search**. Key එකක් ඉවර උනාම code එක ඉබේම ඊළඟ key එකට මාරු වෙනවා (403 `quotaExceeded` ආවත් run එක නවත්තන්නේ නෑ). Keys 3ක් = 240 search/දවස.
 - එකම project එකේ keys 2ක් දැම්මොත් quota **වැඩි වෙන්නේ නෑ** — project එකට 10,000 තමයි. ඒ නිසා key එකකට එක project එකක්. [Instructions/TROUBLESHOOTING.md](Instructions/TROUBLESHOOTING.md) බලන්න.
 - **සරලම setting:** `REQUEST_DELAY_SECONDS=2` (හැම Spotify call එකට තත්පර 2ක pause) — rate limit වැදෙන එක ගොඩක් අඩු කරනවා. 429 ආවොත් `Retry-After` අනුව backoff වෙලා retry කරනවා (6 වතාවක් වෙනකන්) — run එක fail වෙන්නේ නෑ.
 - **Song එකක් add කරන්න බැරි වුනොත්:** ඒක skip කරලා ඊළඟ එකට යනවා (`⏭ Skipped`). දිග block එකක් නම් resume point එක save වෙනවා — ඊළඟ run එක ඒ තැනින්ම පටන් ගන්නවා.

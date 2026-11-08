@@ -28,7 +28,7 @@ Nothing secret is ever committed to the repo. This page shows exactly how to obt
 
 > 🔁 **Want a second YouTube OAuth account** so a full quota does not stop the
 > run? See [§6a](#6a-a-second-oauth-account--keep-going-when-the-first-one-runs-out-).
-> Account 1 runs uncapped until Google says stop, then account 2 continues.
+> Each usable account is paced to 195 playlist adds/day, then the next account continues.
 
 ## 1. `SPOTIFY_COOKIE` — paste the whole cookie 🍪
 
@@ -324,10 +324,10 @@ Notes that save a round trip:
 | Action | Units | App cap | Units used |
 |---|---|---|---|
 | `search.list` | 100 | only when the free page search misses (`youtube_free_search`) | up to 10,000 per key |
-| `playlistItems.insert` | 50 | 40 / day (`youtube_max_inserts_per_day`) | 2,000 |
+| `playlistItems.insert` | 50 | 195 / account / day (`youtube_max_inserts_per_day`) | 9,750 per account |
 | `videos.list` / `playlistItems.list` | 1 | — | ~100 |
 
-Counters live in `data/sync-state.json` under `quota` (`date`, `units_used`, `searches`, `inserts`, `keys`) and roll over at UTC midnight, so **three manual runs in one day still cannot exceed the Google limit**. With N API keys (N different projects) the daily budget becomes N x 10,000 units, tracked per key. When a cap is hit the run stops cleanly, the report says which cap, and the next run continues where it left off.
+Counters live in `data/sync-state.json` under `quota` (`date`, `units_used`, `searches`, `inserts`, `keys`, `accounts`) and roll over at **midnight Pacific Time** (YouTube's reset), so several runs in one day still cannot exceed the Google limit. With N API keys (N different projects) the daily budget becomes N x 10,000 units, tracked per key. When a cap is hit the run stops cleanly, the report says which cap, and the next run continues where it left off.
 
 Tune these in `config.json`: `max_searches_per_run`, `youtube_max_searches_per_day`, `youtube_max_inserts_per_day`, `youtube_daily_quota_units`.
 
@@ -338,15 +338,21 @@ YouTube quota is **per Google Cloud project**. A second OAuth client from a
 
 **How it behaves, on purpose:**
 
-- Account 1 gets **no hand-made cap**. It adds as many songs as Google allows.
-- Nothing is guessed and nothing is throttled. The switch happens **only** when
-  Google itself answers `403 quotaExceeded`.
-- The song that triggered the error is **retried on account 2**, so nothing is
-  lost at the handover.
-- Account 1 is remembered as empty for the rest of the UTC day, so later runs
-  start straight on account 2 instead of wasting a call re-discovering it.
-- At UTC midnight everything resets and account 1 is first again.
-- When **every** account is empty, the run stops cleanly as before.
+- Each usable OAuth account is paced to **195 playlist adds per Pacific day**
+  (`youtube_max_inserts_per_day`). 195 x 50 = 9,750 units, leaving a little
+  headroom for playlist reads/metadata before Google's 10,000-unit limit.
+- Account 1 is used first. When it reaches 195 adds, the run continues on
+  account 2; with two accounts the daily insert target is about **390**.
+- A real Google `403 quotaExceeded` still hands over **immediately**, even if
+  the account has not reached 195 adds yet.
+- The song that triggered the handover is **retried on the next account**, so
+  nothing is lost at the handover.
+- An account that is empty or has reached its daily target is remembered for
+  the rest of the Pacific day, so later runs start straight on the next account.
+- At midnight Pacific Time everything resets and account 1 is first again.
+- When **every** account is empty or capped, the run stops cleanly as before.
+- Set `youtube_max_inserts_per_day` to `0` to disable the local insert target;
+  Google's real quota still applies.
 
 A `429` (too many requests per second) is **not** a quota stop — it is retried on
 the same account. A spare account is never burned on a temporary rate limit.
@@ -459,7 +465,7 @@ first, then the numbered secrets.
 The run summary and Telegram get a line:
 
 ```text
-🔁 YouTube quota: switched OAuth account 1 time(s) (2 accounts configured) — the run continued
+🔁 YouTube OAuth: switched account 1 time(s) (2 accounts configured; daily target or quota) — the run continued
 ```
 
 Per-account usage is in `data/sync-state.json` → `quota.accounts`
@@ -468,9 +474,9 @@ Per-account usage is in `data/sync-state.json` → `quota.accounts`
 > ⚠️ **A second account in the same Google Cloud project does not help** — the
 > quota is shared by the project. It must be a different project.
 
-> With a spare configured, `youtube_max_inserts_per_day` no longer limits OAuth
-> writes: that is the "no hand-made cap" rule. With only one account, the old cap
-> still applies exactly as before.
+> With a spare configured, `youtube_max_inserts_per_day` is applied **per OAuth
+> account**, not as one shared total. With only one account, it is the single
+> account's daily cap. Reads/searches are not insert-capped.
 
 ## 6b. Playlist secrets 🎵
 

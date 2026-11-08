@@ -140,8 +140,8 @@ class RunReport:
         ]
         if self.oauth_switches:
             lines.append(
-                f"🔁 YouTube quota: switched OAuth account {self.oauth_switches} time(s) "
-                f"({self.oauth_accounts} accounts configured) — the run continued"
+                f"🔁 YouTube OAuth: switched account {self.oauth_switches} time(s) "
+                f"({self.oauth_accounts} accounts configured; daily target or quota) — the run continued"
             )
         if self.version_duplicates:
             lines.append(

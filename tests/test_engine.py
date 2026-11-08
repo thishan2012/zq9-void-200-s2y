@@ -1865,3 +1865,13 @@ def test_a_zero_unmatched_count_is_not_printed_as_a_failure():
     text = RunReport(added=1, unmatched=0).summary_text()
     assert "✅ Failed / unmatched: 0" in text
     assert "❌ Failed / unmatched: 0" not in text
+
+
+def test_oauth_handover_summary_does_not_claim_only_real_quota():
+    """A handover can now be the agreed 195/day target, not only a 403."""
+    from phonksync.engine import RunReport
+
+    text = RunReport(oauth_switches=1, oauth_accounts=2).summary_text()
+    assert "🔁 YouTube OAuth: switched account 1 time(s)" in text
+    assert "daily target or quota" in text
+    assert "the run continued" in text

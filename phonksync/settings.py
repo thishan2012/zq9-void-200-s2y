@@ -142,7 +142,10 @@ class Config:
     youtube_max_searches_per_day: int = 0  # 0 = no app cap; per-key units still enforced
     youtube_free_search: bool = True  # search youtube.com first: 0 API units
     youtube_free_search_pause: float = 1.0  # politeness gap between free page loads
-    youtube_max_inserts_per_day: int = 40  # 40 x 50 = 2000 units -> 8000 + 2000 = 10000 exactly
+    # Local pacing cap. With several usable OAuth accounts it is applied PER
+    # ACCOUNT (195 x 50 = 9750 units, leaving a little headroom for reads).
+    # 0 disables the local cap; Google's real quotaExceeded still fails over.
+    youtube_max_inserts_per_day: int = 195
     youtube_daily_quota_units: int = 9800
     search_cache_ttl_days: int = 14
     search_results_per_query: int = 10

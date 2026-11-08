@@ -9,7 +9,7 @@
   "youtube_max_searches_per_day": 0,
   "youtube_free_search": true,
   "youtube_free_search_pause": 1.0,
-  "youtube_max_inserts_per_day": 40,
+  "youtube_max_inserts_per_day": 195,
   "youtube_daily_quota_units": 9800,
   "search_cache_ttl_days": 14,
   "search_results_per_query": 10,

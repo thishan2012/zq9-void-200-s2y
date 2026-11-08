@@ -1,8 +1,11 @@
 name: Phonk Sync
 
-# PAUSED: automatic scheduled runs have been removed.
-# This workflow now runs only when manually triggered from the Actions tab.
+# Auto: 4 runs/day, every 6 hours, just after the YouTube quota reset
+# (midnight America/Los_Angeles). Manual runs remain available below.
 on:
+  schedule:
+    - cron: "15 0,6,12,18 * * *"
+      timezone: "America/Los_Angeles"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -42,7 +45,7 @@ on:
         type: string
         default: ""
       max_inserts:
-        description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
+        description: "YouTube: daily playlist-add target per OAuth account (empty = config.json, 195/account/day)"
         type: string
         default: ""
       reset:
@@ -76,7 +79,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Reset the state DB (optional)
-        if: ${{ inputs.reset != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.reset != '' }}
         env:
           # The input is text a human types: pass it through the environment,
           # never interpolate it into the script (shell injection), and let the
@@ -213,7 +216,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fill source cache
-        if: ${{ inputs.fill_cache }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.fill_cache }}
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
@@ -322,8 +325,10 @@ jobs:
           SPOTIFY_TOTP_CIPHER: ${{ secrets.SPOTIFY_TOTP_CIPHER }}
           SPOTIFY_WEB_TOKEN: ${{ secrets.SPOTIFY_WEB_TOKEN }}
           SPOTIFY_ENCRYPTED_TOKEN: ${{ secrets.SPOTIFY_ENCRYPTED_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run }}
-          MAX_TRACKS_PER_RUN: ${{ inputs.max_tracks }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+          # Scheduled runs are paced: 100 tracks/run x 4 runs/day. Manual runs
+          # keep the dispatch input (0 = unlimited).
+          MAX_TRACKS_PER_RUN: ${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
           YOUTUBE_WRITES_ONLY: ${{ inputs.writes_only }}
@@ -415,6 +420,8 @@ jobs:
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
+          EFFECTIVE_DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+          EFFECTIVE_MAX_TRACKS: ${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}
         run: |
           {
             echo "### ⏱ Wall clock"
@@ -423,14 +430,14 @@ jobs:
             echo "- finished: $(date -u '+%H:%M:%S') UTC"
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
             echo ""
-            echo "Inputs: dry_run=${{ inputs.dry_run }} max_tracks=${{ inputs.max_tracks }}${{ inputs.writes_only && ' writes_only=true' || '' }} spotify=${SPOTIFY_BACKEND:-web-player}"
+            echo "Inputs: event=${{ github.event_name }} dry_run=${EFFECTIVE_DRY_RUN} max_tracks=${EFFECTIVE_MAX_TRACKS:-(=config.json)}${{ inputs.writes_only && ' writes_only=true' || '' }} spotify=${SPOTIFY_BACKEND:-web-player}"
             echo ""
             echo "### 🔎 What this run could write"
             echo ""
-            echo "- dry_run: **${{ inputs.dry_run }}** (true = nothing is ever written)"
+            echo "- dry_run: **${EFFECTIVE_DRY_RUN}** (true = nothing is ever written)"
             echo "- SPOTIFY_COOKIE: $([ -n "${SPOTIFY_COOKIE:-}" ] && echo "set (${#SPOTIFY_COOKIE} chars)" || echo "**MISSING**")"
             echo "- target playlist: ${SPOTIFY_TARGET_PLAYLIST:-(MISSING)}"
-            echo "- state commit: $([ "${{ inputs.dry_run }}" = "true" ] && echo "skipped (dry run)" || echo "will commit")"
+            echo "- state commit: $([ "${EFFECTIVE_DRY_RUN}" = "true" ] && echo "skipped (dry run)" || echo "will commit")"
             echo "- Spotify proxy: $([ -n "${SPOTIFY_PROXY_URL:-}" ] && echo "**on** (a CORS proxy can silently log the cookie out)" || echo "off (direct)")"
             echo "- TOTP override: $([ -n "${SPOTIFY_TOTP_VER:-}${SPOTIFY_TOTP_CIPHER:-}" ] && echo "set" || echo "embedded defaults")"
             # Empty inputs inherit config.json — name the value that was really used
@@ -439,7 +446,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state
-        if: ${{ always() && inputs.dry_run != true }}
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.dry_run != true) }}
         run: |
           git config user.name "phonk-sync-bot"
           git config user.email "actions@github.com"

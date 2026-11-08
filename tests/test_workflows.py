@@ -228,3 +228,35 @@ def test_a_successful_sync_summary_does_not_ask_what_went_wrong():
     # The failure heading must be guarded by the exit code, not log presence.
     before_heading = script.split('echo "### ❌ What went wrong"', 1)[0]
     assert 'if [ -s run.log ]; then' not in before_heading.split('tail -n 120 run.log')[-1]
+
+
+def test_the_sync_schedule_is_four_paced_runs_per_day():
+    """Auto runs: every 6h just after YouTube's Pacific reset, 100 tracks/run."""
+    doc = _load("sync.yml")
+    schedules = doc[True]["schedule"]
+    assert schedules == [{
+        "cron": "15 0,6,12,18 * * *",
+        "timezone": "America/Los_Angeles",
+    }]
+    env = _steps(doc)["Run sync"]["env"]
+    assert env["MAX_TRACKS_PER_RUN"] == (
+        "${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}"
+    )
+    assert env["DRY_RUN"] == (
+        "${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}"
+    )
+    steps = _steps(doc)
+    assert "github.event_name == 'workflow_dispatch'" in str(steps["Reset the state DB (optional)"]["if"])
+    assert "github.event_name == 'workflow_dispatch'" in str(steps["Fill source cache"]["if"])
+    assert "github.event_name == 'schedule'" in str(steps["Commit sync state"]["if"])
+    runtime = steps["Run time"]
+    assert runtime["env"]["EFFECTIVE_MAX_TRACKS"] == env["MAX_TRACKS_PER_RUN"]
+    assert "EFFECTIVE_MAX_TRACKS" in runtime["run"]
+
+
+def test_the_default_insert_target_is_195_per_oauth_account():
+    import json
+    cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    assert cfg["youtube_max_inserts_per_day"] == 195
+    from phonksync.settings import Config
+    assert Config().youtube_max_inserts_per_day == 195
