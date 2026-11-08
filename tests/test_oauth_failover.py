@@ -380,3 +380,87 @@ def test_a_client_json_without_a_refresh_token_is_flagged_early(monkeypatch):
     monkeypatch.setenv("YT_CLIENT_JSON_2", json.dumps(CLIENT_JSON))
     problems = Secrets.from_env().token_problems()
     assert any("account #2" in p and "no refresh token" in p for p in problems)
+
+
+# ------------------------------- a half-configured spare must not break run 1
+
+def _secrets_with(monkeypatch, **env):
+    import os
+
+    for key in list(os.environ):
+        if key.startswith(("YT_", "YOUTUBE_")):
+            os.environ.pop(key, None)
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//primary")
+    monkeypatch.setenv("YT_CLIENT_ID", "one.apps.googleusercontent.com")
+    monkeypatch.setenv("YT_CLIENT_SECRET", "s1")
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    return Secrets.from_env()
+
+
+def test_a_refresh_token_without_its_client_is_reported_before_the_run(monkeypatch):
+    """YT_REFRESH_TOKEN_2 alone: the token only works with its own client."""
+    s = _secrets_with(monkeypatch, YT_REFRESH_TOKEN_2="1//second")
+    problems = s.token_problems()
+    assert any(
+        "account #2" in p and "no OAuth client" in p and "YT_CLIENT_JSON_2" in p
+        for p in problems
+    ), problems
+
+
+def test_a_token_plus_the_client_json_is_not_flagged(monkeypatch):
+    s = _secrets_with(
+        monkeypatch, YT_REFRESH_TOKEN_2="1//second",
+        YT_CLIENT_JSON_2=json.dumps(CLIENT_JSON),
+    )
+    assert s.token_problems() == []
+
+
+def test_an_unusable_spare_is_never_handed_the_run():
+    """Account 1 must keep working; the handover must not die on a bad spare."""
+    session = Scripted([quota_error()])
+    yt = YouTubeClient(
+        client_id="one", client_secret="s1", refresh_token="1//r1",
+        extra_oauth=[{"refresh_token": "1//r2"}],       # no client at all
+        session=session, free_search=False,
+    )
+    yt._access_token, yt._access_expiry = "t", 9e12
+    assert yt.oauth_account_count == 2
+    assert yt.oauth_usable_count == 1
+    assert not yt.oauth_failover
+    assert yt._next_oauth_account() is None
+    with pytest.raises(QuotaExceeded):
+        insert(yt)
+    assert yt.oauth_account == 1, "switched to an account that cannot write"
+
+
+def test_an_unusable_spare_does_not_lift_the_local_cap():
+    """No working spare = the old single-account safety cap still applies."""
+    session = Scripted([Resp(200, {"id": "x"})] * 2)
+    yt = YouTubeClient(
+        client_id="one", client_secret="s1", refresh_token="1//r1",
+        extra_oauth=[{"refresh_token": "1//r2"}],
+        session=session, max_inserts_per_day=2, free_search=False,
+    )
+    yt._access_token, yt._access_expiry = "t", 9e12
+    insert(yt)
+    insert(yt)
+    with pytest.raises(QuotaExceeded):
+        insert(yt)
+
+
+def test_a_good_spare_is_still_used_when_a_bad_one_sits_before_it():
+    session = Scripted([quota_error(), Resp(200, {"id": "ok"})])
+    yt = YouTubeClient(
+        client_id="one", client_secret="s1", refresh_token="1//r1",
+        extra_oauth=[
+            {"refresh_token": "1//broken"},                      # #2 unusable
+            {"client_id": "three", "client_secret": "s3", "refresh_token": "1//r3"},
+        ],
+        session=session, free_search=False,
+    )
+    yt._access_token, yt._access_expiry = "t", 9e12
+    assert yt.oauth_failover
+    insert(yt)
+    assert yt.oauth_account == 3, "did not skip the unusable account #2"
+    assert yt.oauth_switches == 1

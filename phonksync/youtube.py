@@ -299,7 +299,24 @@ class YouTubeClient:
             if bundle.get("refresh_token") or bundle.get("client_id"):
                 self._oauth_creds.append(bundle)
         self.oauth_account_count = len(self._oauth_creds)
-        self.oauth_failover = self.oauth_account_count > 1
+        # A spare that cannot possibly write must never be handed the run: a
+        # refresh token without its own OAuth client fails at the handover and
+        # would take the working account 1 down with it. Keep the index (so the
+        # persisted per-account counters stay aligned) but never select it.
+        self._oauth_unusable: set[int] = {
+            i for i, cred in enumerate(self._oauth_creds)
+            if i and not (cred.get("refresh_token") and cred.get("client_id"))
+        }
+        for i in sorted(self._oauth_unusable):
+            log.warning(
+                "YouTube OAuth account #%d is incomplete (needs its own client "
+                "id/secret next to the refresh token) — it will not be used",
+                i + 1,
+            )
+        # Only a USABLE spare lifts the local cap: with none, the old
+        # single-account safety behaviour must stay exactly as it was.
+        self.oauth_usable_count = self.oauth_account_count - len(self._oauth_unusable)
+        self.oauth_failover = self.oauth_usable_count > 1
         self.oauth_switches = 0
         self._oauth_index = 0
         self._apply_oauth_credential(0)
@@ -362,6 +379,8 @@ class YouTubeClient:
             # An account Google already declared empty today stays empty until
             # the UTC rollover: start on the first one that can still write.
             for idx in range(self.oauth_account_count):
+                if idx in self._oauth_unusable:
+                    continue
                 if not self.quota.account_exhausted(str(idx)):
                     if idx:
                         self._apply_oauth_credential(idx)
@@ -449,6 +468,8 @@ class YouTubeClient:
         """The next account that Google has not already declared empty today."""
         for offset in range(1, self.oauth_account_count):
             idx = (self._oauth_index + offset) % self.oauth_account_count
+            if idx in self._oauth_unusable:
+                continue
             if not self.quota.account_exhausted(str(idx)):
                 return idx
         return None
