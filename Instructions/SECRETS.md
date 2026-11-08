@@ -362,14 +362,21 @@ it once (same steps as §2 and §3), then add these three secrets:
 | `YT_CLIENT_SECRET_2` | the new client's secret |
 | `YT_REFRESH_TOKEN_2` | the refresh token you got for it |
 
-> ⚠️ **All three are needed — a refresh token on its own cannot write.** It only
-> works with the OAuth client that issued it, so `YT_REFRESH_TOKEN_2` by itself
-> leaves account 2 unusable. If you have the JSON, `YT_CLIENT_JSON_2` +
-> `YT_REFRESH_TOKEN_2` is the same thing with one less secret (see Option A2).
+> ⚠️ **All three values are needed — but not necessarily three secret names.**
+> A refresh token only works with the OAuth client that issued it. If
+> `YOUTUBE_OAUTH_TOKEN_JSON_2` already contains the matching `client_id`,
+> `client_secret` and `refresh_token`, **nothing else is missing**; a separate
+> `YT_CLIENT_SECRET_2` or `YT_CLIENT_JSON_2` is unnecessary. See Option A2.
+>
+> If you already have `YT_CLIENT_ID_2` and `YT_REFRESH_TOKEN_2`, but the JSON
+> does **not** contain that client's secret, add `YT_CLIENT_SECRET_2` from the
+> same new OAuth client. GitHub cannot display saved secret values, so use the
+> original JSON/download or update the secret with a known-complete value.
+> Never paste credential values into chat, issues or screenshots.
 >
 > An incomplete spare is **never handed the run**: account 1 keeps working
-> exactly as before, and the credential check says
-> `OAuth account #2: has a refresh token but no OAuth client.`
+> exactly as before. The credential check names the missing part, for example
+> `OAuth account #2: has a refresh token but no client secret.`
 
 The workflow reads `_2` through `_5`. Numbering may have gaps — `_2` and `_4`
 both work. Leave the secrets you do not use out entirely; empty ones are ignored.
@@ -477,7 +484,7 @@ Separate multiple sources with commas or newlines. Spotify URLs, `spotify:playli
 
 ## 7. Verify everything ✅
 
-- **No terminal:** In GitHub go to **Actions → Credential Check → Run workflow**. It is read-only: it tests the stored Spotify cookie and (if present) exchanges `YT_REFRESH_TOKEN` with Google, then prints a redacted ✅/❌ summary. It does not add songs or commit anything.
+- **No terminal:** In GitHub go to **Actions → Credential Check → Run workflow**. It is read-only: it tests the stored Spotify cookie, refreshes the primary YouTube OAuth credential and every structurally complete spare, and reads the same YouTube target with each credential. It prints a redacted ✅/❌ summary. It does not add songs, save quota/state or commit anything. Look for `🔁 YouTube OAuth accounts: 2 configured, 2 usable`, `✅ Quota failover armed`, and a separate `✅ YouTube OAuth account #2: token refresh + target playlist read OK`. The inventory line alone is only a structural check; the account-#2 live-check line is the credential proof.
 - In GitHub: **Actions → Phonk Sync → Run workflow** with `dry_run = true`. The `Validate config and secrets` step must pass.
 - Locally: put the same values in a `.env` file (git-ignored) and run:
   ```bash

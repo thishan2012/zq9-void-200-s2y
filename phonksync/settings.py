@@ -455,14 +455,27 @@ class Secrets:
         problems = check_token_types(
             self.youtube_refresh_token, self.youtube_access_token
         )
-        # The spares are pasted by hand too, and a bad one is worse than none:
-        # it would only be discovered at the handover, mid-run.
+        # Use the runtime parser, not the presence of a secret NAME: the client
+        # secret may already be inside YOUTUBE_OAUTH_TOKEN_JSON_2. Never print
+        # any credential value in these diagnostics.
+        from .errors import AuthError
+        from .youtube import YouTubeClient
+
         for n, extra in enumerate(self.youtube_extra_oauth, start=2):
-            token = (extra.get("refresh_token") or "").strip()
+            try:
+                bundle = YouTubeClient.oauth_bundle(
+                    client_json=extra.get("client_json", ""),
+                    client_id=extra.get("client_id", ""),
+                    client_secret=extra.get("client_secret", ""),
+                    refresh_token=extra.get("refresh_token", ""),
+                    token_json=extra.get("token_json", ""),
+                )
+            except AuthError as exc:
+                problems.append(f"OAuth account #{n}: {exc}")
+                continue
+            token = bundle["refresh_token"].strip()
             if not token:
-                # A client JSON on its own cannot write: it names the app, not
-                # the user. Say so now, not at the handover mid-run.
-                if extra.get("client_json") or extra.get("client_id"):
+                if any(bundle.get(key) for key in ("client_id", "client_secret")):
                     problems.append(
                         f"OAuth account #{n}: has a client JSON but no refresh token. "
                         "Add the refresh_token beside it (or set "
@@ -471,16 +484,19 @@ class Secrets:
                 continue
             for problem in check_token_types(token, ""):
                 problems.append(f"OAuth account #{n}: {problem}")
-            # A refresh token only works with the OAuth client that issued it.
-            # YT_REFRESH_TOKEN_2 on its own leaves account 2 unable to write,
-            # and the failure would otherwise land mid-run at the handover.
-            if not (extra.get("client_id") or extra.get("client_json")
-                    or extra.get("token_json")):
+            if not bundle["client_id"]:
                 problems.append(
                     f"OAuth account #{n}: has a refresh token but no OAuth client. "
                     f"Add YT_CLIENT_JSON_{n} (the JSON you downloaded for that "
                     f"project), or YT_CLIENT_ID_{n} + YT_CLIENT_SECRET_{n}. "
                     "A refresh token only works with the client that issued it."
+                )
+            elif not bundle["client_secret"]:
+                problems.append(
+                    f"OAuth account #{n}: has a refresh token but no client secret. "
+                    f"Add YT_CLIENT_SECRET_{n} from the SAME OAuth client, or "
+                    "include client_secret in that account's JSON. A client ID "
+                    "or a JSON secret name alone does not supply the secret."
                 )
         return problems
 

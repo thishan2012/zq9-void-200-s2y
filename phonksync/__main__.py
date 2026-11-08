@@ -271,17 +271,25 @@ def cmd_check(args: argparse.Namespace) -> int:
     # spare is only touched after a quota error, so a half-configured one is
     # invisible in a normal run — this is the only place it shows up.
     if cfg.youtube_enabled or secrets.youtube_extra_oauth:
+        from .youtube import YouTubeClient
+
         spares = secrets.youtube_extra_oauth
-        usable = [
-            i for i, extra in enumerate(spares, start=2)
-            if (extra.get("refresh_token") or "").strip()
-            and (extra.get("client_id") or extra.get("client_json")
-                 or extra.get("token_json"))
-        ]
-        primary_ok = bool(
-            (secrets.youtube_refresh_token or secrets.youtube_token_json
-             or secrets.youtube_access_token or secrets.youtube_cookie)
-        )
+        usable = []
+        for i, extra in enumerate(spares, start=2):
+            try:
+                bundle = YouTubeClient.oauth_bundle(
+                    client_json=extra.get("client_json", ""),
+                    client_id=extra.get("client_id", ""),
+                    client_secret=extra.get("client_secret", ""),
+                    refresh_token=extra.get("refresh_token", ""),
+                    token_json=extra.get("token_json", ""),
+                )
+            except AuthError:
+                continue  # token_problems() above names the invalid JSON
+            if YouTubeClient.oauth_bundle_complete(bundle):
+                usable.append(i)
+        # A cookie or short-lived access token is not an OAuth failover account.
+        primary_ok = bool(secrets.youtube_refresh_token or secrets.youtube_token_json)
         total = len(spares) + (1 if primary_ok else 0)
         ready = len(usable) + (1 if primary_ok else 0)
         print(
@@ -291,8 +299,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         if spares and not usable:
             print(
                 "⚠️  No spare OAuth account is usable — a full quota will stop the "
-                "run instead of continuing. Each spare needs its own client "
-                "(YT_CLIENT_JSON_2) next to YT_REFRESH_TOKEN_2."
+                "run instead of continuing. Each spare needs its own client ID, "
+                "client secret and refresh token; the ID and secret may be "
+                "inside its JSON instead of separate secrets."
             )
         elif ready > 1:
             print(
@@ -388,6 +397,7 @@ def cmd_check(args: argparse.Namespace) -> int:
                     api_key=secrets.youtube_api_key,
                     cookie=secrets.youtube_cookie,
                     authuser=secrets.youtube_authuser,
+                    extra_oauth=secrets.youtube_extra_oauth,
                 )
                 if yt.api_keys:
                     hits = yt.search("phonk", max_results=1)
@@ -399,12 +409,15 @@ def cmd_check(args: argparse.Namespace) -> int:
                 if secrets.youtube_cookie and callable(diag):
                     print(f"🍪 {diag()}")
                 if yt.has_oauth:
-                    yt.playlist_video_ids(cfg.youtube_target_playlist)
-                    used = getattr(yt, "client_used", "") or yt.client_id
-                    print(
-                        "✅ YouTube OAuth valid, target playlist readable (writes enabled)"
-                    )
-                    print(f"   client in use: {used[:22]}… (that is the one that works)")
+                    try:
+                        yt.playlist_video_ids(cfg.youtube_target_playlist)
+                        used = getattr(yt, "client_used", "") or yt.client_id
+                        print(
+                            "✅ YouTube OAuth valid, target playlist readable (writes enabled)"
+                        )
+                        print(f"   client in use: {used[:22]}… (that is the one that works)")
+                    except Exception as exc:
+                        problems.append(f"YouTube OAuth account #1 live check: {exc}")
                 elif yt.can_write:
                     # Prove the cookie can actually read the private playlist.
                     ids = yt.playlist_video_ids(cfg.youtube_target_playlist)
@@ -418,6 +431,26 @@ def cmd_check(args: argparse.Namespace) -> int:
                         "(no Console needed) or YT_CLIENT_ID + YT_CLIENT_SECRET + "
                         "YT_REFRESH_TOKEN"
                     )
+                # A green primary says nothing about the spare. Refresh each
+                # custom client and read the SAME target, without inserting a
+                # video or saving quota/state. This catches a token issued to
+                # a different client before the real quota handover needs it.
+                for index in range(1, yt.oauth_account_count):
+                    if index in yt._oauth_unusable:
+                        continue
+                    number = index + 1
+                    try:
+                        yt._apply_oauth_credential(index)
+                        yt._ensure_token()
+                        yt.playlist_video_ids(cfg.youtube_target_playlist)
+                        print(
+                            f"✅ YouTube OAuth account #{number}: token refresh "
+                            "+ target playlist read OK"
+                        )
+                    except Exception as exc:
+                        problems.append(
+                            f"YouTube OAuth account #{number} live check: {exc}"
+                        )
             except Exception as exc:
                 problems.append(f"YouTube live check: {exc}")
         else:
