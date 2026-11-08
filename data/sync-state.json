@@ -16,20 +16,20 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 2,
-        "units": 102
+        "inserts": 3,
+        "units": 153
       }
     },
     "date": "2026-11-08",
-    "inserts": 2,
+    "inserts": 3,
     "keys": {},
     "searches": 0,
-    "units_used": 102
+    "units_used": 153
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-08T15:41:20+00:00"
+    "manual_cleared_at": "2026-11-08T17:00:18+00:00"
   },
   "stats": {
     "methods": {
@@ -38,12 +38,12 @@
         "won": 1
       },
       "STRICT": {
-        "tried": 2,
-        "won": 1
+        "tried": 3,
+        "won": 2
       }
     },
-    "runs": 2,
-    "total_added": 2
+    "runs": 3,
+    "total_added": 3
   },
   "synced": {
     "4SOpgVtAoZGiSULa9eU74e": {
@@ -60,6 +60,21 @@
       "spotify_id": "4SOpgVtAoZGiSULa9eU74e",
       "youtube_added": true,
       "youtube_video_id": "Y2Z9gg1gcJ0"
+    },
+    "5zeZGRzOBKAoxVO6LwX9Dq": {
+      "added_at": "2026-11-08T17:00:18+00:00",
+      "artists": [
+        "h6itam",
+        "NXDLS"
+      ],
+      "family": "funk misterio::h6itam",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK MISTERIO",
+      "spotify_added": true,
+      "spotify_id": "5zeZGRzOBKAoxVO6LwX9Dq",
+      "youtube_added": true,
+      "youtube_video_id": "tzVTDw78W28"
     },
     "61zBVwzhLskripTriL7aVR": {
       "added_at": "2026-11-08T15:12:23+00:00",
@@ -78,7 +93,7 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-08T15:41:20+00:00",
+  "updated_at": "2026-11-08T17:00:18+00:00",
   "version": 1,
   "version_duplicates": {}
 }
