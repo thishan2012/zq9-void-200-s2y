@@ -101,3 +101,55 @@ def test_the_last_write_problem_survives_without_a_log(tmp_path):
     assert "no mutation" in problem["message"]
     assert problem["route"] == "web-player"
     assert problem["account"] == "phonkbot"
+
+
+def test_reset_clears_only_what_was_asked_for_and_keeps_a_backup(tmp_path):
+    from phonksync.db import StateDB
+    from phonksync.models import Track
+
+    path = tmp_path / "state.json"
+    db = StateDB(path)
+    track = Track(id="keep000000000000000001", name="LUZ", artists=["HDN"],
+                  uri="spotify:track:keep000000000000000001")
+    db.mark_synced(track, "", "", True, False)
+    db.add_manual(track)
+    db.add_pending_spotify(track)
+    db.data["skipped"][track.id] = {"reason": "no match"}
+    db.save()
+
+    backup = db.backup("test")
+    assert backup.exists()
+
+    cleared = db.reset(["parked"])
+    assert cleared["parked"] == 2  # manual + pending
+    assert db.pending_spotify() == {}
+    assert db.manual_items() == {}
+    assert db.data["synced"], "reset parked must not forget processed tracks"
+    assert db.data["skipped"], "reset parked must not forget skipped tracks"
+    assert db.data["last_reset_scopes"] == ["parked"]
+
+
+def test_reset_all_starts_from_scratch_but_keeps_the_version(tmp_path):
+    from phonksync.db import StateDB
+
+    db = StateDB(tmp_path / "state.json")
+    db.data["synced"]["x" * 22] = {"name": "x"}
+    db.data["quota"] = {"date": "2026-11-07", "inserts": 9}
+    db.data["stats"]["runs"] = 12
+    db.data["diagnostics"] = {"last_write_problem": {"message": "x"}}
+    db.reset(["all"])
+    assert db.data["synced"] == {}
+    assert db.data["quota"] == {}
+    assert db.data["stats"]["runs"] == 0
+    assert "diagnostics" not in db.data
+    assert db.data["version"] == 1
+
+
+def test_an_unknown_reset_scope_is_an_error(tmp_path):
+    import pytest
+
+    from phonksync.db import StateDB
+
+    db = StateDB(tmp_path / "state.json")
+    with pytest.raises(ValueError):
+        db.reset(["everything"])

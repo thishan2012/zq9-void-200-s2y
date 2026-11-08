@@ -417,6 +417,77 @@ class StateDB:
     def record_run(self) -> None:
         self.data["stats"]["runs"] = self.data["stats"].get("runs", 0) + 1
 
+    # ------------------------------------------------------------------ reset
+    # What each part of the state file costs to lose, and what resetting it does.
+    RESET_SCOPES: dict[str, str] = {
+        "synced": "forget every processed track — the next run looks at all of them "
+                  "again (slow, and it will re-add what is not already in the playlist)",
+        "unmatched": "forget the songs that had no confident match — they are retried",
+        "skipped": "forget the songs you skipped by hand — they come back",
+        "candidates": "forget the near-miss candidates kept for review",
+        "parked": "forget the Spotify write backlog (manual bucket + pending writes)",
+        "quota": "forgive today's YouTube quota counters (searches / inserts / units)",
+        "stats": "forget the method statistics and the run counters",
+        "diagnostics": "forget the last recorded write problem",
+        "all": "reset everything above; the state file is recreated empty",
+    }
+
+    def reset(self, scopes: list[str]) -> dict[str, int]:
+        """Clear the requested parts of the state. Returns what was cleared."""
+        cleared: dict[str, int] = {}
+
+        def size(value: Any) -> int:
+            if isinstance(value, dict):
+                return len(value)
+            if isinstance(value, list):
+                return len(value)
+            return 1 if value else 0
+
+        scopes = ["all"] if "all" in scopes else scopes
+        if "all" in scopes:
+            scopes = [k for k in self.RESET_SCOPES if k != "all"]
+        for scope in scopes:
+            if scope == "synced":
+                cleared[scope] = size(self.data.get("synced"))
+                self.data["synced"] = {}
+            elif scope == "unmatched":
+                cleared[scope] = size(self.data.get("unmatched"))
+                self.data["unmatched"] = {}
+            elif scope == "skipped":
+                cleared[scope] = size(self.data.get("skipped"))
+                self.data["skipped"] = {}
+            elif scope == "candidates":
+                cleared[scope] = size(self.data.get("candidates"))
+                self.data["candidates"] = {}
+            elif scope == "parked":
+                cleared[scope] = size(self.spotify.get("manual")) + size(
+                    self.spotify.get("pending")
+                )
+                self.spotify.pop("manual", None)
+                self.spotify.pop("pending", None)
+            elif scope == "quota":
+                cleared[scope] = size(self.data.get("quota"))
+                self.data["quota"] = {}
+            elif scope == "stats":
+                cleared[scope] = size(self.data.get("stats"))
+                self.data["stats"] = {"methods": {}, "runs": 0, "total_added": 0}
+            elif scope == "diagnostics":
+                cleared[scope] = size(self.data.get("diagnostics"))
+                self.data.pop("diagnostics", None)
+            else:
+                raise ValueError(f"Unknown reset scope: {scope}")
+        self.data["last_reset_at"] = _now()
+        self.data["last_reset_scopes"] = scopes
+        return cleared
+
+    def backup(self, stamp: str = "") -> Path:
+        """Copy the state file aside before touching it. Returns the copy."""
+        stamp = stamp or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        target = self.path.with_name(f"{self.path.name}.bak-{stamp}")
+        if self.path.exists():
+            target.write_bytes(self.path.read_bytes())
+        return target
+
     # ------------------------------------------------------------------ save
 
     def save(self) -> None:

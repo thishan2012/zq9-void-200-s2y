@@ -72,3 +72,35 @@ def test_the_write_test_command_exists_and_needs_a_cookie(monkeypatch, capsys):
     code = cli.main(["spotify-write-test", "--track", "abc"])
     assert code == 2
     assert "SPOTIFY_COOKIE is required" in capsys.readouterr().err
+
+
+def test_reset_is_a_dry_run_without_yes(monkeypatch, capsys, tmp_path):
+    """`reset` must never destroy state just because it was typed."""
+    import json
+
+    import phonksync.__main__ as cli
+
+    config = tmp_path / "config.json"
+    state = tmp_path / "state.json"
+    config.write_text(json.dumps({"state_path": str(state)}))
+    state.write_text(json.dumps({"synced": {"a" * 22: {"name": "x"}},
+                                 "spotify": {"parked": {}}}))
+
+    code = cli.main(["--config", str(config), "reset", "synced"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Nothing was changed" in out
+    assert json.loads(state.read_text())["synced"], "a dry run changed the file"
+
+    code = cli.main(["--config", str(config), "reset", "synced", "--yes"])
+    assert code == 0
+    assert json.loads(state.read_text())["synced"] == {}
+    assert any(p.name.startswith("state.json.bak-") for p in tmp_path.iterdir())
+
+
+def test_reset_refuses_an_unknown_scope(monkeypatch, capsys):
+    import phonksync.__main__ as cli
+
+    code = cli.main(["reset", "everything", "--yes"])
+    assert code == 2
+    assert "Unknown scope" in capsys.readouterr().err
