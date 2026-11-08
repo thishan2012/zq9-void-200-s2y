@@ -267,6 +267,39 @@ def cmd_check(args: argparse.Namespace) -> int:
     for problem in secrets.token_problems():
         problems.append(problem)
 
+    # Say plainly how many YouTube OAuth accounts the run will really use. The
+    # spare is only touched after a quota error, so a half-configured one is
+    # invisible in a normal run — this is the only place it shows up.
+    if cfg.youtube_enabled or secrets.youtube_extra_oauth:
+        spares = secrets.youtube_extra_oauth
+        usable = [
+            i for i, extra in enumerate(spares, start=2)
+            if (extra.get("refresh_token") or "").strip()
+            and (extra.get("client_id") or extra.get("client_json")
+                 or extra.get("token_json"))
+        ]
+        primary_ok = bool(
+            (secrets.youtube_refresh_token or secrets.youtube_token_json
+             or secrets.youtube_access_token or secrets.youtube_cookie)
+        )
+        total = len(spares) + (1 if primary_ok else 0)
+        ready = len(usable) + (1 if primary_ok else 0)
+        print(
+            f"🔁 YouTube OAuth accounts: {total} configured, {ready} usable"
+            + (f" (spares ready: {', '.join('#' + str(i) for i in usable)})" if usable else "")
+        )
+        if spares and not usable:
+            print(
+                "⚠️  No spare OAuth account is usable — a full quota will stop the "
+                "run instead of continuing. Each spare needs its own client "
+                "(YT_CLIENT_JSON_2) next to YT_REFRESH_TOKEN_2."
+            )
+        elif ready > 1:
+            print(
+                "✅ Quota failover armed: account #1 runs uncapped until Google "
+                "returns quotaExceeded, then the next account continues"
+            )
+
     # Early Spotify cookie parse check (no network) — catches the
     # common \"Could not find sp_dc\" mistake even without --live.
     if secrets.spotify_cookie:
