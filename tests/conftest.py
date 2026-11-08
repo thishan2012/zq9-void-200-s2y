@@ -12,6 +12,7 @@ from phonksync.cache import SearchCache
 from phonksync.matcher import Matcher
 from phonksync.models import Candidate, Track
 from phonksync.overrides import Overrides
+from phonksync.settings import Config
 
 
 class FakeYouTube:
@@ -76,3 +77,22 @@ def overrides(tmp_path):
 
 def build_matcher(yt, cache, overrides, **kw) -> Matcher:
     return Matcher(yt, cache, overrides, **kw)
+
+
+@pytest.fixture
+def cfg(tmp_path):
+    """Engine config wired to tmp paths — shared by the engine suites."""
+    c = Config()
+    c.spotify_source_playlists = ["src111111111111111111111"]
+    c.spotify_target_playlist = "target"
+    c.youtube_enabled = True
+    c.youtube_target_playlist = "PLtarget0000000000000000000000"
+    c.state_path = str(tmp_path / "state.json")
+    c.overrides_path = str(tmp_path / "overrides.json")
+    c.cache_path = str(tmp_path / "cache.json")
+    c.source_cache_path = str(tmp_path / "source-cache.json")
+    # every run() rewrites the manual bucket — never the repo's real file
+    c.manual_queue_path = str(tmp_path / "manual-queue.txt")
+    c.version_queue_path = str(tmp_path / "version-duplicates.txt")
+    (tmp_path / "overrides.json").write_text('{"overrides": {}}')
+    return c

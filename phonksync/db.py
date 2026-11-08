@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import Track
+from .normalize import song_family
 from .youtube import QuotaState
 
 log = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class StateDB:
             "synced": {},
             "unmatched": {},
             "skipped": {},
+            "version_duplicates": {},
             "stats": {"methods": {}, "runs": 0, "total_added": 0},
             "quota": {},
             "spotify": {},
@@ -54,6 +56,7 @@ class StateDB:
         self.data.setdefault("synced", {})
         self.data.setdefault("unmatched", {})
         self.data.setdefault("skipped", {})
+        self.data.setdefault("version_duplicates", {})
         self.data.setdefault("candidates", {})
         self.data.setdefault("stats", {"methods": {}, "runs": 0, "total_added": 0})
         self.data["stats"].setdefault("methods", {})
@@ -329,6 +332,7 @@ class StateDB:
             "name": track.name,
             "artists": track.artists,
             "isrc": track.isrc,
+            "family": song_family(track.name, track.artists),
             "youtube_video_id": video_id,
             "method": method,
             "added_at": _now(),
@@ -426,6 +430,86 @@ class StateDB:
     def skipped_tracks(self) -> list[dict[str, Any]]:
         return list((self.data.get("skipped") or {}).values())
 
+    # ------------------------------------------------- one song, one version
+    # Source playlists overlap: playlist 1 has "Song - Slowed", playlist 2 has
+    # "Song - Ultra Slowed". Same song, different version — only the first one
+    # found belongs in the target. This map is the memory of that decision.
+
+    def family_index(self) -> dict[str, dict[str, Any]]:
+        """family key -> the synced entry that claimed it (first one wins).
+
+        Computed from `synced` so state written before this feature existed is
+        covered too, and so a `reset synced` forgets the claim with it.
+        """
+        index: dict[str, dict[str, Any]] = {}
+        entries = sorted(
+            self.data["synced"].items(),
+            key=lambda kv: (kv[1].get("added_at") or "", kv[0]),
+        )
+        for track_id, entry in entries:
+            if not (entry.get("spotify_added") or entry.get("youtube_added")):
+                continue
+            key = entry.get("family") or song_family(
+                entry.get("name", ""), entry.get("artists") or []
+            )
+            if key:
+                index.setdefault(key, entry)
+        return index
+
+    def mark_version_duplicate(self, track: Track, kept: dict[str, Any]) -> None:
+        """Remember that this track is another version of a song already added."""
+        self.data.setdefault("version_duplicates", {})[track.id] = {
+            "spotify_id": track.id,
+            "name": track.name,
+            "artists": track.artists,
+            "family": song_family(track.name, track.artists),
+            "kept_spotify_id": kept.get("spotify_id", ""),
+            "kept_name": kept.get("name", ""),
+            "at": _now(),
+        }
+        # Not a matching failure: never let it look like one.
+        self.data["unmatched"].pop(track.id, None)
+
+    def write_version_queue(self, path: str | Path) -> int:
+        """Human-readable list of the versions that were skipped, in the repo.
+
+        The user works in the browser only, so the decision has to be readable
+        as a committed file — not just a counter in a log they cannot open.
+        Rewritten every run, so an empty bucket clears the previous list.
+        """
+        items = self.data.get("version_duplicates") or {}
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not items:
+            path.write_text(
+                f"# ✅ No duplicate versions — every song appears once ({_now()}).\n"
+                "# This file is rewritten after every run.\n",
+                encoding="utf-8",
+            )
+            return 0
+        lines = [
+            f"# {len(items)} track(s) skipped: another version of the same song "
+            f"was already added ({_now()}).",
+            "# The FIRST version found wins. To reconsider them, run the workflow",
+            "# with reset = versions (or reset = all to start completely over).",
+            "",
+        ]
+        for entry in items.values():
+            artists = ", ".join(entry.get("artists") or [])
+            lines.append(
+                f"SKIPPED  {artists} - {entry.get('name', '')}\n"
+                f"         kept instead: {entry.get('kept_name', '')}\n"
+                f"         https://open.spotify.com/track/{entry.get('spotify_id', '')}\n"
+            )
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return len(items)
+
+    def version_duplicate_entry(self, track_id: str) -> dict[str, Any]:
+        return (self.data.get("version_duplicates") or {}).get(track_id, {})
+
+    def is_version_duplicate(self, track_id: str) -> bool:
+        return track_id in (self.data.get("version_duplicates") or {})
+
     def unmatched_tries(self, track_id: str) -> int:
         return int(self.data["unmatched"].get(track_id, {}).get("tries", 0))
 
@@ -452,6 +536,8 @@ class StateDB:
                   "again (slow, and it will re-add what is not already in the playlist)",
         "unmatched": "forget the songs that had no confident match — they are retried",
         "skipped": "forget the songs you skipped by hand — they come back",
+        "versions": "forget the \"another version of a song already added\" decisions "
+                    "— those versions are considered again",
         "candidates": "forget the near-miss candidates kept for review",
         "parked": "forget the Spotify write backlog (manual bucket + pending writes "
                   "+ the resume point, so the next run starts at the first track)",
@@ -485,6 +571,9 @@ class StateDB:
             elif scope == "skipped":
                 cleared[scope] = size(self.data.get("skipped"))
                 self.data["skipped"] = {}
+            elif scope == "versions":
+                cleared[scope] = size(self.data.get("version_duplicates"))
+                self.data["version_duplicates"] = {}
             elif scope == "candidates":
                 cleared[scope] = size(self.data.get("candidates"))
                 self.data["candidates"] = {}

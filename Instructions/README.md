@@ -102,3 +102,9 @@ If you enable YouTube sync and a track matches the wrong video, add a manual map
 
 Keys: Spotify track ID, `spotify:track:` URI, or ISRC. Values: YouTube video ID or URL.
 The `MANUAL` method runs first and bypasses all search. If the track was previously synced incorrectly, remove its entry from `data/sync-state.json` (and remove the wrong video from the YouTube playlist) so it gets re-added.
+
+## Playlist hygiene
+
+- [One song, one version](ONE-SONG-ONE-VERSION.md) — how overlapping source
+  playlists are de-duplicated (`Slowed` vs `Ultra Slowed`), and how the two
+  target playlists are kept the same size.

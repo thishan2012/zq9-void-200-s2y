@@ -30,6 +30,7 @@ _PATH_FIELDS = (
     "source_cache_path",
     "collection_path",
     "manual_queue_path",
+    "version_queue_path",
 )
 
 
@@ -151,6 +152,12 @@ class Config:
     telegram_per_track: bool = True
     dry_run: bool = False
     require_youtube_match_for_spotify: bool = False
+    # One song, one version: source playlists overlap ("Song - Slowed" here,
+    # "Song - Ultra Slowed" there). The first version added wins.
+    dedupe_versions: bool = True
+    # Keep the two playlists growing together: write YouTube first, so a
+    # YouTube budget stop cannot leave Spotify running ahead of it.
+    spotify_youtube_parity: bool = True
     youtube_region_code: str = "US"
     spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
@@ -166,6 +173,7 @@ class Config:
     spotify_collection_fallback: bool = True  # use a saved collection when the API is blocked
     spotify_queue_flush_size: int = 40
     manual_queue_path: str = "data/manual-queue.txt"
+    version_queue_path: str = "data/version-duplicates.txt"
     collection_path: str = "data/collection.json"
     source_cache_path: str = "data/source-cache.json"
     source_cache_ttl_hours: int = 12  # reuse a playlist read while it is unchanged

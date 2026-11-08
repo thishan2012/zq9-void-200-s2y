@@ -1062,6 +1062,8 @@ def _state_scope_size(db: Any, scope: str) -> int:
             + size(db.spotify.get("pending"))
             + size(db.spotify.get("resume"))
         )
+    if scope == "versions":
+        return size(db.data.get("version_duplicates"))
     if scope == "quota":
         return size(db.data.get("quota"))
     if scope == "stats":
@@ -1367,7 +1369,7 @@ def main(argv: list[str] | None = None) -> int:
         "scopes",
         nargs="*",
         help="synced, unmatched, skipped, candidates, parked, quota, stats, "
-             "diagnostics, all",
+             "diagnostics, versions, all",
     )
     p_reset.add_argument("--yes", action="store_true", help="Actually do it")
     p_reset.set_defaults(func=cmd_reset)
