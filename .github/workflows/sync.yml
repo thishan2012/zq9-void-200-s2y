@@ -46,7 +46,7 @@ on:
         type: string
         default: ""
       reset:
-        description: "Reset part of the state DB before the run (e.g. parked, quota, stats, all)"
+        description: "Clear state before the run: parked | quota | stats | synced | unmatched | skipped | candidates | diagnostics | all (comma or space separated; backed up)"
         type: string
         default: ""
 
@@ -78,20 +78,38 @@ jobs:
       - name: Reset the state DB (optional)
         if: ${{ inputs.reset != '' }}
         env:
+          # The input is text a human types: pass it through the environment,
+          # never interpolate it into the script (shell injection), and let the
+          # CLI accept "parked, quota" as well as "parked quota".
+          RESET_SCOPES: ${{ inputs.reset }}
           SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
         run: |
           {
-            echo "### 🗃 State reset: ${{ inputs.reset }}"
+            echo "### 🗃 State reset: ${RESET_SCOPES}"
             echo ""
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          python -m phonksync reset ${{ inputs.reset }} --yes >> /tmp/reset.txt 2>&1 || true
+          code=0
+          python -m phonksync reset "$RESET_SCOPES" --yes > /tmp/reset.txt 2>&1 || code=$?
           cat /tmp/reset.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           grep -E '^(🧹|💾|❌)' /tmp/reset.txt || true
+          # A refused reset must be visible and must stop the run: `|| true`
+          # used to leave the job green while NOTHING was reset, and the sync
+          # then ran against the old state as if the reset had happened.
+          if [ "$code" -ne 0 ]; then
+            message=$(grep -m1 '^❌' /tmp/reset.txt || echo "reset refused (exit $code)")
+            echo "::error title=State reset refused::${message}"
+            {
+              echo ""
+              echo "> ❌ Nothing was reset (exit $code). The run stops here so the"
+              echo "> sync cannot run against state you asked to clear."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$code"
+          fi
 
       - name: Validate config and secrets
         env:

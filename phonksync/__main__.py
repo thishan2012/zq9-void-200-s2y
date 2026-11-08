@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -988,7 +989,7 @@ def cmd_reset(args: argparse.Namespace) -> int:
     from .db import StateDB
 
     cfg = Config.load(args.config)
-    scopes: list[str] = list(args.scopes or [])
+    scopes: list[str] = _reset_scopes(args.scopes)
     db = StateDB(cfg.state_path)
     print(f"🗃 State file: {cfg.state_path}")
     for scope, explanation in StateDB.RESET_SCOPES.items():
@@ -1029,6 +1030,24 @@ def cmd_reset(args: argparse.Namespace) -> int:
     if "parked" in scopes or "all" in scopes:
         print("ℹ️ The Spotify backlog is empty; nothing is waiting to be written.")
     return 0
+
+
+def _reset_scopes(raw: Any) -> list[str]:
+    """Accept what people actually type: `parked, quota`, `parked,quota`, `ALL`.
+
+    The workflow input is one text box described as "e.g. parked, quota, stats,
+    all" — so commas are the natural separator. Passing `parked,` straight
+    through used to be an unknown scope, and the run stayed green with nothing
+    reset. Split on commas/semicolons/whitespace, case-fold, keep the order.
+    """
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    out: list[str] = []
+    for item in items:
+        for part in re.split(r"[\s,;]+", str(item or "")):
+            scope = part.strip().strip("\"'").lower()
+            if scope and scope not in out:
+                out.append(scope)
+    return out
 
 
 def _state_scope_size(db: Any, scope: str) -> int:

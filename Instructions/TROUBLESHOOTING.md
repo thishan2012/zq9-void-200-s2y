@@ -503,12 +503,24 @@ python -m phonksync reset                    # show the inventory
 python -m phonksync reset parked             # dry run: "Nothing was changed"
 python -m phonksync reset parked --yes       # clears it, keeps a backup
 python -m phonksync reset quota stats --yes
+python -m phonksync reset "parked, quota" --yes   # commas work too
 python -m phonksync reset all --yes          # fresh start
 ```
 
+Separate scopes with **spaces or commas** — `parked, quota`, `parked,quota` and
+`parked quota` all mean the same thing, and case does not matter.
+
 In GitHub: **Actions → Phonk Sync → Run workflow → `reset` = `parked`** (or any
-scope). The reset runs before the sync, appears in the summary, and the pre-reset
-copy is committed to the repo.
+scope, or a list like `parked, quota`). The reset runs before the sync, appears in
+the summary, and the pre-reset copy is committed to the repo.
+
+> A name it does not know is **refused, not ignored**: the step goes red with a
+> `State reset refused` annotation and the run stops, so the sync can never run
+> against state you asked to clear. (It used to exit silently and leave the job
+> green with nothing reset — a comma list did exactly that.)
+
+To undo a reset, restore the newest `data/sync-state.json.bak-<date>` over
+`data/sync-state.json` and commit.
 
 Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
