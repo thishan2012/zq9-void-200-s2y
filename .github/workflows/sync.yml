@@ -32,6 +32,10 @@ on:
         description: "Only add the already-remembered YouTube matches (no searching, fast)"
         type: boolean
         default: false
+      verbose_log:
+        description: "Send the FULL diagnostic report instead of the short summary (debugging)"
+        type: boolean
+        default: false
       fill_cache:
         description: "Only store the source playlists for later runs (no sync, no writes)"
         type: boolean
@@ -332,6 +336,7 @@ jobs:
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
           YOUTUBE_WRITES_ONLY: ${{ inputs.writes_only }}
+          PHONK_VERBOSE_SUMMARY: ${{ inputs.verbose_log }}
         run: |
           set -o pipefail
           # Never leave the summary empty: capture the exit code, publish the log

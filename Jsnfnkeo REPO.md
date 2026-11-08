@@ -35,6 +35,8 @@
 3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
 4. Telegram බලන්න. ✅
 
+> 📬 **Log එක දැන් කෙටියි:** Telegram/Actions වල එන්නේ `✅ SYNC: SUCCESS` + playlist links + `Added | Skipped | Failed` වගේ පේළි 10-12යි. සම්පූර්ණ පරණ විස්තර ඕන නම් **Actions → Phonk Sync → Run workflow → `verbose_log` ✅** කරන්න (terminal ඕන නෑ).
+
 > Auto schedule එක දැන් **on**: දවසට 4 වතාවක්, පැය 6කට වරක් `America/Los_Angeles` 00:15, 06:15, 12:15, 18:15. Scheduled run එකකට tracks 100යි. Manual run එකත් Actions වලින් කරන්න පුළුවන්.
 
 ## 🧪 Local (terminal තියෙනවා නම්)

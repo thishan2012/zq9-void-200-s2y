@@ -1318,6 +1318,31 @@ class YouTubeClient:
                 )
         return out
 
+    def playlist_title(self, playlist_id: str) -> str:
+        """Human name of a playlist, for the run message (1 quota unit).
+
+        Best effort by design: a missing title must never fail or stall a run,
+        so any error (including an empty quota) just returns "".
+        """
+        if not playlist_id:
+            return ""
+        try:
+            data = self._request(
+                "GET", "playlists",
+                params={
+                    "part": "snippet",
+                    "id": playlist_id,
+                    "fields": "items(snippet/title)",
+                },
+                cost=COST_PLAYLIST_LIST,
+            )
+            items = data.get("items") or []
+            if items:
+                return str((items[0].get("snippet") or {}).get("title") or "")
+        except Exception as exc:
+            log.debug("Could not read the YouTube playlist title: %s", exc)
+        return ""
+
     def playlist_video_ids(self, playlist_id: str) -> set[str]:
         if not self.has_oauth and self.cookie and self._sapisid():
             return self.cookie_playlist_video_ids(playlist_id)

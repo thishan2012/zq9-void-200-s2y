@@ -910,9 +910,12 @@ def test_summary_mentions_skips_and_budget(monkeypatch, cfg):
     report.free_searches = 40
     report.free_matches = 30
     text = report.summary_text()
-    assert "Skipped by choice: 2" in text
+    assert "2 skipped by choice" in text
     assert "Out of search budget: 1" in text
-    assert "Free YouTube: 40 search(es)" in text
+    # the short message keeps the useful bit (free matches); the paid/free
+    # search counters still live in the full diagnostic report.
+    assert "30 matched with 0 quota" in text
+    assert "Free YouTube: 40 search(es)" in report.verbose_summary_text()
 
 
 # ------------------------------------------------ YouTube writes are off
@@ -996,7 +999,7 @@ def test_one_message_per_run_even_with_many_tracks(monkeypatch, cfg):
     assert report.added >= 1
     # SilentTelegram stands in for the real logger: it records one flush.
     assert engine.telegram.flushed == 1
-    assert "Sync run finished" in engine.telegram.last_summary
+    assert "SYNC:" in engine.telegram.last_summary
 
 
 def test_second_run_does_not_report_the_same_songs_again(monkeypatch, cfg):
@@ -1076,8 +1079,8 @@ def test_summary_shows_counts_and_only_the_unadded_tracks():
     report.failed_tracks = ["Nulteex — hd — no YouTube match"]
     text = report.summary_text()
     assert "Added: <b>4</b>" in text
-    assert "Skipped by choice: 3" in text
-    assert "❌ Failed / unmatched: 2" in text
+    assert "3 skipped by choice" in text
+    assert "❌ Failed: 2" in text
     assert "<b>Not added</b> (1):" in text
     assert "Nulteex — hd" in text
     # no added-song listing at all
@@ -1863,8 +1866,9 @@ def test_a_zero_unmatched_count_is_not_printed_as_a_failure():
     from phonksync.engine import RunReport
 
     text = RunReport(added=1, unmatched=0).summary_text()
-    assert "✅ Failed / unmatched: 0" in text
-    assert "❌ Failed / unmatched: 0" not in text
+    assert "✅ Failed: 0" in text
+    assert "❌ Failed: 0" not in text
+    assert "SYNC: SUCCESS" in text
 
 
 def test_oauth_handover_summary_does_not_claim_only_real_quota():
@@ -1875,3 +1879,122 @@ def test_oauth_handover_summary_does_not_claim_only_real_quota():
     assert "🔁 YouTube OAuth: switched account 1 time(s)" in text
     assert "daily target or quota" in text
     assert "the run continued" in text
+
+
+# ------------------------------------------------- the short run message
+
+def test_the_short_message_is_a_clickable_receipt_not_a_wall_of_counters():
+    """The old message was ~28 lines for one added song. Keep it scannable."""
+    from phonksync.engine import RunReport
+
+    report = RunReport(
+        added=1, youtube_inserted=1, inserted=3, youtube_daily_cap=195,
+        youtube_enabled=True, sources_read=1, unique_tracks=167, already_synced=2,
+        free_matches=1, free_pages=1, method_wins={"STRICT": 1},
+        spotify_throttled=True, web_player_writes=1, web_reads=1,
+        cached_sources=1, stale_reads=1, backend="web player (api-partner)",
+        write_mode="oauth (refresh token)", elapsed_seconds=53,
+        spotify_target_id="6YBLs3ihGXHCSAESWGRML4", spotify_target_name="Phonk Vault",
+        youtube_target_id="PLZN2mokux__I", youtube_target_name="test",
+        daily_details=["🎧 Started: 1 source playlist(s)", "🔑 cookie set (1697 chars)"],
+    )
+    text = report.summary_text()
+    assert len(text.splitlines()) <= 12, text
+    # status + where it went, as a link you can open
+    assert "✅ <b>SYNC: SUCCESS</b>" in text
+    assert "🎵 Spotify playlist — Phonk Vault" in text
+    assert "https://open.spotify.com/playlist/6YBLs3ihGXHCSAESWGRML4" in text
+    assert "▶️ YouTube playlist — test" in text
+    assert "https://www.youtube.com/playlist?list=PLZN2mokux__I" in text
+    assert "➕ Added: <b>1</b> | ⏭ Skipped: 2 | ✅ Failed: 0" in text
+    assert "today 3/195" in text
+    # the noise stays out of the short message...
+    for noise in ("Methods:", "Spotify backend:", "Cached playlist reads",
+                  "Stale cache reads", "Details", "cookie set"):
+        assert noise not in text, noise
+    # ...but is never lost: the full report still has it.
+    full = report.verbose_summary_text()
+    for kept in ("🏆 Methods: STRICT=1", "🔀 Spotify backend:", "Stale cache reads",
+                 "<b>Details</b>", "cookie set"):
+        assert kept in full, kept
+
+
+def test_the_headline_never_claims_a_success_it_did_not_earn():
+    from phonksync.engine import RunReport
+
+    assert RunReport(added=2).status() == ("✅", "SUCCESS")
+    assert RunReport(added=0, already_synced=90).status() == ("✅", "SUCCESS")
+    assert RunReport(added=1, unmatched=2).status() == ("⚠️", "PARTIAL")
+    assert RunReport(added=1, parked_spotify=3).status() == ("⚠️", "PARTIAL")
+    assert RunReport(added=1, spotify_writes_missing=1).status() == ("⚠️", "PARTIAL")
+    assert RunReport(added=1, quota_stopped=True).status() == ("⚠️", "PARTIAL")
+    assert RunReport(added=1, dry_run=True).status() == ("🧪", "DRY RUN")
+    assert RunReport(setup_failed=True).status() == ("❌", "FAILED")
+    # an errored run that still added something is partial, not a total failure
+    report = RunReport(added=1, errors=["boom"])
+    assert report.status() == ("⚠️", "PARTIAL")
+    assert "🛑 Errors: 1" in report.summary_text()
+
+
+def test_the_short_message_names_the_target_without_a_name_lookup():
+    """No name known (Spotify throttled) must still give a clickable link."""
+    from phonksync.engine import RunReport
+
+    text = RunReport(added=1, spotify_target_id="abc123").summary_text()
+    assert "🎵 Spotify playlist\n" in text
+    assert "https://open.spotify.com/playlist/abc123" in text
+
+
+def test_a_name_lookup_failure_never_breaks_the_run(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    good = make_candidate("vid00000001", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    youtube = EngineYouTube(
+        catalog={"vid00000001": good},
+        search_map={"nulteex montagem miau": ["vid00000001"]},
+    )
+
+    def boom(*a, **kw):
+        raise RuntimeError("no name for you")
+
+    spotify.playlist_info = boom
+    youtube.playlist_title = boom
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    report = eng.run()
+    assert report.added == 1, "a cosmetic lookup killed the run"
+    assert report.spotify_target_name == ""
+    assert "https://open.spotify.com/playlist/" in eng.telegram.last_summary
+
+
+def test_a_throttled_spotify_is_not_re_probed_just_for_a_name(monkeypatch, cfg):
+    import time as _time
+
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    calls = []
+    spotify.playlist_info = lambda pid: calls.append(pid) or {"name": "X"}
+    spotify.blocked_until = _time.time() + 600
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    eng.run()
+    assert calls == [], "spent a call on an account Spotify already parked"
+
+
+def test_the_learned_playlist_name_is_reused_on_a_later_run(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.playlist_info = lambda pid: {"name": "Phonk Vault"}
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = eng.run()
+    assert report.spotify_target_name == "Phonk Vault"
+    key = "spotify:" + cfg.spotify_target_playlist
+    assert eng.state.data["playlist_names"][key] == "Phonk Vault"
+
+
+def test_verbose_summary_env_switch_sends_the_full_report(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    monkeypatch.setenv("PHONK_VERBOSE_SUMMARY", "1")
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    eng.run()
+    assert "Sync run finished" in eng.telegram.last_summary
+    assert "SYNC: SUCCESS" not in eng.telegram.last_summary

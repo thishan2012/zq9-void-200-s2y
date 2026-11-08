@@ -33,6 +33,7 @@ def test_every_input_is_passed_to_the_run():
         "results_per_query": "SEARCH_RESULTS_PER_QUERY",
         "max_inserts": "MAX_INSERTS_PER_DAY",
         "backend": "SPOTIFY_BACKEND",
+        "verbose_log": "PHONK_VERBOSE_SUMMARY",
     }
     for input_name, env_name in expected.items():
         assert input_name in inputs, f"input {input_name} disappeared"
