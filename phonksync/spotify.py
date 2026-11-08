@@ -997,6 +997,7 @@ class SpotifyClient:
         self.proxy_used = 0
         self.direct_used = 0
         self.last_token_route = ""  # "proxy" | "direct", for the diagnostic
+        self.last_token_errors: list[str] = []  # every route's answer, in order
         self.proxy_forced_direct = False  # the proxy answered as logged-out
         # Set once pathfinder has been seen to work for this account: plays the
         # same role as a "backend" switch (rest -> web player).
@@ -1139,6 +1140,7 @@ class SpotifyClient:
             errors.append(f"{label}: HTTP {resp.status_code}")
             log.debug("Spotify token attempt failed (%s): %s", label, resp.text[:200])
 
+        self.last_token_errors = list(errors)
         if any("HTTP 429" in e for e in errors):
             cooldown = _SHORT_BLOCK_COOLDOWN
             self.blocked_until = time.time() + cooldown

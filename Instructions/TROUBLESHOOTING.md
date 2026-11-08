@@ -481,6 +481,37 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+## "It works from Tests, not from Phonk Sync" — the six-track clue
+
+Run 28 is the controlled experiment: **the probe wrote three tracks, the sync
+parked all six** with `reason: "Spotify asked to slow down"` and no receipt at
+all. The playlist never changed, and `diagnostics` stayed `null`.
+
+Four differences between the two entry points explained it:
+
+| | probe (`tests.yml`) | sync (`sync.yml`) |
+|---|---|---|
+| `SPOTIFY_TOTP_VER` / `SPOTIFY_TOTP_CIPHER` | passed | **not passed** |
+| `SPOTIFY_WEB_TOKEN` / `SPOTIFY_ENCRYPTED_TOKEN` | passed | **not passed** |
+| `SPOTIFY_PROXY_URL` | repo **variable** only | input `>` repo variable `>` secret |
+| what it does | one write, immediately | reads, matches, quota, backlog flush |
+
+The proxy one is the dangerous one: a CORS proxy that drops or truncates the
+`Cookie` header makes Spotify answer **logged-out**, which looks exactly like
+"slow down" from inside the engine. And the token-endpoint failure was being
+reported as a cooldown without ever naming the HTTP answer.
+
+Now:
+
+* `sync.yml` passes the **same four secrets** to the sync step as the probe.
+* The proxy comes from the **dispatch input or a proxy secret — never a repository
+  variable** (a variable set months ago cannot silently change the route).
+* The run summary prints `Spotify proxy: off (direct)` or
+  `**on** (a CORS proxy can silently log the cookie out)`.
+* The engine's diagnosis line prints the token answer itself:
+  `no token: …/api/token (transport, totp v12): HTTP 429; legacy: HTTP 400`,
+  with `route`, `proxy`, `cookie #1 of 2 (412 chars)`.
+
 ## "It works from Tests, not from Phonk Sync"
 
 Two runs can look identical and write nothing. Check these in this order — all

@@ -159,3 +159,18 @@ def test_the_run_summary_says_whether_the_run_could_write():
     assert "dry_run" not in str(backlog.get("if", "")), (
         "the write receipt is skipped on dry runs, where its evidence is needed"
     )
+
+
+def test_the_sync_and_the_probe_share_the_spotify_environment():
+    """Run 28 parked all six tracks with 'Spotify asked to slow down' while the
+    probe wrote fine. The probe's env had four secrets the sync never had, and
+    the sync took the proxy from a repo variable the probe does not use."""
+    doc = _load("sync.yml")
+    env = _steps(doc)["Run sync"]["env"]
+    for name in ("SPOTIFY_TOTP_VER", "SPOTIFY_TOTP_CIPHER",
+                 "SPOTIFY_WEB_TOKEN", "SPOTIFY_ENCRYPTED_TOKEN"):
+        assert name in env, f"the probe sets {name}; the sync must too"
+    # A repo *variable* proxy is the silent difference: drop it.
+    assert "vars.SPOTIFY_PROXY_URL" not in env["SPOTIFY_PROXY_URL"]
+    summary = _steps(doc)["Run time"]["run"]
+    assert "Spotify proxy" in summary, "the run must say whether a proxy was used"

@@ -1602,3 +1602,4 @@ def test_the_write_sends_the_browser_variables(monkeypatch):
     assert seen["playlistItemUris"] == ["spotify:track:aaa"]
     assert seen["uris"] == ["spotify:track:aaa"]
     assert client.last_write_variables == sorted(seen)
+
