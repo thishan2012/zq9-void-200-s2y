@@ -142,3 +142,20 @@ def test_the_probe_can_reproduce_a_batch_write():
     steps = {s.get("name", ""): s for s in doc["jobs"]["spotify-write-probe"]["steps"]}
     run = next(v for k, v in steps.items() if "One real write" in k)["run"]
     assert "--batch" in run and "inputs.spotify_probe_batch" in run
+
+
+def test_the_run_summary_says_whether_the_run_could_write():
+    """Run 27: 59s, green, 'Run sync: success' — and `Commit sync state: skipped`.
+    A dry run and a missing secret look identical from outside; the summary must
+    name the inputs so that cannot happen silently again."""
+    doc = _load("sync.yml")
+    steps = _steps(doc)
+    runtime = steps["Run time"]["run"]
+    assert "SPOTIFY_COOKIE" in runtime
+    assert "dry_run" in runtime
+    assert "MISSING" in runtime
+    # The receipt lives in the backlog step: it must not be skipped on a live run.
+    backlog = steps["Parked Spotify backlog"]
+    assert "dry_run" not in str(backlog.get("if", "")), (
+        "the write receipt is skipped on dry runs, where its evidence is needed"
+    )

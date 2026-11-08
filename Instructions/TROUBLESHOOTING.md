@@ -481,6 +481,28 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+## "It works from Tests, not from Phonk Sync"
+
+Two runs can look identical and write nothing. Check these in this order — all
+three are now visible without the job log:
+
+1. **`Commit sync state: skipped`** in the run's step list. The state commit is
+   skipped exactly when `dry_run = true`. A dry run prints
+   `mode: DRY RUN` in the log and `DRY RUN — nothing will be written` in the
+   run summary's **🔎 What this run could write** block.
+2. **`SPOTIFY_COOKIE: MISSING (0 chars)`** in that same block. The probe
+   (`Tests → spotify_write_probe`) uses the same secret name, so if the probe
+   writes and the sync does not, the cookie is not the difference — the *mode*
+   or the target playlist is.
+3. **`🧾 last write: sent N → landed M`** in the **📋 Spotify backlog** step. If
+   that step ran and printed nothing, the run never attempted a Spotify write.
+
+The probe runs `spotify-write-test` directly, which never checks `dry_run` and
+never reads the parked backlog: it writes one URI immediately. A sync run has to
+match tracks, respect the quota and then flush the backlog — so "probe writes,
+sync does not" almost always means the sync run was a dry run or had nothing it
+was allowed to write.
+
 ## Accepted no-op: the write is answered ✅ and nothing lands
 
 The worst failure this bot has met, and the one that produced weeks of "Spotify
