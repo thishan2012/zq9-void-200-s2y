@@ -464,3 +464,70 @@ def test_a_good_spare_is_still_used_when_a_bad_one_sits_before_it():
     insert(yt)
     assert yt.oauth_account == 3, "did not skip the unusable account #2"
     assert yt.oauth_switches == 1
+
+
+# --------------------- the check command must show the spare, in the browser
+
+def _run_check(monkeypatch, capsys, **env):
+    import os
+    from phonksync.__main__ import main
+
+    for key in list(os.environ):
+        if key.startswith(("YT_", "YOUTUBE_", "SPOTIFY_")):
+            os.environ.pop(key, None)
+    base = {
+        "SPOTIFY_COOKIE": "sp_dc=x",
+        "SPOTIFY_SOURCE_PLAYLISTS": "1G84VxuubZb4cofjVmk4OD",
+        "SPOTIFY_TARGET_PLAYLIST": "6YBLs3ihGXHCSAESWGRML4",
+        "YOUTUBE_ENABLED": "true",
+        "YOUTUBE_TARGET_PLAYLIST": "PLtarget0000000000000000000000",
+        "YT_REFRESH_TOKEN": "1//primary",
+        "YT_CLIENT_ID": "one.apps.googleusercontent.com",
+        "YT_CLIENT_SECRET": "s1",
+    }
+    base.update(env)
+    for key, value in base.items():
+        monkeypatch.setenv(key, value)
+    main(["check"])
+    return capsys.readouterr().out
+
+
+def test_check_reports_a_spare_that_cannot_write(monkeypatch, capsys):
+    out = _run_check(monkeypatch, capsys, YT_REFRESH_TOKEN_2="1//second")
+    assert "2 configured, 1 usable" in out
+    assert "No spare OAuth account is usable" in out
+
+
+def test_check_confirms_failover_when_the_spare_is_complete(monkeypatch, capsys):
+    out = _run_check(
+        monkeypatch, capsys,
+        YT_REFRESH_TOKEN_2="1//second", YT_CLIENT_JSON_2=json.dumps(CLIENT_JSON),
+    )
+    assert "2 configured, 2 usable" in out
+    assert "Quota failover armed" in out
+    assert "No spare" not in out
+
+
+def test_check_says_nothing_about_failover_when_no_spare_exists(monkeypatch, capsys):
+    out = _run_check(monkeypatch, capsys)
+    assert "1 configured, 1 usable" in out
+    assert "No spare OAuth account is usable" not in out
+
+
+def test_the_credential_check_workflow_passes_the_spare_secrets():
+    """Without this the browser check cannot see account 2 at all."""
+    import yaml
+    from pathlib import Path
+
+    wf = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".github/workflows/credential-check.yml")
+        .read_text(encoding="utf-8")
+    )
+    passed = set()
+    for job in wf["jobs"].values():
+        for step in job.get("steps", []):
+            if isinstance(step, dict):
+                passed.update((step.get("env") or {}).keys())
+    for name in ("YT_REFRESH_TOKEN_2", "YT_CLIENT_JSON_2",
+                 "YOUTUBE_OAUTH_TOKEN_JSON_2", "YOUTUBE_OAUTH_ACCOUNTS"):
+        assert name in passed, f"{name} never reaches the credential check"
