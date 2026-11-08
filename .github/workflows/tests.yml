@@ -95,17 +95,52 @@ jobs:
           done
           echo "````" >> probe.txt
           exit "$code"
-      - name: Commit the answer (logs are not downloadable, this is)
+      # The inputs are part of the answer: "1 -> 4" means nothing without
+      # "spotify_probe_batch = 4". `variables` in the artifact API serialised as
+      # EMPTY, so they are written into the report itself and attached by hand.
+      - name: Attach the answer as an artifact
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBE_INPUTS: ${{ toJSON(inputs) }}
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          printf 'probe inputs: %s\n' "$PROBE_INPUTS" >> probe.txt
+          printf '{"inline": {"title": "inputs", "file_name": "inputs.txt", "content": %s}}' \
+            "$(python -c 'import json,os; print(json.dumps(os.environ["PROBE_INPUTS"]))')" > payload.json
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            --input payload.json > /dev/null && echo "✅ artifact attached"
+
+      - name: Publish the answer on the spotify-probe branch
         if: always()
         run: |
+          cd "$GITHUB_WORKSPACE"
           git config user.name "phonk-sync-bot"
           git config user.email "actions@github.com"
           mkdir -p diagnostics
           cp probe.txt "diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md"
-          git add diagnostics
-          git commit -m "diagnostics: spotify write probe #${GITHUB_RUN_NUMBER} [skip ci]" || true
-          git push origin HEAD:spotify-probe || true
-          echo "wrote diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md on branch spotify-probe"
+          for attempt in 1 2 3; do
+            if git fetch origin spotify-probe --depth=1 2>/dev/null; then
+              git checkout -B spotify-probe FETCH_HEAD
+              cp probe.txt "diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md"
+              git add diagnostics
+              git commit -m "diagnostics: spotify write probe #${GITHUB_RUN_NUMBER} [skip ci]" || echo "nothing new to commit"
+            else
+              git checkout -B spotify-probe
+              git add diagnostics
+              git commit -m "diagnostics: spotify write probe #${GITHUB_RUN_NUMBER} [skip ci]" || true
+            fi
+            if git push origin spotify-probe; then
+              echo "✅ published diagnostics/spotify-write-probe-${GITHUB_RUN_NUMBER}.md on branch spotify-probe"
+              exit 0
+            fi
+            echo "attempt $attempt: push refused, retrying"
+            sleep 5
+            git reset --hard "origin/main"
+          done
+          echo "::warning title=Probe report not published::3 push attempts failed - read the step summary instead"
+          exit 0
 
   # One required check, whatever the matrix ends up being.
   tests-ok:

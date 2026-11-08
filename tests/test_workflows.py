@@ -108,9 +108,16 @@ def test_the_spotify_write_probe_is_manual_only_and_publishes_its_answer():
     run = next(v for k, v in steps.items() if "One real write" in k)
     assert "spotify-write-test" in run["run"]
     assert "GITHUB_STEP_SUMMARY" in run["run"]
-    publish = next(v for k, v in steps.items() if "Commit the answer" in k)
+    publish = next(v for k, v in steps.items() if "spotify-probe branch" in k)
     assert "diagnostics/spotify-write-probe-" in publish["run"]
     assert "git push" in publish["run"]
+    # A probe once reported success while the push silently did nothing
+    # (`git push ... || true` on a non-fast-forward). It must rebase onto the
+    # branch and try again, and it must keep the inputs with the answer.
+    assert "git fetch origin spotify-probe" in publish["run"]
+    assert "attempt" in publish["run"]
+    attach = next(v for k, v in steps.items() if "artifact" in k)
+    assert "PROBE_INPUTS" in attach["run"]
 
 
 def test_the_sync_workflow_can_reset_the_state_db():
