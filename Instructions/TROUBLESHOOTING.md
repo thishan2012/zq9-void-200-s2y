@@ -526,6 +526,35 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+### Starting over after emptying the target playlists
+
+If you deleted every song from the target playlists yourself, this is the whole
+recipe — **Actions → Phonk Sync → Run workflow**:
+
+| input | value | why |
+|---|---|---|
+| `reset` | `all` | forget every processed track, the backlog and the resume point |
+| `dry_run` | `false` | actually write |
+| `max_tracks` | `0` | no limit |
+| `max_inserts` | `100` | see the budget note below (empty = 40/day) |
+
+Nothing else needs clearing. Both target playlists are read **live** at the start
+of every run, so an emptied playlist is seen as empty and every song is added
+again. `data/yt-cache.json` is deliberately kept: it remembers which video matched
+which song, so the re-add does not pay for those searches twice.
+
+`reset all` also clears the Spotify **resume point**. That cursor means "start
+after this track"; leaving it behind used to make a fresh start skip every track
+before it.
+
+**Expect more than one run.** Spotify has no daily cap, but YouTube inserts do:
+each add costs 50 quota units out of 9800/day. A track that reached Spotify but
+not YouTube is *not* marked finished — the next run picks up only its YouTube
+side. So the Spotify playlist fills up first and YouTube catches up over the
+following runs. Just press **Run workflow** again (leave `reset` **empty** on
+every later run, or you start over each time).
+
+
 ## "It works from Tests, not from Phonk Sync" — the six-track clue
 
 Run 28 is the controlled experiment: **the probe wrote three tracks, the sync

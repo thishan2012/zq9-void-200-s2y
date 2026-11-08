@@ -83,3 +83,51 @@ def test_without_yes_it_is_still_a_dry_run(state, capsys):
     assert main(["--config", str(cfg), "reset", "all"]) == 0
     assert path.read_bytes() == before
     assert "Add --yes" in capsys.readouterr().out
+
+
+def test_reset_all_also_forgets_the_resume_point(tmp_path):
+    """"Start from scratch" must start at the FIRST track.
+
+    The resume point lives in spotify.resume and says "start after this track".
+    `reset all` used to leave it behind, so the next run deferred every track
+    before it — a fresh start that silently skipped half the playlist.
+    """
+    path = tmp_path / "state.json"
+    db = StateDB(path)
+    db.set_resume_point("abc123", "SOME TRACK", ["Artist"], 9999999999.0)
+    db.save()
+
+    fresh = StateDB(path)
+    fresh.reset(["all"])
+    fresh.save()
+
+    assert StateDB(path).get_resume_point() == {}, "resume point survived reset all"
+
+
+def test_reset_parked_clears_the_resume_point_too(tmp_path):
+    path = tmp_path / "state.json"
+    db = StateDB(path)
+    db.set_resume_point("abc123", "SOME TRACK", ["Artist"], 9999999999.0)
+    db.save()
+
+    fresh = StateDB(path)
+    cleared = fresh.reset(["parked"])
+    fresh.save()
+
+    assert cleared["parked"] >= 1, "the resume point was not counted as cleared"
+    assert StateDB(path).get_resume_point() == {}
+
+
+def test_reset_quota_leaves_the_resume_point_alone(tmp_path):
+    """Forgiving today's counters must not move the write cursor."""
+    path = tmp_path / "state.json"
+    db = StateDB(path)
+    db.set_resume_point("abc123", "SOME TRACK", ["Artist"], 9999999999.0)
+    db.data["quota"] = {"date": "2026-11-08", "inserts": 9}
+    db.save()
+
+    fresh = StateDB(path)
+    fresh.reset(["quota"])
+    fresh.save()
+
+    assert StateDB(path).get_resume_point().get("track_id") == "abc123"
