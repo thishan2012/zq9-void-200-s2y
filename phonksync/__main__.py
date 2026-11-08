@@ -192,7 +192,12 @@ def cmd_check(args: argparse.Namespace) -> int:
     problems: list[str] = []
     try:
         cfg.validate()
+        # Name the ids that were actually parsed: a wrong id is the quietest
+        # failure there is (the run succeeds and writes to the wrong place).
         print(f"✅ Config OK — {len(cfg.spotify_source_playlists)} source playlists")
+        print(f"   🎯 target playlist: {cfg.spotify_target_playlist}")
+        for index, source in enumerate(cfg.spotify_source_playlists, 1):
+            print(f"   📥 source {index}: {source}")
         if not cfg.youtube_enabled:
             print("ℹ️  YouTube sync disabled — Spotify-only mode")
         else:

@@ -24,20 +24,59 @@ _SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
 
 
 def parse_spotify_playlist_id(value: str) -> str:
-    """Accept a raw ID, spotify: URI, or open.spotify.com URL."""
-    value = (value or "").strip()
+    """Accept anything the Spotify apps actually copy.
+
+    A phone shares a very long link: the locale path segment is sometimes there
+    (`/intl-de/`), and there are always tracking parameters
+    (`?si=…&utm_source=copy-link&pi=…`). It may also arrive HTML-escaped
+    (`&amp;`), wrapped in angle brackets, or split by a pasted line break. All of
+    those must yield the same 22-character id, never a confusing "invalid id".
+    """
+    value = (value or "").strip().strip("<>\"' ").strip()
     if not value:
         raise ConfigError("Empty Spotify playlist ID")
+    # A share link can arrive URL-encoded by a chat app.
+    if "%3A%2F%2F" in value.upper():
+        from urllib.parse import unquote
+
+        value = unquote(value)
+    value = value.replace("&amp;", "&").replace("\u0026", "&")
+    # Paste from a phone often inserts newlines inside the link.
+    value = "".join(value.split())
     if value.startswith("spotify:playlist:"):
         value = value.split(":")[-1]
-    elif "open.spotify.com" in value:
+    elif "spotify.link/" in value or "spotify.app.link/" in value:
+        raise ConfigError(
+            "That is a Spotify *share* link (spotify.link/…), which redirects and "
+            "cannot be resolved without the network. Open it once in a browser and "
+            "copy the address it lands on (open.spotify.com/playlist/<id>)."
+        )
+    elif re.search(r"/(track|album|artist|episode|show|user)/", value):
+        # A *track* link would otherwise pass as "22 characters" and point the
+        # whole run at the wrong object — fail loudly instead of writing there.
+        kind = re.search(r"/(track|album|artist|episode|show|user)/", value).group(1)
+        raise ConfigError(
+            f"That is a Spotify {kind} link, not a playlist link. Open the playlist "
+            "itself and copy its link (open.spotify.com/playlist/<22 characters>)."
+        )
+    elif "open.spotify.com" in value or "/playlist/" in value:
         m = re.search(r"playlist/([A-Za-z0-9]{22})", value)
         if not m:
-            raise ConfigError(f"Cannot parse Spotify playlist URL: {value}")
+            # Fall back on the last 22-character token in the URL path.
+            m = re.search(r"/([A-Za-z0-9]{22})(?:[/?#]|$)", value)
+        if not m:
+            raise ConfigError(
+                f"Cannot parse Spotify playlist URL: {value}\n"
+                "Expected open.spotify.com/playlist/<22 characters>."
+            )
         value = m.group(1)
-    value = value.split("?")[0]
+    value = value.split("?")[0].split("#")[0].split("/")[0].strip()
     if not _SPOTIFY_ID_RE.match(value):
-        raise ConfigError(f"Invalid Spotify playlist ID: {value!r}")
+        raise ConfigError(
+            f"Invalid Spotify playlist ID: {value!r} "
+            "(a playlist id is exactly 22 letters and digits; a track, album or "
+            "artist link is not a playlist)"
+        )
     return value
 
 
