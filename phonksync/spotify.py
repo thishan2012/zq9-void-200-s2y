@@ -1856,7 +1856,22 @@ class SpotifyClient:
         return {"id": data.get("id", ""), "country": data.get("country", "")}
 
     def playlist_track_ids(self, playlist_id: str) -> set[str]:
-        return {t.id for t in self.playlist_tracks(playlist_id)}
+        """Track ids in a playlist, through the route this client prefers.
+
+        A web-player-first client must not read the playlist through the Web API:
+        that costs requests it does not need and can 429 in the middle of the
+        read, which is exactly how a target playlist looks EMPTY (and then every
+        "already there" check is wrong).
+        """
+        if getattr(self, "prefer_web_player", False):
+            return {t.id for t in self._pathfinder_tracks(playlist_id)}
+        try:
+            return {t.id for t in self.playlist_tracks(playlist_id)}
+        except RateLimited:
+            log.warning(
+                "Web API playlist read was throttled — using the web player route"
+            )
+            return {t.id for t in self._pathfinder_tracks(playlist_id)}
 
     def queue_track(self, uri: str, max_items: int = _MAX_QUEUE) -> bool:
         """Park a track in the player queue (1 cheap call, no playlist write).
