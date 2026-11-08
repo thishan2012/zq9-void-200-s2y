@@ -285,6 +285,49 @@ class Config:
             raise ConfigError("dry_run_track_limit must be 0 (unlimited) or a positive integer")
 
 
+def _json_text(value: Any) -> str:
+    """A JSON blob may arrive as text OR as an already-parsed object.
+
+    Pasting the client JSON *inside* the accounts list makes it a nested object;
+    str() on that produces Python repr with single quotes, which is not JSON and
+    blew up the whole run. Re-serialize it instead.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value or "")
+
+
+def _normalize_oauth_account(item: dict[str, Any]) -> dict[str, str]:
+    """Accept every shape a real Google JSON download comes in.
+
+    * {"client_json": "<text or object>", "refresh_token": "1//…"}
+    * {"installed": {…}} / {"web": {…}} with a refresh_token next to it — the
+      client JSON *is* the item, which is what you get by pasting the download
+      and adding one line.
+    * a flat token.json: {"client_id": …, "client_secret": …, "refresh_token": …}
+    """
+    section = item.get("installed") or item.get("web")
+    entry = {
+        "client_id": str(item.get("client_id", "") or ""),
+        "client_secret": str(item.get("client_secret", "") or ""),
+        "refresh_token": str(item.get("refresh_token", "") or ""),
+        "client_json": _json_text(item.get("client_json")),
+        "token_json": _json_text(item.get("token_json")),
+    }
+    if isinstance(section, dict):
+        # The download itself is the account: keep it whole so token_uri and
+        # every other field survive, and take the token from beside it.
+        entry["client_json"] = entry["client_json"] or json.dumps(item)
+        entry["client_id"] = entry["client_id"] or str(section.get("client_id", "") or "")
+        entry["client_secret"] = (
+            entry["client_secret"] or str(section.get("client_secret", "") or "")
+        )
+        entry["refresh_token"] = (
+            entry["refresh_token"] or str(section.get("refresh_token", "") or "")
+        )
+    return entry
+
+
 def _extra_youtube_oauth(first) -> list[dict[str, str]]:
     """Collect OAuth accounts 2..N, in order, from Secrets.
 
@@ -314,13 +357,7 @@ def _extra_youtube_oauth(first) -> list[dict[str, str]]:
             )
         for item in parsed:
             if isinstance(item, dict):
-                accounts.append({
-                    "client_id": str(item.get("client_id", "") or ""),
-                    "client_secret": str(item.get("client_secret", "") or ""),
-                    "refresh_token": str(item.get("refresh_token", "") or ""),
-                    "client_json": str(item.get("client_json", "") or ""),
-                    "token_json": str(item.get("token_json", "") or ""),
-                })
+                accounts.append(_normalize_oauth_account(item))
     for n in range(2, 11):
         entry = {
             "client_id": first(f"YT_CLIENT_ID_{n}", f"YOUTUBE_CLIENT_ID_{n}"),
@@ -423,6 +460,14 @@ class Secrets:
         for n, extra in enumerate(self.youtube_extra_oauth, start=2):
             token = (extra.get("refresh_token") or "").strip()
             if not token:
+                # A client JSON on its own cannot write: it names the app, not
+                # the user. Say so now, not at the handover mid-run.
+                if extra.get("client_json") or extra.get("client_id"):
+                    problems.append(
+                        f"OAuth account #{n}: has a client JSON but no refresh token. "
+                        "Add the refresh_token beside it (or set "
+                        f"YT_REFRESH_TOKEN_{n}) — the client JSON alone cannot add videos."
+                    )
                 continue
             for problem in check_token_types(token, ""):
                 problems.append(f"OAuth account #{n}: {problem}")

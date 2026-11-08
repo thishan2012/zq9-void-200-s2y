@@ -274,3 +274,109 @@ def test_a_mistyped_spare_token_is_flagged_before_the_run(monkeypatch):
     problems = Secrets.from_env().token_problems()
     assert any("account #2" in p and "access token" in p for p in problems)
     assert not any("account #2" not in p for p in problems), "primary is fine"
+
+
+# ------------------------------------------- pasting the JSON, not bare values
+
+CLIENT_JSON = {
+    "installed": {
+        "client_id": "two.apps.googleusercontent.com",
+        "client_secret": "s2",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+}
+
+
+def _account_from(shape):
+    """Parse one pasted shape all the way to the credential the client will use."""
+    import os
+
+    for key in list(os.environ):
+        if key.startswith(("YT_", "YOUTUBE_")):
+            os.environ.pop(key, None)
+    os.environ["YT_REFRESH_TOKEN"] = "1//primary"
+    os.environ["YOUTUBE_OAUTH_ACCOUNTS"] = json.dumps(shape)
+    s = Secrets.from_env()
+    yt = YouTubeClient(
+        refresh_token=s.youtube_refresh_token,
+        extra_oauth=s.youtube_extra_oauth, free_search=False,
+    )
+    assert len(yt._oauth_creds) == 2, "the spare account was dropped"
+    return yt._oauth_creds[1]
+
+
+@pytest.mark.parametrize("shape_name", [
+    "client_json_text", "client_json_object", "client_json_is_the_item",
+    "flat_token_json", "web_client", "single_object_not_a_list",
+])
+def test_every_json_shape_a_google_download_comes_in(monkeypatch, shape_name):
+    shapes = {
+        "client_json_text": [
+            {"client_json": json.dumps(CLIENT_JSON), "refresh_token": "1//r2"}],
+        # Pasting the JSON inside the list makes it a nested OBJECT. str() on it
+        # produced Python repr, which is not JSON and killed the whole run.
+        "client_json_object": [{"client_json": CLIENT_JSON, "refresh_token": "1//r2"}],
+        "client_json_is_the_item": [{**CLIENT_JSON, "refresh_token": "1//r2"}],
+        "flat_token_json": [{
+            "client_id": "two.apps.googleusercontent.com",
+            "client_secret": "s2", "refresh_token": "1//r2",
+        }],
+        "web_client": [{"web": CLIENT_JSON["installed"], "refresh_token": "1//r2"}],
+        "single_object_not_a_list": {**CLIENT_JSON, "refresh_token": "1//r2"},
+    }
+    cred = _account_from(shapes[shape_name])
+    assert cred["client_id"] == "two.apps.googleusercontent.com"
+    assert cred["client_secret"] == "s2"
+    assert cred["refresh_token"] == "1//r2"
+
+
+@pytest.mark.parametrize("secret_name", [
+    "YT_CLIENT_JSON_2", "YT_TOKEN_JSON_2", "YOUTUBE_OAUTH_TOKEN_JSON_2",
+    "YT_OAUTH_TOKEN_JSON_2", "YOUTUBE_CLIENT_JSON_2",
+])
+def test_a_numbered_secret_can_hold_the_whole_json_download(monkeypatch, secret_name):
+    import os
+
+    for key in list(os.environ):
+        if key.startswith(("YT_", "YOUTUBE_")):
+            os.environ.pop(key, None)
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//primary")
+    monkeypatch.setenv(secret_name, json.dumps({**CLIENT_JSON, "refresh_token": "1//r2"}))
+    s = Secrets.from_env()
+    yt = YouTubeClient(
+        refresh_token=s.youtube_refresh_token,
+        extra_oauth=s.youtube_extra_oauth, free_search=False,
+    )
+    assert len(yt._oauth_creds) == 2
+    assert yt._oauth_creds[1]["client_id"] == "two.apps.googleusercontent.com"
+    assert yt._oauth_creds[1]["refresh_token"] == "1//r2"
+
+
+def test_the_workflow_passes_every_json_secret_name_the_parser_reads():
+    """A name the parser accepts but the workflow drops is silently ignored."""
+    import yaml
+    from pathlib import Path
+
+    wf = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".github/workflows/sync.yml")
+        .read_text(encoding="utf-8")
+    )
+    passed = set()
+    for step in wf["jobs"]["sync"]["steps"]:
+        if isinstance(step, dict):
+            passed.update((step.get("env") or {}).keys())
+    for n in range(2, 6):
+        for name in (
+            f"YT_CLIENT_JSON_{n}", f"YOUTUBE_CLIENT_JSON_{n}", f"YT_TOKEN_JSON_{n}",
+            f"YOUTUBE_OAUTH_TOKEN_JSON_{n}", f"YT_OAUTH_TOKEN_JSON_{n}",
+            f"YOUTUBE_CLIENT_ID_{n}", f"YOUTUBE_CLIENT_SECRET_{n}",
+            f"YOUTUBE_REFRESH_TOKEN_{n}",
+        ):
+            assert name in passed, f"{name} is parsed but never reaches the run"
+
+
+def test_a_client_json_without_a_refresh_token_is_flagged_early(monkeypatch):
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//primary")
+    monkeypatch.setenv("YT_CLIENT_JSON_2", json.dumps(CLIENT_JSON))
+    problems = Secrets.from_env().token_problems()
+    assert any("account #2" in p and "no refresh token" in p for p in problems)

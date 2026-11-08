@@ -362,11 +362,48 @@ it once (same steps as §2 and §3), then add these three secrets:
 | `YT_CLIENT_SECRET_2` | the new client's secret |
 | `YT_REFRESH_TOKEN_2` | the refresh token you got for it |
 
-Prefer pasting the JSON? `YT_CLIENT_JSON_2` or `YT_TOKEN_JSON_2` work too, exactly
-like the account-1 versions.
-
 The workflow reads `_2` through `_5`. Numbering may have gaps — `_2` and `_4`
 both work. Leave the secrets you do not use out entirely; empty ones are ignored.
+
+### Option A2 — you have the JSON file 📄 (one secret, nothing to copy out)
+
+If you downloaded the client JSON, **do not pick values out of it**. Paste the
+whole thing into one secret and add your refresh token to it.
+
+Secret name — any of these works, use whichever matches your account-1 secret:
+
+| Secret name | |
+|---|---|
+| `YT_CLIENT_JSON_2` | shortest |
+| `YT_TOKEN_JSON_2` | |
+| `YOUTUBE_OAUTH_TOKEN_JSON_2` | matches an account-1 `YOUTUBE_OAUTH_TOKEN_JSON` |
+| `YT_OAUTH_TOKEN_JSON_2` / `YOUTUBE_CLIENT_JSON_2` | also accepted |
+
+Value — your downloaded JSON with **one line added** (`refresh_token`):
+
+```json
+{
+  "installed": {
+    "client_id": "….apps.googleusercontent.com",
+    "client_secret": "…",
+    "token_uri": "https://oauth2.googleapis.com/token"
+  },
+  "refresh_token": "1//…"
+}
+```
+
+`"web"` instead of `"installed"` is fine too. If your token JSON already has
+`refresh_token` in it, paste it **unchanged** — nothing to add.
+
+A flat shape works as well, if that is what you have:
+
+```json
+{"client_id": "…", "client_secret": "…", "refresh_token": "1//…"}
+```
+
+> The client JSON on its own **cannot add videos** — it names the app, not you.
+> Without a `refresh_token` the run tells you before it starts:
+> `OAuth account #2: has a client JSON but no refresh token.`
 
 ### Option B — one secret for all the spares
 
@@ -374,10 +411,29 @@ Secret name: **`YOUTUBE_OAUTH_ACCOUNTS`**. Value: a JSON list.
 
 ```json
 [
-  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "…"},
-  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "…"}
+  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "1//…"},
+  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "1//…"}
 ]
 ```
+
+**Every JSON shape is accepted here too**, so you can paste the downloads as they
+are — no copying values around:
+
+```json
+[
+  {
+    "installed": {"client_id": "…", "client_secret": "…"},
+    "refresh_token": "1//…"
+  },
+  {
+    "client_json": {"web": {"client_id": "…", "client_secret": "…"}},
+    "refresh_token": "1//…"
+  }
+]
+```
+
+`client_json` / `token_json` may be a nested object **or** a quoted JSON string.
+A single account may be passed as one object instead of a list.
 
 This one has no count limit. Both options can be mixed; the JSON list comes
 first, then the numbered secrets.
