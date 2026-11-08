@@ -285,6 +285,58 @@ class Config:
             raise ConfigError("dry_run_track_limit must be 0 (unlimited) or a positive integer")
 
 
+def _extra_youtube_oauth(first) -> list[dict[str, str]]:
+    """Collect OAuth accounts 2..N, in order, from Secrets.
+
+    Two shapes, so the user can pick whichever is easier in the GitHub UI:
+
+    * numbered secrets — YT_CLIENT_ID_2 / YT_CLIENT_SECRET_2 /
+      YT_REFRESH_TOKEN_2 (also YT_CLIENT_JSON_2 or YT_TOKEN_JSON_2), _3, _4 …
+    * one secret holding a JSON list — YOUTUBE_OAUTH_ACCOUNTS
+
+    A number is only used when it actually carries a credential, so a gap in
+    the numbering does not hide the accounts after it.
+    """
+    accounts: list[dict[str, str]] = []
+    raw = first("YOUTUBE_OAUTH_ACCOUNTS", "YT_OAUTH_ACCOUNTS")
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ConfigError(
+                f"YOUTUBE_OAUTH_ACCOUNTS is not valid JSON: {exc}"
+            ) from exc
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        if not isinstance(parsed, list):
+            raise ConfigError(
+                "YOUTUBE_OAUTH_ACCOUNTS must be a JSON list of accounts"
+            )
+        for item in parsed:
+            if isinstance(item, dict):
+                accounts.append({
+                    "client_id": str(item.get("client_id", "") or ""),
+                    "client_secret": str(item.get("client_secret", "") or ""),
+                    "refresh_token": str(item.get("refresh_token", "") or ""),
+                    "client_json": str(item.get("client_json", "") or ""),
+                    "token_json": str(item.get("token_json", "") or ""),
+                })
+    for n in range(2, 11):
+        entry = {
+            "client_id": first(f"YT_CLIENT_ID_{n}", f"YOUTUBE_CLIENT_ID_{n}"),
+            "client_secret": first(f"YT_CLIENT_SECRET_{n}", f"YOUTUBE_CLIENT_SECRET_{n}"),
+            "refresh_token": first(f"YT_REFRESH_TOKEN_{n}", f"YOUTUBE_REFRESH_TOKEN_{n}"),
+            "client_json": first(f"YT_CLIENT_JSON_{n}", f"YOUTUBE_CLIENT_JSON_{n}"),
+            "token_json": first(
+                f"YT_TOKEN_JSON_{n}", f"YOUTUBE_OAUTH_TOKEN_JSON_{n}",
+                f"YT_OAUTH_TOKEN_JSON_{n}",
+            ),
+        }
+        if any(entry.values()):
+            accounts.append(entry)
+    return accounts
+
+
 @dataclass
 class Secrets:
     spotify_cookie: str = ""
@@ -298,6 +350,9 @@ class Secrets:
     youtube_cookie: str = ""  # signed-in music.youtube.com Cookie header
     youtube_authuser: str = "0"
     youtube_api_key: str = ""
+    # Spare OAuth accounts (different Google Cloud projects = a fresh daily
+    # quota each). Only used after the previous account returns quotaExceeded.
+    youtube_extra_oauth: list[dict[str, str]] = field(default_factory=list)
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
@@ -321,6 +376,8 @@ class Secrets:
             raw = os.environ.get(key, "").strip()
             if raw:
                 spares.extend(p for p in raw.split("|||") if p.strip())
+
+        extra_oauth = _extra_youtube_oauth(_first)
 
         return cls(
             spotify_cookie=os.environ.get("SPOTIFY_COOKIE", ""),
@@ -349,6 +406,7 @@ class Secrets:
                 "YOUTUBE_DATA_API_KEY",
                 "GOOGLE_API_KEY",
             ),
+            youtube_extra_oauth=extra_oauth,
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", ""),
         )
@@ -357,7 +415,18 @@ class Secrets:
         """Catch swapped/expired-shape tokens before a run starts."""
         from .oauth_setup import check_token_types
 
-        return check_token_types(self.youtube_refresh_token, self.youtube_access_token)
+        problems = check_token_types(
+            self.youtube_refresh_token, self.youtube_access_token
+        )
+        # The spares are pasted by hand too, and a bad one is worse than none:
+        # it would only be discovered at the handover, mid-run.
+        for n, extra in enumerate(self.youtube_extra_oauth, start=2):
+            token = (extra.get("refresh_token") or "").strip()
+            if not token:
+                continue
+            for problem in check_token_types(token, ""):
+                problems.append(f"OAuth account #{n}: {problem}")
+        return problems
 
     def validate(self, require_telegram: bool = False, require_youtube: bool = False) -> None:
         missing = []

@@ -149,10 +149,17 @@ class QuotaState:
     # key index -> units used today. Every API key needs its own Google Cloud
     # project (quota is per project), so each key gets its own daily budget.
     keys: dict[str, int] = None  # type: ignore[assignment]
+    # OAuth account index -> {"units", "inserts", "exhausted"}. Quota is per
+    # Google Cloud project, so a second OAuth client from another project has
+    # its own day. "exhausted" is sticky until the UTC rollover, so a later run
+    # does not waste calls re-discovering that account 1 is already empty.
+    accounts: dict[str, dict[str, Any]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.keys is None:
             self.keys = {}
+        if self.accounts is None:
+            self.accounts = {}
 
     def rollover(self) -> None:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -162,6 +169,27 @@ class QuotaState:
             self.searches = 0
             self.inserts = 0
             self.keys = {}
+            self.accounts = {}
+
+    def account(self, index: str) -> dict[str, Any]:
+        return self.accounts.setdefault(
+            str(index), {"units": 0, "inserts": 0, "exhausted": False}
+        )
+
+    def account_units(self, index: str) -> int:
+        return int(self.account(index).get("units", 0))
+
+    def spend_on_account(self, index: str, cost: int, insert: bool = False) -> None:
+        entry = self.account(index)
+        entry["units"] = int(entry.get("units", 0)) + cost
+        if insert:
+            entry["inserts"] = int(entry.get("inserts", 0)) + 1
+
+    def exhaust_account(self, index: str) -> None:
+        self.account(index)["exhausted"] = True
+
+    def account_exhausted(self, index: str) -> bool:
+        return bool(self.account(index).get("exhausted"))
 
     def key_units(self, index: str) -> int:
         return int(self.keys.get(index, 0))
@@ -176,6 +204,7 @@ class QuotaState:
             "searches": self.searches,
             "inserts": self.inserts,
             "keys": dict(self.keys),
+            "accounts": {k: dict(v) for k, v in self.accounts.items()},
         }
 
     @classmethod
@@ -190,6 +219,11 @@ class QuotaState:
             searches=int(data.get("searches", 0) or 0),
             inserts=int(data.get("inserts", 0) or 0),
             keys=keys,
+            accounts={
+                str(k): dict(v)
+                for k, v in (data.get("accounts") or {}).items()
+                if isinstance(v, dict)
+            },
         )
 
 
@@ -215,6 +249,7 @@ class YouTubeClient:
         authuser: str = "0",
         free_search_pause: float = 1.0,
         web_session: requests.Session | None = None,
+        extra_oauth: list[dict[str, str]] | None = None,
     ) -> None:
         raw_keys: list[str] = []
         if isinstance(api_key, str):
@@ -243,39 +278,31 @@ class YouTubeClient:
         self.refresh_token = refresh_token.strip()
         self._oauth_error = ""
 
-        blob: dict[str, Any] = {}
-        raw_json = token_json or client_json
-        if raw_json:
-            try:
-                blob = json.loads(raw_json)
-            except json.JSONDecodeError as exc:
-                raise AuthError(f"YouTube OAuth JSON is not valid JSON: {exc}") from exc
-        section = blob.get("installed") or blob.get("web") or blob
-        self.client_id = section.get("client_id", "")
-        self.client_secret = section.get("client_secret", "")
-        self.token_uri = section.get("token_uri", self.token_uri)
-        # Bare client id/secret (pasted from the Cloud Console credentials row)
-        # are enough for the refresh-token grant.
-        if not self.client_id:
-            self.client_id = (client_id or "").strip()
-        if not self.client_secret:
-            self.client_secret = (client_secret or "").strip()
-        # A client JSON (or a whole token.json) wins over YT_CLIENT_ID/SECRET — but
-        # if the refresh token belongs to the *other* client, the pair must still
-        # be tried. This is why "the secret was already set" can still fail.
-        explicit_id = (client_id or "").strip()
-        explicit_secret = (client_secret or "").strip()
-        self._explicit_pair = (
-            {"client_id": explicit_id, "client_secret": explicit_secret}
-            if explicit_id and explicit_id != self.client_id
-            else {}
+        primary = self._oauth_bundle(
+            client_json=client_json, client_id=client_id,
+            client_secret=client_secret, refresh_token=refresh_token,
+            token_json=token_json,
         )
-        if not self.refresh_token:
-            # Token JSONs keep refresh_token at the top level; be lenient and
-            # also look inside the installed/web section.
-            self.refresh_token = (
-                blob.get("refresh_token", "") or section.get("refresh_token", "")
+        # Account 1 is what the user already had. Accounts 2..N are only ever
+        # touched after Google says the previous project is out of quota.
+        self._oauth_creds: list[dict[str, str]] = [primary]
+        for extra in extra_oauth or []:
+            if not isinstance(extra, dict):
+                continue
+            bundle = self._oauth_bundle(
+                client_json=str(extra.get("client_json", "") or ""),
+                client_id=str(extra.get("client_id", "") or ""),
+                client_secret=str(extra.get("client_secret", "") or ""),
+                refresh_token=str(extra.get("refresh_token", "") or ""),
+                token_json=str(extra.get("token_json", "") or ""),
             )
+            if bundle.get("refresh_token") or bundle.get("client_id"):
+                self._oauth_creds.append(bundle)
+        self.oauth_account_count = len(self._oauth_creds)
+        self.oauth_failover = self.oauth_account_count > 1
+        self.oauth_switches = 0
+        self._oauth_index = 0
+        self._apply_oauth_credential(0)
 
         if (
             not self.api_key
@@ -299,10 +326,6 @@ class YouTubeClient:
                 "YT_COOKIE (signed-in browser cookie, no Console needed) or "
                 "YOUTUBE_API_KEY for read-only search."
             )
-
-        for pair in _fallback_clients():
-            if pair["client_id"] != self.client_id:
-                self._client_candidates.append(pair)
 
         # Quota is per Google Cloud project, i.e. per key. With N keys the run
         # may spend N x daily_quota_units in total, but never more than
@@ -335,6 +358,14 @@ class YouTubeClient:
         self.free_pages_this_run = 0  # watch pages actually downloaded
         self.quota = quota_state or QuotaState()
         self.quota.rollover()
+        if self.oauth_failover:
+            # An account Google already declared empty today stays empty until
+            # the UTC rollover: start on the first one that can still write.
+            for idx in range(self.oauth_account_count):
+                if not self.quota.account_exhausted(str(idx)):
+                    if idx:
+                        self._apply_oauth_credential(idx)
+                    break
         self.region_code = region_code
         self.session = session or requests.Session()
         self._access_token = ""
@@ -348,6 +379,79 @@ class YouTubeClient:
         if self._manual_access_token:
             self._access_token = self._manual_access_token
             self._access_expiry = time.time() + 3300
+
+    # ------------------------------------------------- OAuth account failover
+    @staticmethod
+    def _oauth_bundle(
+        *, client_json: str = "", client_id: str = "", client_secret: str = "",
+        refresh_token: str = "", token_json: str = "",
+    ) -> dict[str, str]:
+        """Normalize one OAuth credential set (the parsing __init__ used to do).
+
+        Kept separate so account 2 is parsed by exactly the same rules as
+        account 1 — a client JSON, a bare id/secret pair, or a whole token.json.
+        """
+        blob: dict[str, Any] = {}
+        raw_json = token_json or client_json
+        if raw_json:
+            try:
+                blob = json.loads(raw_json)
+            except json.JSONDecodeError as exc:
+                raise AuthError(f"YouTube OAuth JSON is not valid JSON: {exc}") from exc
+        section = blob.get("installed") or blob.get("web") or blob
+        cid = section.get("client_id", "") or (client_id or "").strip()
+        secret = section.get("client_secret", "") or (client_secret or "").strip()
+        explicit_id = (client_id or "").strip()
+        return {
+            "client_id": cid,
+            "client_secret": secret,
+            "token_uri": section.get("token_uri", "") or "https://oauth2.googleapis.com/token",
+            "refresh_token": (refresh_token or "").strip()
+            or blob.get("refresh_token", "")
+            or section.get("refresh_token", ""),
+            # A client JSON wins over YT_CLIENT_ID/SECRET, but a refresh token
+            # issued by the *other* client must still be tried with that pair.
+            "explicit_id": explicit_id if explicit_id and explicit_id != cid else "",
+            "explicit_secret": (client_secret or "").strip(),
+        }
+
+    def _apply_oauth_credential(self, index: int) -> None:
+        """Point the client at OAuth account `index` and drop its old token."""
+        cred = self._oauth_creds[index]
+        self._oauth_index = index
+        self.client_id = cred["client_id"]
+        self.client_secret = cred["client_secret"]
+        self.token_uri = cred["token_uri"]
+        self.refresh_token = cred["refresh_token"]
+        self._explicit_pair = (
+            {"client_id": cred["explicit_id"], "client_secret": cred["explicit_secret"]}
+            if cred["explicit_id"]
+            else {}
+        )
+        self._client_candidates = [
+            pair for pair in _fallback_clients() if pair["client_id"] != self.client_id
+        ]
+        self._access_token = ""
+        self._access_expiry = 0.0
+        self._token_works = False
+        self.client_used = ""
+        self._oauth_error = ""
+        self.client_secret_missing = False
+        # A hand-pasted token belongs to the account it was minted for.
+        self._manual_access_token = ""
+
+    @property
+    def oauth_account(self) -> int:
+        """1-based number of the OAuth account currently in use."""
+        return self._oauth_index + 1
+
+    def _next_oauth_account(self) -> int | None:
+        """The next account that Google has not already declared empty today."""
+        for offset in range(1, self.oauth_account_count):
+            idx = (self._oauth_index + offset) % self.oauth_account_count
+            if not self.quota.account_exhausted(str(idx)):
+                return idx
+        return None
 
     # ------------------------------------------------------- browser cookie
     @staticmethod
@@ -731,6 +835,11 @@ class YouTubeClient:
                 "YouTube playlist writes need OAuth (an API key cannot add videos). "
                 "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN."
             )
+        # The user's rule: do not cap account 1 by hand. Let it add until Google
+        # itself returns quotaExceeded, then move to account 2. A local guess
+        # would stop the run while the project still had quota left.
+        if oauth and self.oauth_failover:
+            return
         if self.quota.units_used + cost > self.total_quota_units:
             raise QuotaExceeded(
                 f"Local YouTube quota budget reached "
@@ -838,6 +947,30 @@ class YouTubeClient:
                             "All YouTube API keys are out of quota for today "
                             f"({reason})"
                         )
+                    # OAuth: this Google Cloud project is out of quota. If a
+                    # spare OAuth account is configured, continue on it instead
+                    # of ending the run — and retry THIS request, so no song is
+                    # lost at the handover.
+                    if oauth and self.oauth_failover:
+                        self.quota.exhaust_account(str(self._oauth_index))
+                        left = self._oauth_index
+                        nxt = self._next_oauth_account()
+                        if nxt is not None:
+                            self._apply_oauth_credential(nxt)
+                            self.oauth_switches += 1
+                            log.warning(
+                                "YouTube OAuth account #%d hit its project quota — "
+                                "continuing on account #%d",
+                                left + 1, nxt + 1,
+                            )
+                            return self._request(
+                                method, path, params=params, json_body=json_body,
+                                cost=cost, search=search, insert=insert, oauth=oauth,
+                            )
+                        raise QuotaExceeded(
+                            f"All {self.oauth_account_count} YouTube OAuth accounts "
+                            f"are out of quota for today ({reason})"
+                        )
                     self.quota.units_used = self.total_quota_units
                     raise QuotaExceeded(f"YouTube API quota exceeded: {reason}")
                 if not oauth and "accessnotconfigured" in reason.lower().replace(" ", ""):
@@ -868,6 +1001,8 @@ class YouTubeClient:
             self.quota.units_used += cost
             if key_index is not None:
                 self.quota.spend_on_key(str(key_index), cost)
+            if oauth and self.oauth_failover:
+                self.quota.spend_on_account(str(self._oauth_index), cost, insert=insert)
             if search:
                 self.searches_this_run += 1
                 self.quota.searches += 1
