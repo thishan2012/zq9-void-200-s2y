@@ -1122,7 +1122,7 @@ def cmd_youtube_auth(args: argparse.Namespace) -> int:
     if getattr(args, "show_client", False):
         return show_client()
 
-    if getattr(args, "check_token", None):
+    if getattr(args, "check_token", None) is not None:
         token = args.check_token
         if token == "-":
             token = sys.stdin.read()
@@ -1424,8 +1424,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_auth.add_argument(
         "--check-token",
-        default="",
-        help="Only test this refresh token ('-' = stdin, empty = YT_REFRESH_TOKEN)",
+        nargs="?",
+        const="",
+        default=None,
+        help="Only test a refresh token (no value = YT_REFRESH_TOKEN, '-' = stdin)",
     )
     p_auth.add_argument(
         "--show-client",

@@ -956,3 +956,36 @@ def test_swapped_token_types_are_reported_by_the_config_layer(tmp_path, monkeypa
 
     problems = Secrets.from_env().token_problems()
     assert problems and "access token" in problems[0]
+
+
+def test_youtube_auth_check_token_without_a_value_uses_the_env(monkeypatch):
+    """`--check-token` with no value must test YT_REFRESH_TOKEN, not silently skip."""
+    import phonksync.oauth_setup as oauth
+    from phonksync.__main__ import main
+
+    seen = {}
+
+    def fake_check(token, session=None):
+        seen["token"] = token
+        return 0
+
+    monkeypatch.setattr(oauth, "check_refresh_token", fake_check)
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//from-the-secret")
+    assert main(["youtube-auth", "--check-token"]) == 0
+    assert seen["token"] == "1//from-the-secret"
+
+
+def test_youtube_auth_check_token_with_an_explicit_value(monkeypatch):
+    import phonksync.oauth_setup as oauth
+    from phonksync.__main__ import main
+
+    seen = {}
+
+    def fake_check(token, session=None):
+        seen["token"] = token
+        return 0
+
+    monkeypatch.setattr(oauth, "check_refresh_token", fake_check)
+    monkeypatch.setenv("YT_REFRESH_TOKEN", "1//from-the-secret")
+    assert main(["youtube-auth", "--check-token", "1//explicit"]) == 0
+    assert seen["token"] == "1//explicit"
