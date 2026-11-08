@@ -16,20 +16,20 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 1,
-        "units": 51
+        "inserts": 2,
+        "units": 102
       }
     },
     "date": "2026-11-08",
-    "inserts": 1,
+    "inserts": 2,
     "keys": {},
     "searches": 0,
-    "units_used": 51
+    "units_used": 102
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-08T15:12:23+00:00"
+    "manual_cleared_at": "2026-11-08T15:41:20+00:00"
   },
   "stats": {
     "methods": {
@@ -38,14 +38,29 @@
         "won": 1
       },
       "STRICT": {
-        "tried": 1,
-        "won": 0
+        "tried": 2,
+        "won": 1
       }
     },
-    "runs": 1,
-    "total_added": 1
+    "runs": 2,
+    "total_added": 2
   },
   "synced": {
+    "4SOpgVtAoZGiSULa9eU74e": {
+      "added_at": "2026-11-08T15:41:20+00:00",
+      "artists": [
+        "SUXMII",
+        "DJ AURAXÉ"
+      ],
+      "family": "montagem breakdown::suxmii",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM BREAKDOWN",
+      "spotify_added": true,
+      "spotify_id": "4SOpgVtAoZGiSULa9eU74e",
+      "youtube_added": true,
+      "youtube_video_id": "Y2Z9gg1gcJ0"
+    },
     "61zBVwzhLskripTriL7aVR": {
       "added_at": "2026-11-08T15:12:23+00:00",
       "artists": [
@@ -63,7 +78,7 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-08T15:12:23+00:00",
+  "updated_at": "2026-11-08T15:41:20+00:00",
   "version": 1,
   "version_duplicates": {}
 }
