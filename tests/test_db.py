@@ -153,3 +153,26 @@ def test_an_unknown_reset_scope_is_an_error(tmp_path):
     db = StateDB(tmp_path / "state.json")
     with pytest.raises(ValueError):
         db.reset(["everything"])
+
+
+def test_an_emptied_bucket_rewrites_the_queue_file(tmp_path):
+    """The committed file must not keep listing tracks that already landed.
+
+    Real state after run 42467429607: bucket empty, all 15 tracks added — but
+    data/manual-queue.txt still said "6 track(s) that could not be added".
+    """
+    from conftest import make_track
+
+    queue = tmp_path / "manual-queue.txt"
+    db = StateDB(tmp_path / "state.json")
+    track = make_track()
+
+    db.add_manual(track, reason="Spotify asked to slow down")
+    assert db.write_manual_queue(queue) == 1
+    assert track.uri in queue.read_text(encoding="utf-8")
+
+    db.clear_manual([track.id])
+    assert db.write_manual_queue(queue) == 0
+    text = queue.read_text(encoding="utf-8")
+    assert track.uri not in text, "a landed track was still listed as waiting"
+    assert "Nothing waiting" in text
