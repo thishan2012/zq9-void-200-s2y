@@ -213,3 +213,18 @@ def test_a_refused_reset_fails_the_run_instead_of_looking_green():
     assert "|| code=$?" in script
     assert "::error title=State reset refused::" in script
     assert 'exit "$code"' in script
+
+
+def test_a_successful_sync_summary_does_not_ask_what_went_wrong():
+    """`if [ -s run.log ]` was true on every normal run.
+
+    The summary then printed `### ❌ What went wrong` and grepped the harmless
+    `❌ Failed / unmatched: 0` line, so a green run read like a failure.
+    """
+    script = _steps(_load("sync.yml"))["Run sync"]["run"]
+    assert 'if [ "$code" -ne 0 ] && [ -s run.log ]; then' in script
+    assert 'echo "### ❌ What went wrong"' in script
+    assert 'echo "### ✅ The sync command exited 0' in script
+    # The failure heading must be guarded by the exit code, not log presence.
+    before_heading = script.split('echo "### ❌ What went wrong"', 1)[0]
+    assert 'if [ -s run.log ]; then' not in before_heading.split('tail -n 120 run.log')[-1]
