@@ -121,11 +121,207 @@ class RunReport:
     dry_run: bool = False
     source_read_limit: int = 0
     max_tracks_per_run: int = 0
+    # Where the songs went: id + human name, so the message is a receipt you
+    # can click instead of a wall of counters.
+    spotify_target_id: str = ""
+    spotify_target_name: str = ""
+    youtube_target_id: str = ""
+    youtube_target_name: str = ""
+    youtube_enabled: bool = False
+    youtube_daily_cap: int = 0
+
+    def skipped_total(self) -> int:
+        """Everything deliberately not added (already there, other version, chosen)."""
+        return self.already_synced + self.skipped_by_choice + self.version_duplicates
+
+    def failed_total(self) -> int:
+        """Unmatched plus errored — the two ways a song did not make it."""
+        return self.unmatched + self.skipped
+
+    def status(self) -> tuple[str, str]:
+        """Headline for the short message.
+
+        Truthful by construction: SUCCESS is only printed when nothing was
+        left behind. A throttled *read* that fell back to the web player is
+        not a failure, but a parked write or an unmatched song is PARTIAL.
+        """
+        if self.setup_failed or (self.errors and not self.added):
+            return "❌", "FAILED"
+        if self.dry_run:
+            return "🧪", "DRY RUN"
+        if (
+            self.failed_total() or self.errors or self.spotify_writes_missing
+            or self.youtube_write_problem or self.quota_stopped
+            or self.parked_spotify or self.manual_queued or self.rate_limited_skips
+            or self.deferred or self.budget_skips
+        ):
+            return "⚠️", "PARTIAL"
+        return "✅", "SUCCESS"
 
     def summary_text(self) -> str:
-        """Counts first, then ONLY the songs that were not added.
+        """The short, clickable end-of-run message (Telegram + Actions log).
 
-        Added songs are deliberately not listed: the playlist is the receipt.
+        Style: status, where it went, one line of counts, then only the few
+        details that change what you do next. The full diagnostic version is
+        still available as `verbose_summary_text()`.
+        """
+        emoji, word = self.status()
+        lines = [f"{emoji} <b>SYNC: {word}</b>"]
+        if self.spotify_target_id:
+            name = f" — {escape(self.spotify_target_name)}" if self.spotify_target_name else ""
+            lines.append(f"🎵 Spotify playlist{name}")
+            lines.append(f"https://open.spotify.com/playlist/{self.spotify_target_id}")
+        if self.youtube_target_id:
+            name = f" — {escape(self.youtube_target_name)}" if self.youtube_target_name else ""
+            lines.append(f"▶️ YouTube playlist{name}")
+            lines.append(f"https://www.youtube.com/playlist?list={self.youtube_target_id}")
+
+        added_word = "Would add" if self.dry_run else "Added"
+        failed = self.failed_total()
+        lines.append(
+            f"➕ {added_word}: <b>{self.added}</b> | ⏭ Skipped: {self.skipped_total()} | "
+            f"{'❌' if failed else '✅'} Failed: {failed}"
+        )
+
+        # One line of context: what was looked at, and why most of it was skipped.
+        context = f"{self.unique_tracks} tracks · {self.sources_read} playlist(s)"
+        if self.already_synced:
+            context += f" · {self.already_synced} already synced"
+        if self.version_duplicates:
+            context += f" · {self.version_duplicates} other version(s)"
+        if self.skipped_by_choice:
+            context += f" · {self.skipped_by_choice} skipped by choice"
+        lines.append(f"🎧 {context}")
+
+        if self.youtube_enabled or self.youtube_inserted or self.inserted or self.free_matches:
+            bits = [f"{self.youtube_inserted} added"]
+            if self.youtube_inserted:
+                bits[0] += " (confirmed by Google)"
+            if self.inserted:
+                bits.append(
+                    f"today {self.inserted}"
+                    + (f"/{self.youtube_daily_cap}" if self.youtube_daily_cap else "")
+                )
+            if self.free_matches:
+                bits.append(f"{self.free_matches} matched with 0 quota")
+            lines.append("▶️ YouTube: " + " · ".join(bits))
+
+        if self.elapsed_seconds >= 1:
+            lines.append(f"⏱ Took {_human_wait(self.elapsed_seconds)}")
+
+        # ---- only the lines that change what you do next ----
+        if self.youtube_write_problem:
+            lines.append(f"⚠️ YouTube: {self.youtube_write_problem}")
+            if self.youtube_readonly:
+                lines.append(
+                    f"📝 {self.youtube_readonly} match(es) remembered — added once this is fixed"
+                )
+        if self.oauth_switches:
+            lines.append(
+                f"🔁 YouTube OAuth: switched account {self.oauth_switches} time(s) "
+                "(daily target or quota) — the run continued"
+            )
+        if self.quota_stopped:
+            lines.append(f"⚠️ Stopped early: {escape(self.quota_reason or 'YouTube quota budget reached')}")
+        if self.spotify_throttled:
+            if self.web_player_writes:
+                lines.append(
+                    f"⚠️ Spotify rate limited (429) — added {self.web_player_writes} "
+                    "track(s) through the web player; run again to continue"
+                )
+            elif not self.inserted and not self.added and not self.spotify_note_writes:
+                lines.append(
+                    "⚠️ Spotify rate limited (429) — the web player route was used "
+                    "instead; nothing to fix"
+                )
+            else:
+                lines.append(
+                    "⚠️ Spotify rate limited (429): wrote what it could — "
+                    "run again to continue"
+                )
+        elif self.web_player_writes:
+            lines.append(
+                f"🌐 Added {self.web_player_writes} track(s) through the web player "
+                "(Spotify Web API was cooling down)"
+            )
+        if self.spotify_writes_missing:
+            lines.append(
+                f"🚨 {self.spotify_writes_missing} track(s) accepted by Spotify but "
+                "are NOT in the target playlist — kept in the backlog"
+            )
+            if self.spotify_playlist_empty:
+                lines.append("⚠️ The target playlist reads as EMPTY — check SPOTIFY_TARGET_PLAYLIST")
+        if self.spotify_note:
+            lines.append(self.spotify_note)
+        if self.parked_saved:
+            lines.append(f"♻️ Added {self.parked_saved} track(s) an earlier run had to park")
+        if self.parked_already_there:
+            lines.append(
+                f"✅ {self.parked_already_there} parked track(s) were already in the "
+                "playlist — counted, not added twice"
+            )
+        if self.manual_queued:
+            lines.append(f"📋 Parked for the next run: {self.manual_queued} track(s)")
+        if self.parked_spotify and not self.parked_repaired:
+            lines.append(
+                f"📋 Still parked: {self.parked_spotify} track(s) — the next run adds them"
+            )
+        if self.queued:
+            lines.append(
+                f"🧺 Spotify writes via queue: {self.queued} tracks "
+                f"({self.queued_flushes} batch save(s))"
+            )
+        if self.rate_limited_skips:
+            lines.append(
+                f"⏸ Skipped due to Spotify 429: {self.rate_limited_skips} — resume point saved"
+            )
+        if self.budget_skips:
+            lines.append(f"⏸ Out of search budget: {self.budget_skips} (retried next run)")
+        if self.deferred:
+            lines.append(f"🕒 Deferred (retried later): {self.deferred}")
+        if self.skipped:
+            lines.append(f"⚠️ Errored: {self.skipped} (retried next run)")
+        if self.failed_tracks:
+            lines.append(f"<b>Not added</b> ({len(self.failed_tracks)}):")
+            lines.extend(f"  • {line}" for line in self.failed_tracks[:5])
+            if len(self.failed_tracks) > 5:
+                lines.append(f"  • …and {len(self.failed_tracks) - 5} more (see the full log)")
+        if self.candidate_pool:
+            lines.append(
+                f"❓ Near-miss candidates kept for review: {self.candidate_pool} "
+                "(never added automatically)"
+            )
+        if self.dry_run:
+            if self.source_read_limit:
+                cap = self.max_tracks_per_run
+                lines.append(
+                    f"🧪 DRY RUN — previewed {self.source_read_limit} track(s)"
+                    + (f" (your limit: {cap})" if cap and cap <= self.source_read_limit else "")
+                    + "; nothing was written"
+                )
+            else:
+                lines.append("🧪 DRY RUN — nothing was written")
+        if self.setup_failed:
+            lines.append(
+                "🛑 <b>Nothing could run</b> — the setup itself was refused "
+                "(credential, playlist id or config)"
+            )
+        if self.errors:
+            lines.append(f"🛑 Errors: {len(self.errors)}")
+            lines.extend(escape(e)[:200] for e in self.errors[:3])
+        if self.cooldown_until:
+            lines.append(
+                "ℹ️ Next run: "
+                + datetime.fromtimestamp(self.cooldown_until, timezone.utc).strftime("%H:%M UTC")
+            )
+        return "\n".join(lines)
+
+    def verbose_summary_text(self) -> str:
+        """The full diagnostic view (every counter, route and note).
+
+        Kept for debugging: `PHONK_VERBOSE_SUMMARY=1` sends this instead, and it
+        is always written to the log at DEBUG level. Added songs are deliberately
+        not listed: the playlist is the receipt.
         """
         head = "🧪 Dry run finished" if self.dry_run else "📊 Sync run finished"
         added_word = "Would add" if self.dry_run else "Added"
@@ -771,6 +967,10 @@ class SyncEngine:
             report.search_mode = getattr(self.youtube, "search_mode", "")
             report.write_mode = getattr(self.youtube, "write_mode", "")
             self.state.save_quota(self.youtube.quota)
+        report.youtube_enabled = bool(cfg.youtube_enabled)
+        report.youtube_daily_cap = int(cfg.youtube_max_inserts_per_day or 0)
+        report.spotify_target_id = cfg.spotify_target_playlist
+        report.youtube_target_id = cfg.youtube_target_playlist if cfg.youtube_enabled else ""
         report.finished_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
         if not cfg.dry_run:
@@ -780,7 +980,12 @@ class SyncEngine:
         self.source_cache.save()
 
         self._send_single(report)
-        log.info("\n%s", report.summary_text().replace("<b>", "").replace("</b>", ""))
+        plain = report.summary_text().replace("<b>", "").replace("</b>", "")
+        log.info("\n%s", plain)
+        log.debug(
+            "Full run report:\n%s",
+            report.verbose_summary_text().replace("<b>", "").replace("</b>", ""),
+        )
         return report
 
     # -------------------------------------------------------------- helpers
@@ -977,7 +1182,70 @@ class SyncEngine:
                 0.0, (datetime.now(timezone.utc) - started).total_seconds()
             )
         report.cooldown_until = getattr(self.spotify, "blocked_until", 0.0) or 0.0
-        self.telegram.flush(summary=report.summary_text())
+        self._name_target_playlists(report)
+        verbose = os.environ.get("PHONK_VERBOSE_SUMMARY", "").strip().lower() in {
+            "1", "true", "yes",
+        }
+        self.telegram.flush(
+            summary=report.verbose_summary_text() if verbose else report.summary_text()
+        )
+
+    def _name_target_playlists(self, report: RunReport) -> None:
+        """Best-effort human names for the two target playlists.
+
+        A name is a nicety, never a reason to fail or slow a run: every lookup
+        is guarded, a throttled Spotify is not re-probed, and the last name we
+        learned is remembered in the state file so a 429 run still has it.
+        """
+        cfg = self.config
+        report.spotify_target_id = report.spotify_target_id or cfg.spotify_target_playlist
+        if cfg.youtube_enabled:
+            report.youtube_target_id = report.youtube_target_id or cfg.youtube_target_playlist
+        names = self.state.data.setdefault("playlist_names", {})
+        learned = False
+        for key, pid in (
+            ("spotify:" + report.spotify_target_id, report.spotify_target_id),
+            ("youtube:" + report.youtube_target_id, report.youtube_target_id),
+        ):
+            if not pid:
+                continue
+            known = str(names.get(key) or "")
+            if not known and not report.setup_failed:
+                known = self._lookup_playlist_name(key.startswith("youtube:"), pid)
+                if known:
+                    names[key] = known
+                    learned = True
+            if key.startswith("youtube:"):
+                report.youtube_target_name = known
+            else:
+                report.spotify_target_name = known
+        if learned and not cfg.dry_run:
+            # The title lookup may have spent one YouTube unit: keep the
+            # counters and the new name in the same saved state.
+            if self.youtube is not None:
+                self.state.save_quota(self.youtube.quota)
+            try:
+                self.state.save()
+            except OSError as exc:
+                log.debug("Could not save the playlist names: %s", exc)
+
+    def _lookup_playlist_name(self, is_youtube: bool, playlist_id: str) -> str:
+        if is_youtube:
+            if self.youtube is None:
+                return ""
+            try:
+                return str(getattr(self.youtube, "playlist_title", lambda _pid: "")(playlist_id) or "")
+            except Exception as exc:
+                log.debug("Could not read the YouTube playlist name: %s", exc)
+                return ""
+        # Spotify: never spend retries re-learning a 429 we already know about.
+        if getattr(self.spotify, "blocked_until", 0.0) > time.time():
+            return ""
+        try:
+            return str(self.spotify.playlist_info(playlist_id).get("name") or "")
+        except Exception as exc:
+            log.debug("Could not read the Spotify playlist name: %s", exc)
+            return ""
 
     def _web_api_budget_left(self) -> bool:
         """Cheap-read budget: Web API calls are slow (2s pace) and rate limited."""

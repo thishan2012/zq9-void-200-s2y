@@ -681,7 +681,7 @@ def test_run_summary_reports_confirmed_inserts():
 
     report = RunReport(youtube_inserted=3, inserted=5, write_mode="browser cookie")
     text = report.summary_text()
-    assert "YouTube inserts confirmed by Google: 3" in text
+    assert "3 added (confirmed by Google)" in text
 
 
 # ------------------------- cookie names mangled by browsers/export tools
@@ -999,3 +999,24 @@ def test_quota_rollover_follows_pacific_midnight_not_utc():
     # During PDT (UTC-7) the boundary moves to 07:00 UTC.
     assert pacific_quota_date(datetime(2026, 7, 15, 6, 59, tzinfo=timezone.utc)) == "2026-07-14"
     assert pacific_quota_date(datetime(2026, 7, 15, 7, 0, tzinfo=timezone.utc)) == "2026-07-15"
+
+
+def test_playlist_title_costs_one_unit_and_names_the_target():
+    def handler(method, url, params, body, headers):
+        assert url.endswith("/playlists"), url
+        assert params["part"] == "snippet"
+        return FakeResponse(200, {"items": [{"snippet": {"title": "test"}}]})
+
+    session = FakeSession(handler)
+    yt = YouTubeClient(api_key="KEY123", session=session, free_search=False)
+    assert yt.playlist_title("PLZN2mokux__I") == "test"
+    assert yt.quota.units_used == 1, "a title must not cost more than one unit"
+
+
+def test_playlist_title_never_raises_when_it_cannot_be_read():
+    def handler(method, url, params, body, headers):
+        return FakeResponse(403, {"error": {"errors": [{"reason": "quotaExceeded"}]}})
+
+    yt = YouTubeClient(api_key="KEY123", session=FakeSession(handler), free_search=False)
+    assert yt.playlist_title("PLx") == "", "a cosmetic lookup must not fail the run"
+    assert yt.playlist_title("") == ""

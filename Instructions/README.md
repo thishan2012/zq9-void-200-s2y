@@ -64,6 +64,39 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 - `Actions → latest run → Run sync` log shows the same summary.
 - `python -m phonksync stats` (locally, after pulling) shows per-method tried/won counts.
 
+### 6a. The run message (short by default) 📬
+
+One message per run, shaped like a receipt you can click:
+
+```text
+✅ SYNC: SUCCESS
+🎵 Spotify playlist — Phonk Vault
+https://open.spotify.com/playlist/<target id>
+▶️ YouTube playlist — test
+https://www.youtube.com/playlist?list=<target id>
+➕ Added: 1 | ⏭ Skipped: 2 | ✅ Failed: 0
+🎧 167 tracks · 1 playlist(s) · 2 already synced
+▶️ YouTube: 1 added (confirmed by Google) · today 3/195 · 1 matched with 0 quota
+⏱ Took 53s
+⚠️ Spotify rate limited (429) — added 1 track(s) through the web player; run again to continue
+ℹ️ Next run: 17:30 UTC
+```
+
+- **The headline is earned, not assumed:** `SUCCESS` only when nothing was left
+  behind, `PARTIAL` when something is unmatched/parked/stopped, `FAILED` when the
+  setup itself was refused, `DRY RUN` for a preview.
+- `Skipped` = already synced + skipped by choice + another version already added.
+  `Failed` = unmatched + errored.
+- Playlist names are looked up once and remembered in `data/sync-state.json`
+  (`playlist_names`). A name is cosmetic: if Spotify is throttled or YouTube
+  refuses, the link is still shown and the run is never failed for it.
+- Only the lines that change what you do next are kept. **Nothing is deleted** —
+  the full report (methods, backend, cache/route counters, `Details`) is one
+  switch away:
+  - **GitHub UI:** `Actions → Phonk Sync → Run workflow` → tick **`verbose_log`**.
+  - Scheduled runs stay short; the full report is also written to the job log at
+    DEBUG level (`--verbose`).
+
 ## 7. Optional tuning (`config.json`)
 
 | Key | Default | Meaning |
