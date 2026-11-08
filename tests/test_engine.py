@@ -1761,3 +1761,108 @@ def test_a_run_without_a_token_says_so_in_the_diagnosis(monkeypatch, cfg):
     assert "no token" in note
     assert "429" in note, "the token endpoint's own answer must be named"
     assert "proxy" in note
+
+
+# --------------------------------------------------------------------------
+# A Web API cooldown must NOT park writes the web player still accepts.
+#
+# Real run 42463700078: YouTube 10/10 added, Spotify 4/10, six tracks parked
+# with "Spotify asked to slow down" — while the repo's own write probe #138
+# proved addToPlaylist on the web player route lands the track. The engine
+# parked on `blocked_until` without ever trying the route that works.
+# --------------------------------------------------------------------------
+
+
+class WebPlayerSpotify(FakeSpotify):
+    """A free account: Web API throttled, web-player mutation still working."""
+
+    def __init__(self, *a, web_refuses=False, **kw):
+        super().__init__(*a, **kw)
+        self.web_added = []
+        self.web_refuses = web_refuses
+        self.web_player_write_blocked = False
+        self.blocked_until = 0.0
+
+    @property
+    def web_player_write_ready(self):
+        return not self.web_player_write_blocked
+
+    def add_tracks_web_player(self, playlist_id, uris):
+        if self.web_refuses:
+            self.web_player_write_blocked = True
+            raise RuntimeError("pathfinder addToPlaylist refused")
+        self.web_added.extend(uris)
+        for uri in uris:
+            self.target_ids.add(uri.split(":")[-1])
+
+    def add_tracks(self, playlist_id, uris):
+        raise AssertionError("the throttled Web API must not be called for writes")
+
+
+def _web_player_engine(monkeypatch, cfg, spotify, tracks):
+    spotify.blocked_until = time.time() + 1800
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(eng, "_read_pathfinder", lambda pid, report: list(tracks))
+    return eng
+
+
+def test_web_api_cooldown_still_writes_through_the_web_player(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    track = make_track(id="track000000000000000001")
+    spotify = WebPlayerSpotify({cfg.spotify_source_playlists[0]: [track]})
+    eng = _web_player_engine(monkeypatch, cfg, spotify, [track])
+
+    report = eng.run()
+
+    assert spotify.web_added == [track.uri], "the working route was never tried"
+    assert report.web_player_writes == 1
+    assert report.manual_queued == 0, "a track that landed must not be parked"
+    assert not eng.state.pending_spotify()
+    assert not eng.state.manual_items()
+    assert eng.state.get_synced(track.id)["spotify_added"] is True
+    assert "through the web player" in report.summary_text()
+
+
+def test_an_expired_cooldown_never_parks(monkeypatch, cfg):
+    """`blocked_until` is a timestamp: a past one is not a cooldown."""
+    cfg.youtube_enabled = False
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.blocked_until = time.time() - 60  # the window already passed
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    report = eng.run()
+
+    assert spotify.added == [track.uri]
+    assert report.manual_queued == 0
+    assert not eng.state.pending_spotify()
+
+
+def test_both_routes_refused_still_parks_without_claiming_success(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    track = make_track(id="track000000000000000001")
+    spotify = WebPlayerSpotify({cfg.spotify_source_playlists[0]: [track]}, web_refuses=True)
+    eng = _web_player_engine(monkeypatch, cfg, spotify, [track])
+
+    report = eng.run()
+
+    assert report.manual_queued == 1
+    assert eng.state.pending_spotify(), "nothing may be lost"
+    entry = eng.state.get_synced(track.id) or {}
+    assert not entry.get("spotify_added"), "a refused write must never be recorded as added"
+
+
+def test_parked_backlog_is_retried_on_the_web_player_during_a_cooldown(monkeypatch, cfg):
+    cfg.youtube_enabled = False
+    spotify = WebPlayerSpotify({cfg.spotify_source_playlists[0]: []})
+    eng = _web_player_engine(monkeypatch, cfg, spotify, [])
+    parked = make_track(id="parked0000000000000001", name="SHAKA - SLOWED",
+                        uri="spotify:track:parked0000000000000001")
+    eng.state.add_manual(parked, reason="Spotify asked to slow down")
+    eng.state.add_pending_spotify(parked)
+
+    eng.run()
+
+    assert spotify.web_added == [parked.uri], "the backlog waited for no reason"
+    assert not eng.state.pending_spotify()
+    assert not eng.state.manual_items()

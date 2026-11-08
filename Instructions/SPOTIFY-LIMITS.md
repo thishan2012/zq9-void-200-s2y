@@ -187,6 +187,30 @@ bucket (`data/manual-queue.txt`, `phonksync manual --apply`).
 > If a playlist is private the fallback cannot read it — use a spare account
 > cookie (`SPOTIFY_COOKIE_2`) or wait out the window.
 
+## A Web API cooldown does not close the web-player door
+
+`blocked_until` is set by `api.spotify.com` (and by the token endpoint). The web
+player writes through `api-partner.spotify.com` with its own `addToPlaylist`
+mutation, so that cooldown says **nothing** about this route.
+
+The engine therefore tries the web player before it parks anything:
+
+```text
+Web API 429  →  write via web player  →  landed ✅
+                                   └→  refused too  →  park (never "added")
+```
+
+Only a refusal from the mutation itself closes the web-player door, and only for
+the rest of that run (`SpotifyClient.web_player_write_ready`). The parked backlog
+is retried on the same route in the same run, and the summary names it:
+
+```text
+🌐 Added 6 track(s) through the web player while the Spotify Web API was cooling down
+```
+
+> Before this, a Web API 429 parked every remaining write without trying the route
+> the write probe had already proven — YouTube filled up while Spotify sat still.
+
 ## The four defences (all automatic)
 
 | # | Defence | What it saves |

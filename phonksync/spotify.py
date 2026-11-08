@@ -986,6 +986,11 @@ class SpotifyClient:
         self.queue_saves = 0
         self.queue_supported = True
         self.blocked_until = 0.0
+        # A Web API / token-endpoint 429 does NOT throttle the web player's own
+        # endpoint (api-partner pathfinder). Only a refusal from that mutation
+        # itself may close this door — otherwise a throttled Web API parks every
+        # write while the route that actually works is never even tried.
+        self.web_player_write_blocked = False
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": _UA})
         self._access_token = ""
@@ -1935,8 +1940,10 @@ class SpotifyClient:
         if getattr(self, "prefer_pathfinder", False):
             try:
                 self._pathfinder_add(playlist_id, uris)
+                self.web_player_write_blocked = False
                 return
             except Exception as web_exc:
+                self.web_player_write_blocked = True
                 if self.blocked_until > time.time():
                     raise
                 # The web player route refused (a rotated hash, a new mutation
@@ -1978,13 +1985,47 @@ class SpotifyClient:
                 log.warning("Web API write throttled — writing through the web player")
                 try:
                     self._pathfinder_add(playlist_id, chunk)
+                    self.web_player_write_blocked = False
                 except Exception as web_exc:
+                    self.web_player_write_blocked = True
                     message = (
                         f"Spotify refused the write on both routes — "
                         f"{reason_rest}; web-player: {str(web_exc)[:200]}"
                     )
                     self.last_write_error = message
                     raise RuntimeError(message) from web_exc
+
+    @property
+    def web_player_write_ready(self) -> bool:
+        """The web player can still write while the Web API is cooling down.
+
+        ``blocked_until`` is set by ``api.spotify.com`` / the token endpoint. The
+        web player writes through ``api-partner.spotify.com`` with its own
+        mutation, so that cooldown says nothing about this route. Only a refusal
+        from the mutation itself (a rotated hash, a permission quirk) closes it,
+        and only for the rest of this run.
+        """
+        return not self.web_player_write_blocked
+
+    def add_tracks_web_player(self, playlist_id: str, uris: list[str]) -> None:
+        """Write through the web player only — never touch the throttled Web API.
+
+        This is the route the write probe proves before a run
+        (`phonksync spotify-write-test`), so a Web API cooldown must not park
+        tracks that this endpoint still accepts.
+        """
+        self.writes_this_run += 1
+        self.writes_attempted += len(uris)
+        self.prefer_pathfinder = True
+        self.pathfinder_ok = True
+        try:
+            self._pathfinder_add(playlist_id, uris)
+        except Exception as exc:
+            self.web_player_write_blocked = True
+            self.last_write_error = f"web-player: {str(exc)[:200]}"
+            raise
+        self.web_player_write_blocked = False
+        self.last_write_error = ""
 
     def _rest_add(self, playlist_id: str, uris: list[str]) -> None:
         """The Web API write, on its own (used as the other route)."""
