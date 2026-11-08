@@ -147,12 +147,22 @@ class StateDB:
         return removed
 
     def write_manual_queue(self, path: str | Path) -> int:
-        """Dump the manual bucket as spotify:track: URIs (copy-paste friendly)."""
+        """Dump the manual bucket as spotify:track: URIs (copy-paste friendly).
+
+        An empty bucket must REWRITE the file, not leave the previous one behind:
+        a committed queue that still lists six "could not be added" tracks after
+        they all landed reads as a failure that no longer exists.
+        """
         items = self.manual_items()
-        if not items:
-            return 0
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if not items:
+            path.write_text(
+                f"# ✅ Nothing waiting — every track reached the playlist ({_now()}).\n"
+                "# This file is rewritten after every run.\n",
+                encoding="utf-8",
+            )
+            return 0
         lines = [
             f"# {len(items)} track(s) that could not be added automatically "
             f"({_now()})."

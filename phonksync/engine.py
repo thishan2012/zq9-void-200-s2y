@@ -705,8 +705,9 @@ class SyncEngine:
             self._flush_queue()
             self._retry_pending_queue()
             self._audit_claimed_spotify(report)
-            if self.state.manual_items():
-                self.state.write_manual_queue(cfg.manual_queue_path)
+            # Always rewrite it: an emptied bucket must not leave a stale file
+            # claiming tracks are still waiting.
+            self.state.write_manual_queue(cfg.manual_queue_path)
 
         # Record method statistics for every method that was exercised.
         self.state.record_run()
