@@ -5,48 +5,18 @@
     "inserts": 0,
     "keys": {},
     "searches": 0,
-    "units_used": 1
+    "units_used": 2
   },
   "skipped": {},
   "spotify": {
     "manual": {
-      "1HOfVRxlZSrRxwdU9khv6p": {
-        "artists": [
-          "h6itam",
-          "Penkramin",
-          "SNYSTA"
-        ],
-        "name": "MONTAGEM VALKARO - Slowed",
-        "queued_at": "2026-11-07T22:10:28+00:00",
-        "reason": "Spotify asked to slow down",
-        "uri": "spotify:track:1HOfVRxlZSrRxwdU9khv6p"
-      },
-      "1RD6UmOALWhLSXAe8GNczs": {
-        "artists": [
-          "HDN"
-        ],
-        "name": "LUZ",
-        "queued_at": "2026-11-08T07:42:21+00:00",
-        "reason": "Spotify asked to slow down",
-        "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
-      },
-      "1kZvBIepQFlgUywAub2h56": {
-        "artists": [
-          "ASTXR",
-          "MC ETERNA"
-        ],
-        "name": "TURAN 2 - Slowed",
-        "queued_at": "2026-11-08T07:42:21+00:00",
-        "reason": "Spotify asked to slow down",
-        "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
-      },
       "23AD8PYw2abHfy3UVGC2FC": {
         "artists": [
           "Nulteex",
           "ewyx"
         ],
         "name": "SHAKA - SLOWED",
-        "queued_at": "2026-11-07T22:09:49+00:00",
+        "queued_at": "2026-11-08T08:02:20+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:23AD8PYw2abHfy3UVGC2FC"
       },
@@ -65,7 +35,7 @@
           "DJ AURAXÉ"
         ],
         "name": "MONTAGEM BREAKDOWN",
-        "queued_at": "2026-11-08T07:42:21+00:00",
+        "queued_at": "2026-11-08T08:02:20+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
@@ -75,7 +45,7 @@
           "NXDLS"
         ],
         "name": "FUNK MISTERIO",
-        "queued_at": "2026-11-08T07:42:21+00:00",
+        "queued_at": "2026-11-08T08:02:20+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
@@ -85,7 +55,7 @@
           "DJ HuTao"
         ],
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
-        "queued_at": "2026-11-08T07:42:21+00:00",
+        "queued_at": "2026-11-08T08:02:20+00:00",
         "reason": "Spotify asked to slow down",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
@@ -101,39 +71,12 @@
       }
     },
     "pending": {
-      "1HOfVRxlZSrRxwdU9khv6p": {
-        "artists": [
-          "h6itam",
-          "Penkramin",
-          "SNYSTA"
-        ],
-        "held_at": "2026-11-07T22:10:28+00:00",
-        "name": "MONTAGEM VALKARO - Slowed",
-        "uri": "spotify:track:1HOfVRxlZSrRxwdU9khv6p"
-      },
-      "1RD6UmOALWhLSXAe8GNczs": {
-        "artists": [
-          "HDN"
-        ],
-        "held_at": "2026-11-08T07:42:21+00:00",
-        "name": "LUZ",
-        "uri": "spotify:track:1RD6UmOALWhLSXAe8GNczs"
-      },
-      "1kZvBIepQFlgUywAub2h56": {
-        "artists": [
-          "ASTXR",
-          "MC ETERNA"
-        ],
-        "held_at": "2026-11-08T07:42:21+00:00",
-        "name": "TURAN 2 - Slowed",
-        "uri": "spotify:track:1kZvBIepQFlgUywAub2h56"
-      },
       "23AD8PYw2abHfy3UVGC2FC": {
         "artists": [
           "Nulteex",
           "ewyx"
         ],
-        "held_at": "2026-11-07T22:09:49+00:00",
+        "held_at": "2026-11-08T08:02:20+00:00",
         "name": "SHAKA - SLOWED",
         "uri": "spotify:track:23AD8PYw2abHfy3UVGC2FC"
       },
@@ -150,7 +93,7 @@
           "SUXMII",
           "DJ AURAXÉ"
         ],
-        "held_at": "2026-11-08T07:42:21+00:00",
+        "held_at": "2026-11-08T08:02:20+00:00",
         "name": "MONTAGEM BREAKDOWN",
         "uri": "spotify:track:4SOpgVtAoZGiSULa9eU74e"
       },
@@ -159,7 +102,7 @@
           "h6itam",
           "NXDLS"
         ],
-        "held_at": "2026-11-08T07:42:21+00:00",
+        "held_at": "2026-11-08T08:02:20+00:00",
         "name": "FUNK MISTERIO",
         "uri": "spotify:track:5zeZGRzOBKAoxVO6LwX9Dq"
       },
@@ -168,7 +111,7 @@
           "WXRTNAX",
           "DJ HuTao"
         ],
-        "held_at": "2026-11-08T07:42:21+00:00",
+        "held_at": "2026-11-08T08:02:20+00:00",
         "name": "MONTAGEM GALACTO LOCONA - Ultra Slowed",
         "uri": "spotify:track:61zBVwzhLskripTriL7aVR"
       },
@@ -210,7 +153,7 @@
         "won": 0
       }
     },
-    "runs": 4,
+    "runs": 5,
     "total_added": 10
   },
   "synced": {
@@ -239,7 +182,7 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "MONTAGEM VALKARO - Slowed",
-      "spotify_added": false,
+      "spotify_added": true,
       "spotify_id": "1HOfVRxlZSrRxwdU9khv6p",
       "youtube_added": true,
       "youtube_video_id": "IqMWg54nlzU"
@@ -252,7 +195,7 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "LUZ",
-      "spotify_added": false,
+      "spotify_added": true,
       "spotify_id": "1RD6UmOALWhLSXAe8GNczs",
       "youtube_added": true,
       "youtube_video_id": "Jfyy3XcdxkM"
@@ -266,13 +209,13 @@
       "isrc": "",
       "method": "REVERSED",
       "name": "TURAN 2 - Slowed",
-      "spotify_added": false,
+      "spotify_added": true,
       "spotify_id": "1kZvBIepQFlgUywAub2h56",
       "youtube_added": true,
       "youtube_video_id": "NE_0P-AN648"
     },
     "23AD8PYw2abHfy3UVGC2FC": {
-      "added_at": "2026-11-07T22:09:50+00:00",
+      "added_at": "2026-11-08T08:02:20+00:00",
       "artists": [
         "Nulteex",
         "ewyx"
@@ -299,7 +242,7 @@
       "youtube_video_id": "Jd-vdVOwTXs"
     },
     "4SOpgVtAoZGiSULa9eU74e": {
-      "added_at": "2026-11-08T07:42:21+00:00",
+      "added_at": "2026-11-08T08:02:20+00:00",
       "artists": [
         "SUXMII",
         "DJ AURAXÉ"
@@ -313,7 +256,7 @@
       "youtube_video_id": "Y2Z9gg1gcJ0"
     },
     "5zeZGRzOBKAoxVO6LwX9Dq": {
-      "added_at": "2026-11-08T07:42:21+00:00",
+      "added_at": "2026-11-08T08:02:20+00:00",
       "artists": [
         "h6itam",
         "NXDLS"
@@ -327,7 +270,7 @@
       "youtube_video_id": "xn7KfgXZedc"
     },
     "61zBVwzhLskripTriL7aVR": {
-      "added_at": "2026-11-08T07:42:21+00:00",
+      "added_at": "2026-11-08T08:02:20+00:00",
       "artists": [
         "WXRTNAX",
         "DJ HuTao"
@@ -356,6 +299,6 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-08T07:42:21+00:00",
+  "updated_at": "2026-11-08T08:02:20+00:00",
   "version": 1
 }
