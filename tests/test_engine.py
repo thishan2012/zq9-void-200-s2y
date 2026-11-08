@@ -1683,3 +1683,31 @@ def test_a_refused_batch_records_why_in_the_state_file(monkeypatch, cfg):
     assert "both routes" in recorded["message"]
     assert report.parked_spotify == 1
     assert "both routes" in report.summary_text()
+
+
+def test_a_parked_track_already_in_the_playlist_is_counted_not_added_twice(monkeypatch, cfg):
+    """The playlist is the truth: the probe added one by hand, so do not repeat it."""
+    from phonksync.models import Track
+
+    cfg.youtube_enabled = False
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: _many_tracks(1)})
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+
+    done = Track(id="already0000000000000001", name="SPOOKY 3", artists=["x"],
+                 uri="spotify:track:already0000000000000001")
+    other = Track(id="notyet00000000000000001", name="LUZ", artists=["y"],
+                  uri="spotify:track:notyet00000000000000001")
+    for track in (done, other):
+        eng.state.add_manual(track, reason="Spotify asked to slow down")
+        eng.state.add_pending_spotify(track)
+    # the playlist already contains `done` (added by hand or by the write probe)
+    spotify.target_ids = {done.id}
+
+    report = eng.run()
+
+    assert done.uri not in spotify.added, "an already-present track was added again"
+    assert other.uri in spotify.added
+    assert report.parked_already_there == 1
+    assert done.id not in eng.state.pending_spotify()
+    assert eng.state.data["synced"][done.id]["spotify_added"] is True
+    assert "were already in the playlist" in report.summary_text()

@@ -1539,3 +1539,20 @@ def test_a_playlist_read_falls_back_to_the_browser_operation(monkeypatch):
     assert calls[0] == "fetchPlaylistContents"
     assert "fetchPlaylist" in calls
     assert client._read_op_name == "fetchPlaylist"
+
+
+def test_a_web_player_client_reads_the_playlist_through_the_web_player(monkeypatch):
+    """Reading through the Web API on a web-player-first client 429s → "empty"."""
+    import phonksync.spotify as sp
+    from phonksync.models import Track
+
+    client = sp.SpotifyClient("sp_dc=" + "z" * 60, prefer_web_player=True)
+    client._pathfinder_tracks = lambda playlist_id, max_tracks=0: [
+        Track(id="abc", name="in", artists=["a"], uri="spotify:track:abc")
+    ]
+
+    def boom(playlist_id):  # the Web API must not even be asked
+        raise AssertionError("the Web API was used by a web-player-first client")
+
+    monkeypatch.setattr(client, "playlist_tracks", boom)
+    assert client.playlist_track_ids("PL1") == {"abc"}

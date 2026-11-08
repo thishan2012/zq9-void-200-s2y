@@ -78,6 +78,7 @@ class RunReport:
     parked_spotify: int = 0  # still waiting (Spotify refused again)
     parked_saved: int = 0    # parked by an earlier run, added in this one
     parked_repaired: int = 0  # state-file entries fixed (parked but marked added)
+    parked_already_there: int = 0  # parked, but really in the playlist all along
     spotify_note: str = ""   # why Spotify refused the writes (one line)
     spotify_note_writes: bool = False  # the note is about a refused *write*
     spotify_writes_missing: int = 0    # claimed added, but not in the playlist
@@ -200,6 +201,11 @@ class RunReport:
         if self.parked_saved:
             lines.append(
                 f"♻️ Added {self.parked_saved} track(s) an earlier run had to park"
+            )
+        if self.parked_already_there:
+            lines.append(
+                f"✅ {self.parked_already_there} parked track(s) were already in the "
+                "playlist — counted, not added twice"
             )
         if self.parked_spotify and not self.parked_repaired:
             lines.append(
@@ -566,6 +572,7 @@ class SyncEngine:
             # The parked backlog goes first: it is one batch, it needs no search,
             # and a Spotify slow-down later in the run must not swallow it again.
             report.parked_repaired = self._repair_parked_bucket()
+            report.parked_already_there = self._reconcile_parked(target_spotify_ids)
             self._retry_pending_spotify(report)
 
         if cfg.youtube_writes_only:
@@ -1128,6 +1135,45 @@ class SyncEngine:
                 "added — they will be added now", repaired
             )
         return repaired
+
+    def _reconcile_parked(self, present_ids: set[str]) -> int:
+        """Drop parked tracks that are already in the target playlist.
+
+        The playlist is the truth, not our state file. A track added by hand (or
+        by a *write probe*) is in the playlist but still parked here; adding it
+        again would duplicate it, and the summary would claim a write that was
+        not needed. Never guesses: only ids actually read from the playlist.
+        """
+        if not present_ids:
+            return 0
+        pending = self.state.pending_spotify()
+        if not pending:
+            return 0
+        there = [track_id for track_id in pending if track_id in present_ids]
+        if not there:
+            return 0
+        for track_id in there:
+            entry = self.state.data["synced"].get(track_id)
+            if entry is not None:
+                entry["spotify_added"] = True
+            else:
+                info = pending[track_id]
+                self.state.mark_synced(
+                    Track(
+                        id=track_id,
+                        name=info.get("name", ""),
+                        artists=list(info.get("artists") or []),
+                        uri=info.get("uri", ""),
+                    ),
+                    "", "", True, False,
+                )
+        self.state.clear_pending_spotify(there)
+        self.state.clear_manual(there)
+        log.info(
+            "%d parked track(s) were already in the playlist — counted, not re-added",
+            len(there),
+        )
+        return len(there)
 
     def _spotify_diagnosis(self) -> str:
         """One line that says *why* a Spotify write was refused.

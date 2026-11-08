@@ -447,6 +447,18 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## After a successful probe: do not double-add
+
+The probe adds **one real track** to the target playlist. The state file still
+lists it as parked, so the next sync reconciles first:
+
+```
+✅ 1 parked track(s) were already in the playlist — counted, not added twice
+```
+
+The playlist is the source of truth, never our state file: any parked track that
+is already there is marked `spotify_added` and removed from the backlog.
+
 ## "Nothing gets added to Spotify" — the two-minute probe
 
 Run **Actions → Tests → Run workflow → spotify_write_probe = true**. Nothing else.
