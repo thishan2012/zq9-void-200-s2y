@@ -193,3 +193,23 @@ def test_the_sync_and_the_probe_share_the_spotify_environment():
     assert "vars.SPOTIFY_PROXY_URL" not in env["SPOTIFY_PROXY_URL"]
     summary = _steps(doc)["Run time"]["run"]
     assert "Spotify proxy" in summary, "the run must say whether a proxy was used"
+
+
+def test_the_reset_input_is_never_interpolated_into_the_shell():
+    """`${{ inputs.reset }}` inside `run:` is shell injection, and it also
+    word-splits a comma list into an unknown scope. It must travel via env."""
+    steps = _steps(_load("sync.yml"))
+    step = steps["Reset the state DB (optional)"]
+    script = step["run"]
+    assert "inputs.reset" not in script, "user text must not be pasted into the script"
+    assert step["env"]["RESET_SCOPES"] == "${{ inputs.reset }}"
+    assert 'reset "$RESET_SCOPES" --yes' in script
+
+
+def test_a_refused_reset_fails_the_run_instead_of_looking_green():
+    """`|| true` left the job green with nothing reset, then synced the old state."""
+    script = _steps(_load("sync.yml"))["Reset the state DB (optional)"]["run"]
+    assert "|| true" not in script.split("grep -E")[0], "the reset exit code was swallowed"
+    assert "|| code=$?" in script
+    assert "::error title=State reset refused::" in script
+    assert 'exit "$code"' in script
