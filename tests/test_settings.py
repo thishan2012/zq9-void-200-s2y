@@ -73,3 +73,40 @@ def test_youtube_enabled_requires_target_and_secrets(monkeypatch, tmp_path):
     secrets = Secrets(spotify_cookie="sp_dc=fake")
     with pytest.raises(ConfigError):
         secrets.validate(require_youtube=True)
+
+
+def test_a_phone_share_link_yields_the_plain_id():
+    """What the Spotify mobile app copies: locale path + tracking parameters."""
+    from phonksync.settings import parse_spotify_playlist_id
+
+    shared = (
+        "https://open.spotify.com/playlist/6YBLs3ihGXHCSAESWGRML4"
+        "?si=EZxh2vL8RTqk4TgbEvMIxQ&utm_source=copy-link&pi=8mRhH-0OS1-df"
+    )
+    assert parse_spotify_playlist_id(shared) == "6YBLs3ihGXHCSAESWGRML4"
+    assert parse_spotify_playlist_id(shared.replace("&", "&amp;")) == (
+        "6YBLs3ihGXHCSAESWGRML4"
+    )
+    assert parse_spotify_playlist_id(
+        "https://open.spotify.com/intl-de/playlist/6YBLs3ihGXHCSAESWGRML4?si=x"
+    ) == "6YBLs3ihGXHCSAESWGRML4"
+    assert parse_spotify_playlist_id(
+        "https%3A%2F%2Fopen.spotify.com%2Fplaylist%2F6YBLs3ihGXHCSAESWGRML4"
+    ) == "6YBLs3ihGXHCSAESWGRML4"
+    assert parse_spotify_playlist_id("spotify:playlist:6YBLs3ihGXHCSAESWGRML4") == (
+        "6YBLs3ihGXHCSAESWGRML4"
+    )
+
+
+def test_a_track_or_share_link_is_refused_not_misread():
+    from phonksync.errors import ConfigError
+    from phonksync.settings import parse_spotify_playlist_id
+
+    with pytest.raises(ConfigError) as track:
+        parse_spotify_playlist_id(
+            "https://open.spotify.com/track/6YBLs3ihGXHCSAESWGRML4?si=x"
+        )
+    assert "not a playlist link" in str(track.value)
+    with pytest.raises(ConfigError) as share:
+        parse_spotify_playlist_id("https://spotify.link/AbCdEf123")
+    assert "share" in str(share.value)
