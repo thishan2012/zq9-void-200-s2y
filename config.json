@@ -36,5 +36,7 @@
   "manual_queue_path": "data/manual-queue.txt",
   "state_path": "data/sync-state.json",
   "overrides_path": "data/track-overrides.json",
-  "cache_path": "data/yt-cache.json"
+  "cache_path": "data/yt-cache.json",
+  "dedupe_versions": true,
+  "spotify_youtube_parity": true
 }

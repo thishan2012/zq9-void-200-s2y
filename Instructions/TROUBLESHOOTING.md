@@ -491,6 +491,7 @@ the state file (`data/sync-state.json.bak-<date>`).
 | `parked` | the Spotify write backlog (`manual` + `pending`) | start the backlog over |
 | `quota` | today's YouTube counters | a used-up day, now | 
 | `skipped` | songs you skipped by hand | give them another chance |
+| `versions` | the "another version is already added" decisions | reconsider those versions |
 | `unmatched` | songs with no confident match | retry them now |
 | `candidates` | near-miss candidates kept for review | clear the noise |
 | `stats` | method statistics + run counters | clean numbers |

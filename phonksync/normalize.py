@@ -20,6 +20,11 @@ _CHAR_MAP = str.maketrans(
 )
 
 # Version tags. Order matters only for readability; detection is a set.
+#
+# These stay PRECISE on purpose: the matcher's version_ok() must still tell
+# "Slowed" apart from "Ultra Slowed", because they are different listens and a
+# Spotify "Slowed" track must not be matched to an "Ultra Slowed" video.
+# Grouping versions into one song is song_family()'s job, further down.
 _VERSION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("slowed", re.compile(r"\bslowed\b", re.I)),
     ("reverb", re.compile(r"\breverb(?:ed)?\b", re.I)),
@@ -101,6 +106,74 @@ def strip_version(text: str) -> str:
     for _, pat in _VERSION_PATTERNS:
         out = pat.sub(" ", out)
     return out
+
+
+# Connectors and punctuation left dangling after version/marketing removal.
+_ORPHAN_PUNCT_RE = re.compile(r"[\s\-–—:+&/|•·]+$")
+
+# --- grouping versions of one song (dedupe only, never used by the matcher) ---
+#
+# "Song - Slowed" in playlist 1 and "Song - Ultra Slowed" in playlist 2 are the
+# same SONG. For the target playlist only the first one found belongs there, so
+# the family key throws away the whole version phrase — intensifier included.
+_VERSION_WORD = (
+    r"(?:slow(?:ed|er)|reverb(?:ed)?|sped[\s\-_]?up|speed[\s\-_]?up|faster|"
+    r"night\s?core|remix(?:es)?|mashup|mash[\s\-_]?up|edit|bass[\s\-_]?boosted|"
+    r"8[\s\-_]?d|cover|live|acoustic|instrumental|extended(?:[\s\-_]?mix)?|"
+    r"lo[\s\-_]?fi|tik\s?tok|version|mix)"
+)
+_INTENSIFIER_WORD = (
+    r"(?:ultra|super|mega|hyper|extra|extremely|very|slightly|semi|"
+    r"hard|deep|more|most|really|ultrafast|ultraslow)"
+)
+# One version phrase, with any number of intensifiers in front of it.
+_FAMILY_VERSION_RE = re.compile(
+    r"\b(?:" + _INTENSIFIER_WORD + r"\b[\s\-_]*)*" + _VERSION_WORD + r"\b", re.I
+)
+_BARE_VERSION_RE = re.compile(r"\b" + _VERSION_WORD + r"\b", re.I)
+
+
+def _strip_family_version(text: str) -> str:
+    """Remove version phrases AND the connectors they leave behind."""
+    out = _FAMILY_VERSION_RE.sub(" ", text or "")
+    # "Slowed + Reverb" / "Slowed & Reverb" / "Slowed and Reverb" become " + ",
+    # " & ", " and " once both tags are gone. Drop only orphaned connectors, so
+    # a real title like "Me and You" keeps its "and".
+    out = re.sub(r"[\(\[\{]\s*(?:[+&/]|and\s*)+[\)\]\}]", " ", out, flags=re.I)
+    out = re.sub(r"\s+(?:[+&]|and)\s*(?=\s*$|\s*[\)\]\}]|\s*[+&])", " ", out, flags=re.I)
+    out = re.sub(r"\s*[-–—]\s*(?=\s*$|\s*[\)\]\}])", " ", out)
+    return out
+
+
+
+def song_family(name: str, artists: list[str] | None) -> str:
+    """Identity of the SONG, ignoring which version/remaster it is.
+
+    "MONTAGEM MANADO - Slowed" and "MONTAGEM MANADO - Ultra Slowed" by the same
+    artist are one song for playlist purposes: the first one added wins and the
+    later version is skipped. The primary artist is part of the key so two
+    different artists' songs with the same title stay separate.
+    """
+    def clean(text: str) -> str:
+        text = _ORPHAN_PUNCT_RE.sub("", text).strip()
+        return re.sub(r"\s+", " ", text).strip(" -–—:+&")
+
+    main, _ = split_feat(name or "")
+    core = clean(fold(strip_marketing(_strip_family_version(main))))
+    if not core:
+        # The title was swallowed whole ("ULTRA - Slowed"): strip only the bare
+        # version word so the song keeps its name.
+        core = clean(fold(strip_marketing(_BARE_VERSION_RE.sub(" ", main))))
+    primary = ""
+    for artist in artists or []:
+        cleaned = fold(channel_artist(artist))
+        cleaned = re.sub(r"[^\w]+", "", cleaned)
+        if cleaned:
+            primary = cleaned
+            break
+    if not core:
+        return ""
+    return f"{core}::{primary}"
 
 
 def _bracket_is_marketing(content: str) -> bool:

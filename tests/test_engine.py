@@ -1,7 +1,6 @@
 """End-to-end engine tests with fake Spotify/YouTube/Telegram (no network)."""
 import time
 
-import pytest
 from conftest import FakeYouTube, make_candidate, make_track
 
 from phonksync import engine as engine_mod
@@ -94,23 +93,6 @@ class SilentTelegram:
 
     def flush_tracks(self):
         pass
-
-
-@pytest.fixture
-def cfg(tmp_path):
-    c = Config()
-    c.spotify_source_playlists = ["src111111111111111111111"]
-    c.spotify_target_playlist = "target"
-    c.youtube_enabled = True
-    c.youtube_target_playlist = "PLtarget0000000000000000000000"
-    c.state_path = str(tmp_path / "state.json")
-    c.overrides_path = str(tmp_path / "overrides.json")
-    c.cache_path = str(tmp_path / "cache.json")
-    c.source_cache_path = str(tmp_path / "source-cache.json")
-    # every run() rewrites the manual bucket — never the repo's real file
-    c.manual_queue_path = str(tmp_path / "manual-queue.txt")
-    (tmp_path / "overrides.json").write_text('{"overrides": {}}')
-    return c
 
 
 def build_engine(monkeypatch, cfg, spotify, youtube):
@@ -832,7 +814,12 @@ def test_cache_command_lists_stored_playlists(monkeypatch, tmp_path, capsys):
 
 def test_budget_exhaustion_is_reported_separately_from_unmatched(monkeypatch, cfg):
     """Running out of searches must not look like "not on YouTube"."""
-    tracks = [make_track(id=f"track{i:020d}") for i in range(3)]
+    # Three DIFFERENT songs: distinct titles and ISRCs, so neither the ISRC
+    # duplicate check nor the one-song-one-version check collapses them.
+    tracks = [
+        make_track(id=f"track{i:020d}", name=f"MONTAGEM TEST {i}", isrc=f"BRABC240000{i}")
+        for i in range(3)
+    ]
     spotify = FakeSpotify({cfg.spotify_source_playlists[0]: tracks})
     youtube = EngineYouTube()
     youtube.max_searches_per_run = 0

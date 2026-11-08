@@ -24,6 +24,7 @@ from .db import StateDB
 from .errors import AuthError, QuotaExceeded, RateLimited
 from .matcher import Matcher
 from .models import Track
+from .normalize import song_family
 from .overrides import Overrides
 from .settings import Config, ConfigError, Secrets
 from .spotify import PublicPlaylistReader, SpotifyClient
@@ -66,6 +67,7 @@ class RunReport:
     budget_skips: int = 0
     deferred: int = 0
     duplicates: int = 0
+    version_duplicates: int = 0
     errors: list[str] = field(default_factory=list)
     method_wins: dict[str, int] = field(default_factory=dict)
     quota_stopped: bool = False
@@ -132,6 +134,11 @@ class RunReport:
             f"⏭ Skipped by choice: {self.skipped_by_choice}",
             f"❌ Failed / unmatched: {self.unmatched}",
         ]
+        if self.version_duplicates:
+            lines.append(
+                f"🧬 Another version of a song already added: {self.version_duplicates} "
+                "(kept the first one)"
+            )
         if self.deferred:
             lines.append(f"🕒 Deferred (retried later): {self.deferred}")
         if self.budget_skips:
@@ -612,6 +619,11 @@ class SyncEngine:
             for v in self.state.data["synced"].values()
             if v.get("isrc")
         }
+        # One song, one version. Built from `synced` (oldest first) so the first
+        # version that reached a playlist keeps the claim, and grown as this run
+        # adds tracks so two source playlists in the SAME run cannot both win.
+        families = self.state.family_index() if cfg.dedupe_versions else {}
+        self._run_families = families
         processed = 0
 
         for track in tracks:
@@ -624,16 +636,39 @@ class SyncEngine:
                 continue
 
             entry = self.state.get_synced(track.id) or {}
+
+            # Same recording already synced under a different Spotify ID?
+            # Checked first: an exact ISRC match is a true duplicate, not a
+            # "different version", and deserves the plainer report line.
+            if track.isrc and track.isrc.upper() in synced_isrcs and not entry:
+                report.duplicates += 1
+                continue
+
+            # Another version of a song we already added? Decide BEFORE any
+            # search: it costs no YouTube quota and cannot reach either playlist.
+            if cfg.dedupe_versions and not entry:
+                key = song_family(track.name, track.artists)
+                kept = families.get(key) if key else None
+                if kept and kept.get("spotify_id") != track.id:
+                    report.version_duplicates += 1
+                    if not cfg.dry_run:
+                        self.state.mark_version_duplicate(track, kept)
+                    self._detail(
+                        report,
+                        f"🧬 Skipped <code>{escape(track.display())}</code> — "
+                        f"another version of <code>{escape(kept.get('name', ''))}</code> "
+                        "is already added",
+                    )
+                    continue
+                if self.state.is_version_duplicate(track.id):
+                    report.version_duplicates += 1
+                    continue
+
             spotify_done = bool(entry.get("spotify_added")) or track.id in target_spotify_ids
             youtube_done = bool(entry.get("youtube_added")) or not cfg.youtube_enabled
 
             if spotify_done and youtube_done:
                 report.already_synced += 1
-                continue
-
-            # Same recording already synced under a different Spotify ID?
-            if track.isrc and track.isrc.upper() in synced_isrcs and not entry:
-                report.duplicates += 1
                 continue
 
             # Retry policy for previously unmatched tracks.
@@ -708,6 +743,7 @@ class SyncEngine:
             # Always rewrite it: an emptied bucket must not leave a stale file
             # claiming tracks are still waiting.
             self.state.write_manual_queue(cfg.manual_queue_path)
+            self.state.write_version_queue(cfg.version_queue_path)
 
         # Record method statistics for every method that was exercised.
         self.state.record_run()
@@ -1704,6 +1740,9 @@ class SyncEngine:
                     spotify_added = spotify_done
                 if not cfg.dry_run:
                     self.state.mark_synced(track, "", "", spotify_added, False)
+                    if spotify_added and track.isrc:
+                        synced_isrcs.add(track.isrc.upper())
+                    self._claim_family(track, spotify_added, False)
                 return
             if getattr(result, "free", False):
                 self._free_matches += 1
@@ -1722,30 +1761,48 @@ class SyncEngine:
             report.added_tracks.append(line)
             return
 
-        if not spotify_done:
-            spotify_added = self._add_spotify(track, target_spotify_ids, report)
-        else:
-            spotify_added = True
+        # YouTube FIRST. Spotify has no daily budget, YouTube does: writing
+        # Spotify first meant the track that exhausted the YouTube budget still
+        # landed on Spotify, so the playlists drifted apart one song per run.
+        # Now a YouTube QuotaExceeded propagates before Spotify is touched.
+        youtube_writable = (
+            getattr(self.youtube, "can_write", True) and not report.youtube_auth_failed
+        )
+        youtube_added = youtube_done
         if video_id and not youtube_done:
-            if getattr(self.youtube, "can_write", True) and not report.youtube_auth_failed:
+            if youtube_writable:
                 self.youtube.add_to_playlist(cfg.youtube_target_playlist, video_id)
                 target_youtube_ids.add(video_id)
-            elif not report.quota_reason:
-                report.quota_reason = (
-                    "YouTube playlist writes disabled (API key only) — set "
-                    "YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN to add videos"
-                )
+                youtube_added = True
+            else:
+                if not report.quota_reason:
+                    report.quota_reason = (
+                        "YouTube playlist writes disabled (API key only) — set "
+                        "YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN to add videos"
+                    )
                 report.youtube_readonly += 1
+
+        # Parity: if YouTube could not take this song, do not let Spotify run
+        # ahead of it. YouTube writes being unavailable entirely is a setup
+        # problem, not a budget stop, so Spotify still proceeds in that case.
+        hold_spotify = (
+            cfg.spotify_youtube_parity
+            and bool(video_id)
+            and youtube_writable
+            and not youtube_added
+        )
+        if not spotify_done and not hold_spotify:
+            spotify_added = self._add_spotify(track, target_spotify_ids, report)
+        else:
+            spotify_added = spotify_done
 
         # Only claim what actually happened: a parked track keeps
         # spotify_added=False so the next run retries it instead of skipping it
         # as "already synced" forever.
-        self.state.mark_synced(
-            track, video_id, method, spotify_added,
-            bool(video_id) and getattr(self.youtube, "can_write", True),
-        )
+        self.state.mark_synced(track, video_id, method, spotify_added, youtube_added)
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
+        self._claim_family(track, spotify_added, youtube_added)
         report.added += 1
         link = (
             f' · <a href="https://www.youtube.com/watch?v={video_id}">YT</a>'
@@ -1757,6 +1814,25 @@ class SyncEngine:
         report.added_tracks.append(
             f"{escape(track.display())} <code>[{escape(method or 'cached')}]</code>{link}"
         )
+
+    def _claim_family(self, track: Track, spotify_added: bool, youtube_added: bool) -> None:
+        """Reserve this song so a later version of it is recognised as a duplicate.
+
+        Only a track that actually reached a playlist claims the song: a parked
+        or unmatched track must not block the version that does land.
+        """
+        if not self.config.dedupe_versions or not (spotify_added or youtube_added):
+            return
+        families = getattr(self, "_run_families", None)
+        if families is None:
+            return
+        key = song_family(track.name, track.artists)
+        if key:
+            families.setdefault(key, {
+                "spotify_id": track.id,
+                "name": track.name,
+                "artists": track.artists,
+            })
 
     def _process_track_spotify_only(
         self,
@@ -1785,5 +1861,6 @@ class SyncEngine:
         self.state.mark_synced(track, "", "", added, False)
         if track.isrc:
             synced_isrcs.add(track.isrc.upper())
+        self._claim_family(track, added, False)
         report.added += 1
         report.added_tracks.append(f"{escape(track.display())} <code>[SPOTIFY]</code>")

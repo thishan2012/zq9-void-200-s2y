@@ -46,7 +46,7 @@ on:
         type: string
         default: ""
       reset:
-        description: "Clear state before the run: parked | quota | stats | synced | unmatched | skipped | candidates | diagnostics | all (comma or space separated; backed up)"
+        description: "Clear state before the run: parked | quota | stats | synced | unmatched | skipped | candidates | diagnostics | versions | all (comma or space separated; backed up)"
         type: string
         default: ""
 
@@ -353,6 +353,7 @@ jobs:
             # keep the pre-reset copy in the repo: it is the only way back
             for f in data/sync-state.json.bak-*; do [ -f "$f" ] && git add "$f"; done
             [ -f data/manual-queue.txt ] && git add data/manual-queue.txt
+            [ -f data/version-duplicates.txt ] && git add data/version-duplicates.txt
             [ -f data/collection.json ] && git add data/collection.json
             [ -f data/source-cache.json ] && git add data/source-cache.json
             [ -f data/yt-cache.json ] && git add data/yt-cache.json
