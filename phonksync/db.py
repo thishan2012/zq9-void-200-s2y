@@ -453,7 +453,8 @@ class StateDB:
         "unmatched": "forget the songs that had no confident match — they are retried",
         "skipped": "forget the songs you skipped by hand — they come back",
         "candidates": "forget the near-miss candidates kept for review",
-        "parked": "forget the Spotify write backlog (manual bucket + pending writes)",
+        "parked": "forget the Spotify write backlog (manual bucket + pending writes "
+                  "+ the resume point, so the next run starts at the first track)",
         "quota": "forgive today's YouTube quota counters (searches / inserts / units)",
         "stats": "forget the method statistics and the run counters",
         "diagnostics": "forget the last recorded write problem",
@@ -488,11 +489,17 @@ class StateDB:
                 cleared[scope] = size(self.data.get("candidates"))
                 self.data["candidates"] = {}
             elif scope == "parked":
-                cleared[scope] = size(self.spotify.get("manual")) + size(
-                    self.spotify.get("pending")
+                # The resume point belongs to the backlog: it says "start after
+                # this track". Leaving it behind made `reset all` skip every
+                # track before it — the opposite of starting from scratch.
+                cleared[scope] = (
+                    size(self.spotify.get("manual"))
+                    + size(self.spotify.get("pending"))
+                    + size(self.spotify.get("resume"))
                 )
                 self.spotify.pop("manual", None)
                 self.spotify.pop("pending", None)
+                self.spotify.pop("resume", None)
             elif scope == "quota":
                 cleared[scope] = size(self.data.get("quota"))
                 self.data["quota"] = {}

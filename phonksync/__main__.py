@@ -1057,7 +1057,11 @@ def _state_scope_size(db: Any, scope: str) -> int:
         return 1 if value else 0
 
     if scope == "parked":
-        return size(db.spotify.get("manual")) + size(db.spotify.get("pending"))
+        return (
+            size(db.spotify.get("manual"))
+            + size(db.spotify.get("pending"))
+            + size(db.spotify.get("resume"))
+        )
     if scope == "quota":
         return size(db.data.get("quota"))
     if scope == "stats":
