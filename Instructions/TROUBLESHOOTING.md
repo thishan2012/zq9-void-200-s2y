@@ -481,6 +481,27 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+## The probe: "1 → 4" is the verdict
+
+The probe prints the target playlist's size **before** and **after** the write:
+
+```
+2️⃣b before   : ✅ 1 track(s) in the playlist
+4️⃣ verify   : 4 track(s) in the playlist before/after: 1 → 4
+   landed  : 3/3
+```
+
+* `1 → 4` with `landed 3/3` = **the batch shape works**, whatever else the run says.
+* `7 → 7` = the write truly did nothing.
+
+Run 128668847251 (`spotify_probe_batch = 3`) proved the batch path **does land**
+three tracks in one call — the earlier "one works, nine do not" was the parked
+batch of the *sync* run, not the mutation shape.
+
+The report is attached as a run artifact and republished on branch
+`spotify-probe`; the push is retried three times because a non-fast-forward used
+to be swallowed by `|| true` and the report silently never arrived.
+
 ## A single write lands, a batch of ten does not
 
 The browser sends **one** `addItemsToPlaylist` for a whole batch, but a batch can
