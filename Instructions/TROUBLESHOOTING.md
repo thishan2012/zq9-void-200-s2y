@@ -14,7 +14,7 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
 **Reduce load if needed**
-- Automatic runs are currently paused. If you re-enable a schedule, use a longer cron interval (e.g. daily: `0 3 * * *`).
+- Automatic runs are enabled: 4 runs/day, every 6 hours in `America/Los_Angeles`, 100 tracks per scheduled run. To pause them, remove the `schedule:` trigger from `.github/workflows/sync.yml`.
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
@@ -135,12 +135,12 @@ Google's default quota is 10,000 units/day: **1 search = 100 units** (max 100 se
 The app caps itself below that so several runs in one day can never trip Google's 403:
 - `max_searches_per_run` (default 200) — paid searches per run; free page
   searches are unlimited (see `Instructions/YOUTUBE-BUDGET.md`)
-- `youtube_max_searches_per_day` (default 80) — per UTC day, ~8,000 units
-- `youtube_max_inserts_per_day` (default 40) — per UTC day, ~2,000 units (adds are only needed once per track)
+- `youtube_max_searches_per_day` (default 0) — no app cap; per-key units still enforced
+- `youtube_max_inserts_per_day` (default 195) — per OAuth account per Pacific day, ~9,750 units (adds are only needed once per track)
 
-Counters persist in `data/sync-state.json` → `quota` and reset at UTC midnight.
+Counters persist in `data/sync-state.json` → `quota` and reset at **midnight Pacific Time**.
 
-- "Daily search limit reached" means **your** cap was hit, not Google's — the key is still valid. Wait for UTC rollover or raise `youtube_max_searches_per_day`.
+- "Daily search limit reached" means **your** cap was hit, not Google's — the key is still valid. Wait for the Pacific rollover or raise `youtube_max_searches_per_day`.
 - The run stops cleanly and the next one continues where it left off; the search cache makes repeat queries free.
 - A second API key from a *different* Google Cloud project gives a second 10,000 units/day — separate project, separate quota. Add both to `YOUTUBE_API_KEY` separated by a comma (`AIza...,AIza...`); the client rotates automatically on 403 `quotaExceeded` and tracks usage per key in `quota.keys`.
 - Two keys from the **same** project share the same 10,000 units — that does not help.
@@ -537,7 +537,7 @@ recipe — **Actions → Phonk Sync → Run workflow**:
 | `reset` | `all` | forget every processed track, the backlog and the resume point |
 | `dry_run` | `false` | actually write |
 | `max_tracks` | `0` | no limit |
-| `max_inserts` | `100` | see the budget note below (empty = 40/day) |
+| `max_inserts` | `100` | see the budget note below (empty = 195/account/day) |
 
 Nothing else needs clearing. Both target playlists are read **live** at the start
 of every run, so an emptied playlist is seen as empty and every song is added

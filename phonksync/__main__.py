@@ -304,9 +304,14 @@ def cmd_check(args: argparse.Namespace) -> int:
                 "inside its JSON instead of separate secrets."
             )
         elif ready > 1:
+            target = (
+                f"{cfg.youtube_max_inserts_per_day} playlist adds/day per account"
+                if cfg.youtube_max_inserts_per_day
+                else "no local insert target (Google quota only)"
+            )
             print(
-                "✅ Quota failover armed: account #1 runs uncapped until Google "
-                "returns quotaExceeded, then the next account continues"
+                "✅ Quota failover armed: "
+                f"{target}; a real quotaExceeded still hands over immediately"
             )
 
     # Early Spotify cookie parse check (no network) — catches the

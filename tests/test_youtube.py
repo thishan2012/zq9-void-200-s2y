@@ -1,11 +1,10 @@
 """YouTube client tests: read-only API key vs OAuth playlist writes, quota caps."""
 import json
-from datetime import datetime, timezone
 
 import pytest
 
 from phonksync.errors import AuthError, QuotaExceeded
-from phonksync.youtube import QuotaState, YouTubeClient
+from phonksync.youtube import QuotaState, YouTubeClient, pacific_quota_date
 
 
 class FakeResponse:
@@ -35,7 +34,7 @@ class FakeSession:
         return FakeResponse(200, {"access_token": "tok", "expires_in": 3600})
 
 
-TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+TODAY = pacific_quota_date()  # quota days roll over at midnight Pacific
 
 CLIENT_JSON = json.dumps(
     {"installed": {"client_id": "cid", "client_secret": "secret",
@@ -989,3 +988,14 @@ def test_youtube_auth_check_token_with_an_explicit_value(monkeypatch):
     monkeypatch.setenv("YT_REFRESH_TOKEN", "1//from-the-secret")
     assert main(["youtube-auth", "--check-token", "1//explicit"]) == 0
     assert seen["token"] == "1//explicit"
+
+
+def test_quota_rollover_follows_pacific_midnight_not_utc():
+    from datetime import datetime, timezone
+
+    # 07:59 UTC is still 23:59 PST (UTC-8); 08:00 UTC is midnight Pacific.
+    assert pacific_quota_date(datetime(2026, 1, 15, 7, 59, tzinfo=timezone.utc)) == "2026-01-14"
+    assert pacific_quota_date(datetime(2026, 1, 15, 8, 0, tzinfo=timezone.utc)) == "2026-01-15"
+    # During PDT (UTC-7) the boundary moves to 07:00 UTC.
+    assert pacific_quota_date(datetime(2026, 7, 15, 6, 59, tzinfo=timezone.utc)) == "2026-07-14"
+    assert pacific_quota_date(datetime(2026, 7, 15, 7, 0, tzinfo=timezone.utc)) == "2026-07-15"

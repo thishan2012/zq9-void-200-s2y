@@ -1,7 +1,8 @@
-"""OAuth account failover: run account 1 until Google says stop, then continue.
+"""OAuth account failover: pace each account, then continue on the next one.
 
-The user's rule: no hand-made cap on the first account. Let it add as much as it
-can, and only move to account 2 when the real quotaExceeded error comes back.
+The agreed pacing target is 195 playlist adds per usable OAuth account per
+Pacific day. A real Google quotaExceeded still hands over immediately, even if
+the account has not reached the local target yet.
 """
 import json
 
@@ -71,9 +72,12 @@ def client_with_two_accounts(responses, quota=None, **kw):
         free_search=False,
         **kw,
     )
-    # Token refresh is not what these tests are about.
-    yt._access_token = "token-account-1"
-    yt._access_expiry = 9e12
+    # Token refresh is not what these tests are about. If persisted quota made
+    # the client start on a spare, leave its token empty so the first request
+    # refreshes that spare instead of pretending to be account 1.
+    if yt.oauth_account == 1:
+        yt._access_token = "token-account-1"
+        yt._access_expiry = 9e12
     return yt, session
 
 
@@ -102,10 +106,32 @@ def test_a_real_quota_error_hands_over_to_account_two_and_retries_the_song():
     assert not yt.quota.account_exhausted("1")
 
 
-def test_the_first_account_is_not_capped_by_hand():
-    """40/day must not stop account 1 while Google still has quota."""
+def test_the_local_insert_target_is_per_account_and_hands_over_at_195():
+    """Account 1 stops at 195 adds; account 2 continues the same run."""
+    yt, session = client_with_two_accounts(
+        [Resp(200, {"id": "x"})] * 200, max_inserts_per_day=195,
+    )
+    for _ in range(195):
+        insert(yt)
+    assert yt.oauth_account == 1
+    assert yt.oauth_switches == 0
+    assert yt.quota.account("0")["inserts"] == 195
+
+    insert(yt)  # the 196th add must continue on account 2, not stop
+    assert yt.oauth_account == 2
+    assert yt.oauth_switches == 1
+    assert yt.quota.account("0")["inserts"] == 195
+    assert yt.quota.account("1")["inserts"] == 1
+    assert len(session.calls) == 196
+    assert session.calls[-1]["headers"]["Authorization"] == (
+        "Bearer tok-proj-two.apps.googleusercontent.com"
+    )
+
+
+def test_a_zero_insert_target_means_no_local_cap():
+    """0 keeps the old behaviour: only Google's real quotaExceeded hands over."""
     yt, _ = client_with_two_accounts(
-        [Resp(200, {"id": "x"})] * 60, max_inserts_per_day=40,
+        [Resp(200, {"id": "x"})] * 60, max_inserts_per_day=0,
     )
     yt.quota.inserts = 40
     yt.quota.units_used = 9000
@@ -113,6 +139,37 @@ def test_the_first_account_is_not_capped_by_hand():
         insert(yt)
     assert yt.oauth_switches == 0, "switched before Google complained"
     assert yt.oauth_account == 1
+
+
+def test_the_insert_target_is_remembered_across_runs_the_same_pacific_day():
+    quota = QuotaState()
+    yt, _ = client_with_two_accounts(
+        [Resp(200, {"id": "x"})] * 195, quota=quota, max_inserts_per_day=195,
+    )
+    for _ in range(195):
+        insert(yt)
+    saved = QuotaState.from_dict(json.loads(json.dumps(quota.to_dict())))
+
+    yt2, session2 = client_with_two_accounts(
+        [Resp(200, {"id": "y"})], quota=saved, max_inserts_per_day=195,
+    )
+    assert yt2.oauth_account == 2, "a later run re-probed the capped account"
+    insert(yt2)
+    assert len(session2.calls) == 1
+    assert yt2.quota.account("1")["inserts"] == 1
+
+
+def test_all_accounts_at_the_insert_target_stop_cleanly():
+    quota = QuotaState()
+    quota.rollover()  # date it today, or the client would roll the counters over
+    quota.account("0")["inserts"] = 195
+    quota.account("1")["inserts"] = 195
+    yt, session = client_with_two_accounts([], quota=quota, max_inserts_per_day=195)
+    yt._access_token, yt._access_expiry = "t", 9e12  # no refresh before the budget check
+    with pytest.raises(QuotaExceeded) as exc:
+        insert(yt)
+    assert "daily insert target" in str(exc.value)
+    assert session.calls == []
 
 
 def test_a_single_account_still_honours_the_local_cap():
@@ -177,7 +234,7 @@ def test_the_exhausted_account_is_remembered_for_the_rest_of_the_day():
     assert len(session2.calls) == 1, "wasted a call on the known-empty account"
 
 
-def test_the_next_utc_day_starts_on_account_one_again():
+def test_the_next_pacific_day_starts_on_account_one_again():
     quota = QuotaState()
     quota.date = "2000-01-01"
     quota.exhaust_account("0")

@@ -31,6 +31,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Any
 
 import requests
@@ -137,6 +138,17 @@ def extract_video_id(value: str) -> str:
     raise ValueError(f"Cannot parse YouTube video ID from {value!r}")
 
 
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+def pacific_quota_date(now: datetime | None = None) -> str:
+    """YouTube's daily quota resets at midnight Pacific, not UTC midnight."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(_PACIFIC).strftime("%Y-%m-%d")
+
+
 @dataclass
 class QuotaState:
     """Persisted daily quota usage."""
@@ -151,8 +163,8 @@ class QuotaState:
     keys: dict[str, int] = None  # type: ignore[assignment]
     # OAuth account index -> {"units", "inserts", "exhausted"}. Quota is per
     # Google Cloud project, so a second OAuth client from another project has
-    # its own day. "exhausted" is sticky until the UTC rollover, so a later run
-    # does not waste calls re-discovering that account 1 is already empty.
+    # its own day. "exhausted" is sticky until the Pacific rollover, so a later
+    # run does not waste calls re-discovering that account 1 is already empty.
     accounts: dict[str, dict[str, Any]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -162,7 +174,7 @@ class QuotaState:
             self.accounts = {}
 
     def rollover(self) -> None:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = pacific_quota_date()
         if self.date != today:
             self.date = today
             self.units_used = 0
@@ -375,16 +387,6 @@ class YouTubeClient:
         self.free_pages_this_run = 0  # watch pages actually downloaded
         self.quota = quota_state or QuotaState()
         self.quota.rollover()
-        if self.oauth_failover:
-            # An account Google already declared empty today stays empty until
-            # the UTC rollover: start on the first one that can still write.
-            for idx in range(self.oauth_account_count):
-                if idx in self._oauth_unusable:
-                    continue
-                if not self.quota.account_exhausted(str(idx)):
-                    if idx:
-                        self._apply_oauth_credential(idx)
-                    break
         self.region_code = region_code
         self.session = session or requests.Session()
         self._access_token = ""
@@ -398,6 +400,17 @@ class YouTubeClient:
         if self._manual_access_token:
             self._access_token = self._manual_access_token
             self._access_expiry = time.time() + 3300
+        if self.oauth_failover:
+            # An account Google already declared empty, or one that has reached
+            # the agreed daily insert target, stays out until the Pacific
+            # rollover: start on the first one that can still write.
+            for idx in range(self.oauth_account_count):
+                if idx in self._oauth_unusable:
+                    continue
+                if not self._oauth_account_done(idx):
+                    if idx:
+                        self._apply_oauth_credential(idx)
+                    break
 
     # ------------------------------------------------- OAuth account failover
     @staticmethod
@@ -481,13 +494,23 @@ class YouTubeClient:
         """1-based number of the OAuth account currently in use."""
         return self._oauth_index + 1
 
+    def _oauth_account_capped(self, index: int) -> bool:
+        """True when this account has reached the local daily insert target."""
+        if not self.max_inserts_per_day:
+            return False
+        return int(self.quota.account(str(index)).get("inserts", 0) or 0) >= self.max_inserts_per_day
+
+    def _oauth_account_done(self, index: int) -> bool:
+        """Google said empty, or the agreed daily insert target is reached."""
+        return self.quota.account_exhausted(str(index)) or self._oauth_account_capped(index)
+
     def _next_oauth_account(self) -> int | None:
-        """The next account that Google has not already declared empty today."""
+        """The next account that can still take over today."""
         for offset in range(1, self.oauth_account_count):
             idx = (self._oauth_index + offset) % self.oauth_account_count
             if idx in self._oauth_unusable:
                 continue
-            if not self.quota.account_exhausted(str(idx)):
+            if not self._oauth_account_done(idx):
                 return idx
         return None
 
@@ -873,10 +896,27 @@ class YouTubeClient:
                 "YouTube playlist writes need OAuth (an API key cannot add videos). "
                 "Add YT_CLIENT_JSON + YT_REFRESH_TOKEN."
             )
-        # The user's rule: do not cap account 1 by hand. Let it add until Google
-        # itself returns quotaExceeded, then move to account 2. A local guess
-        # would stop the run while the project still had quota left.
+        # With several usable OAuth accounts, the local insert target is applied
+        # PER ACCOUNT (195/day by default), not as one shared total. Reads and
+        # searches are not insert-capped. A real Google quotaExceeded still
+        # hands over immediately, even before the local target is reached.
         if oauth and self.oauth_failover:
+            if insert and self._oauth_account_capped(self._oauth_index):
+                left = self._oauth_index
+                nxt = self._next_oauth_account()
+                if nxt is None:
+                    raise QuotaExceeded(
+                        f"All {self.oauth_usable_count} usable YouTube OAuth accounts "
+                        f"reached the daily insert target ({self.max_inserts_per_day} "
+                        "playlist adds per account today)"
+                    )
+                self._apply_oauth_credential(nxt)
+                self.oauth_switches += 1
+                log.warning(
+                    "YouTube OAuth account #%d reached its daily insert target "
+                    "(%d) — continuing on account #%d",
+                    left + 1, self.max_inserts_per_day, nxt + 1,
+                )
             return
         if self.quota.units_used + cost > self.total_quota_units:
             raise QuotaExceeded(
@@ -888,7 +928,7 @@ class YouTubeClient:
                 f"Every YouTube API key has used its daily budget "
                 f"({len(self.api_keys)} key(s), {self.daily_quota_units} units each). "
                 "Add another key from a different Google Cloud project or wait for the "
-                "UTC rollover."
+                "Pacific rollover."
             )
         if search:
             if self.searches_this_run >= self.max_searches_per_run:

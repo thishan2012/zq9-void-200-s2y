@@ -54,7 +54,7 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 4. Run the sync manually: **Actions → Phonk Sync → Run workflow**.
    - First run: tick `dry_run` to preview matches without writing anything. Dry runs read only the first 200 source tracks (`dry_run_track_limit` in `config.json`).
    - Then run it live. Live syncs read the full source playlists.
-5. Automatic scheduled runs are currently **paused**. The workflow only runs when you manually trigger it (`.github/workflows/sync.yml`). To re-enable automatic runs, add a `schedule:` cron trigger back to that workflow.
+5. Automatic scheduled runs are **enabled**: 4 runs/day, every 6 hours at 00:15, 06:15, 12:15 and 18:15 `America/Los_Angeles` (just after YouTube's Pacific quota reset). Scheduled runs process 100 tracks each. Manual runs are still available from **Actions → Phonk Sync → Run workflow**.
 
 Each live run commits `data/sync-state.json` back to the repo — that is the database that prevents duplicate adds.
 
@@ -78,8 +78,8 @@ Each live run commits `data/sync-state.json` back to the repo — that is the da
 | `max_searches_per_run` | `200` | YouTube only: cap on **paid** searches per run (free page searches do not count) |
 | `youtube_free_search` | `true` | search youtube.com first: 0 API units (see `Instructions/YOUTUBE-BUDGET.md`) |
 | — | — | `phonksync skip [--all-unmatched]` marks songs that are not on YouTube so they are never searched again |
-| `youtube_max_searches_per_day` | `80` | YouTube only: cap on searches per UTC day (80 x 100 = 8,000 units) |
-| `youtube_max_inserts_per_day` | `40` | YouTube only: cap on playlist adds per UTC day (40 x 50 = 2,000 units) |
+| `youtube_max_searches_per_day` | `0` | YouTube only: cap on paid searches per Pacific day (0 = no app cap; per-key units still enforced) |
+| `youtube_max_inserts_per_day` | `195` | YouTube only: playlist-add target per OAuth account per Pacific day (195 x 50 = 9,750 units); with one account it is that account's cap |
 | `youtube_daily_quota_units` | `9800` | YouTube only: overall local quota budget |
 | `search_results_per_query` | `10` | YouTube only: results fetched per search |
 | `duration_tolerance_seconds` | `7` | YouTube only: DURATION/TITLEONLY tolerance |
