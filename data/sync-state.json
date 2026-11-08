@@ -10,18 +10,19 @@
     }
   },
   "quota": {
+    "accounts": {},
     "date": "2026-11-08",
-    "inserts": 9,
+    "inserts": 10,
     "keys": {
-      "0": 17
+      "0": 18
     },
     "searches": 0,
-    "units_used": 473
+    "units_used": 525
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-08T09:42:43+00:00"
+    "manual_cleared_at": "2026-11-08T14:34:39+00:00"
   },
   "stats": {
     "methods": {
@@ -38,7 +39,7 @@
         "won": 1
       },
       "DETAIL": {
-        "tried": 19,
+        "tried": 20,
         "won": 0
       },
       "DUR+VER": {
@@ -54,12 +55,12 @@
         "won": 0
       },
       "LOOSE": {
-        "tried": 19,
+        "tried": 20,
         "won": 0
       },
       "REVERSED": {
-        "tried": 19,
-        "won": 17
+        "tried": 20,
+        "won": 18
       },
       "SINGLE": {
         "tried": 2,
@@ -70,7 +71,7 @@
         "won": 0
       },
       "STRICT": {
-        "tried": 19,
+        "tried": 20,
         "won": 0
       },
       "SUFFIX": {
@@ -94,8 +95,8 @@
         "won": 0
       }
     },
-    "runs": 9,
-    "total_added": 19
+    "runs": 10,
+    "total_added": 20
   },
   "synced": {
     "0g3rBLGiHXo9hDEqVaL5sM": {
@@ -362,9 +363,25 @@
       "spotify_id": "7CMJK14cg33adcvCmzf0TT",
       "youtube_added": true,
       "youtube_video_id": "angdVO_El6s"
+    },
+    "7b6PUfoNuN3cpinPqMxgcT": {
+      "added_at": "2026-11-08T14:34:39+00:00",
+      "artists": [
+        "h6itam",
+        "LUNVREN"
+      ],
+      "family": "funk herido::h6itam",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "FUNK HERIDO - SLOWED",
+      "spotify_added": true,
+      "spotify_id": "7b6PUfoNuN3cpinPqMxgcT",
+      "youtube_added": true,
+      "youtube_video_id": "o2f7cCcLUx8"
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-08T09:42:44+00:00",
-  "version": 1
+  "updated_at": "2026-11-08T14:34:39+00:00",
+  "version": 1,
+  "version_duplicates": {}
 }
