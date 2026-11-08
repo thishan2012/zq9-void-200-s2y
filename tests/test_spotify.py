@@ -1556,3 +1556,28 @@ def test_a_web_player_client_reads_the_playlist_through_the_web_player(monkeypat
 
     monkeypatch.setattr(client, "playlist_tracks", boom)
     assert client.playlist_track_ids("PL1") == {"abc"}
+
+
+def test_a_refused_batch_falls_back_to_single_adds(monkeypatch):
+    """A multi-URI call may be refused where one URI is accepted — never lose the chunk."""
+    import phonksync.spotify as sp
+
+    calls = []
+
+    def fake_post(url, payload, headers):
+        uris = payload["variables"]["playlistItemUris"]
+        calls.append(list(uris))
+        if len(uris) > 1:
+            return '{"data": {"playlistV2": {"__typename": "Error"}}}'
+        return '{"data": {"addItemsToPlaylist": {"__typename": "AddItemsToPlaylistPayload"}}}'
+
+    monkeypatch.setattr(sp, "_proxy_post", fake_post)
+    monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "tok")
+    client = sp.SpotifyClient("sp_dc=" + "a" * 60, prefer_web_player=True)
+    client._pathfinder_add("PL1", ["spotify:track:aaa", "spotify:track:bbb", "spotify:track:ccc"])
+
+    assert calls[0] == ["spotify:track:aaa", "spotify:track:bbb", "spotify:track:ccc"]
+    assert ["spotify:track:aaa"] in calls[1:]
+    assert ["spotify:track:bbb"] in calls[1:]
+    assert ["spotify:track:ccc"] in calls[1:]
+    assert client.writes_landed == 3

@@ -481,6 +481,39 @@ Resetting `synced` is safe in one important way: the target playlist is read
 first, so tracks already in it are **counted, not added again**. It is slow
 because every source track is matched again — bound it with `max_tracks`.
 
+## A single write lands, a batch of ten does not
+
+The browser sends **one** `addItemsToPlaylist` for a whole batch, but a batch can
+be refused where a single URI is accepted (it happened: one probe track landed,
+nine parked tracks in one call did not). The write path now degrades instead of
+failing:
+
+1. one mutation per 100 URIs (the browser's own shape),
+2. if that call is refused, **the same tracks are retried one by one**,
+3. only then is a track left in the backlog.
+
+Reproduce it exactly whenever you want:
+
+```
+Actions → Tests → Run workflow
+  spotify_write_probe = true
+  spotify_probe_batch = 5        ← five parked tracks in ONE call
+```
+
+The probe now prints the playlist **before → after** as well:
+
+```
+2️⃣b before   : ✅ 7 track(s) in the playlist
+3️⃣ write    : …
+4️⃣ verify   : 11 track(s) in the playlist before/after: 7 → 11
+   landed  : 4/5
+   ✅ 0g3rBLGiHXo9hDEqVaL5sM
+   ❌ spotify:track:1RD6UmOALWhLSXAe8GNczs
+```
+
+`7 → 7` means the write truly did nothing, whatever the answer said. That number
+is the one piece of evidence that cannot lie.
+
 ## After a successful probe: do not double-add
 
 The probe adds **one real track** to the target playlist. The state file still
