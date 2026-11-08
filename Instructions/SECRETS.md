@@ -26,6 +26,10 @@ Nothing secret is ever committed to the repo. This page shows exactly how to obt
 
 ---
 
+> 🔁 **Want a second YouTube OAuth account** so a full quota does not stop the
+> run? See [§6a](#6a-a-second-oauth-account--keep-going-when-the-first-one-runs-out-).
+> Account 1 runs uncapped until Google says stop, then account 2 continues.
+
 ## 1. `SPOTIFY_COOKIE` — paste the whole cookie 🍪
 
 You do **not** need to pick out individual values. Paste the entire cookie header; the syncer extracts `sp_dc` automatically.
@@ -326,6 +330,75 @@ Notes that save a round trip:
 Counters live in `data/sync-state.json` under `quota` (`date`, `units_used`, `searches`, `inserts`, `keys`) and roll over at UTC midnight, so **three manual runs in one day still cannot exceed the Google limit**. With N API keys (N different projects) the daily budget becomes N x 10,000 units, tracked per key. When a cap is hit the run stops cleanly, the report says which cap, and the next run continues where it left off.
 
 Tune these in `config.json`: `max_searches_per_run`, `youtube_max_searches_per_day`, `youtube_max_inserts_per_day`, `youtube_daily_quota_units`.
+
+## 6a. A second OAuth account — keep going when the first one runs out 🔁
+
+YouTube quota is **per Google Cloud project**. A second OAuth client from a
+**different project** therefore comes with its own fresh 10,000 units/day.
+
+**How it behaves, on purpose:**
+
+- Account 1 gets **no hand-made cap**. It adds as many songs as Google allows.
+- Nothing is guessed and nothing is throttled. The switch happens **only** when
+  Google itself answers `403 quotaExceeded`.
+- The song that triggered the error is **retried on account 2**, so nothing is
+  lost at the handover.
+- Account 1 is remembered as empty for the rest of the UTC day, so later runs
+  start straight on account 2 instead of wasting a call re-discovering it.
+- At UTC midnight everything resets and account 1 is first again.
+- When **every** account is empty, the run stops cleanly as before.
+
+A `429` (too many requests per second) is **not** a quota stop — it is retried on
+the same account. A spare account is never burned on a temporary rate limit.
+
+### Option A — numbered secrets (easiest in the GitHub UI)
+
+Create a second OAuth client in a **different Google Cloud project**, authorize
+it once (same steps as §2 and §3), then add these three secrets:
+
+| Secret | Value |
+|---|---|
+| `YT_CLIENT_ID_2` | the new client's ID |
+| `YT_CLIENT_SECRET_2` | the new client's secret |
+| `YT_REFRESH_TOKEN_2` | the refresh token you got for it |
+
+Prefer pasting the JSON? `YT_CLIENT_JSON_2` or `YT_TOKEN_JSON_2` work too, exactly
+like the account-1 versions.
+
+The workflow reads `_2` through `_5`. Numbering may have gaps — `_2` and `_4`
+both work. Leave the secrets you do not use out entirely; empty ones are ignored.
+
+### Option B — one secret for all the spares
+
+Secret name: **`YOUTUBE_OAUTH_ACCOUNTS`**. Value: a JSON list.
+
+```json
+[
+  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "…"},
+  {"client_id": "…apps.googleusercontent.com", "client_secret": "…", "refresh_token": "…"}
+]
+```
+
+This one has no count limit. Both options can be mixed; the JSON list comes
+first, then the numbered secrets.
+
+### Seeing it happen
+
+The run summary and Telegram get a line:
+
+```text
+🔁 YouTube quota: switched OAuth account 1 time(s) (2 accounts configured) — the run continued
+```
+
+Per-account usage is in `data/sync-state.json` → `quota.accounts`
+(`units`, `inserts`, `exhausted` for each account).
+
+> ⚠️ **A second account in the same Google Cloud project does not help** — the
+> quota is shared by the project. It must be a different project.
+
+> With a spare configured, `youtube_max_inserts_per_day` no longer limits OAuth
+> writes: that is the "no hand-made cap" rule. With only one account, the old cap
+> still applies exactly as before.
 
 ## 6b. Playlist secrets 🎵
 

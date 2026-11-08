@@ -68,6 +68,8 @@ class RunReport:
     deferred: int = 0
     duplicates: int = 0
     version_duplicates: int = 0
+    oauth_switches: int = 0
+    oauth_accounts: int = 1
     errors: list[str] = field(default_factory=list)
     method_wins: dict[str, int] = field(default_factory=dict)
     quota_stopped: bool = False
@@ -134,6 +136,11 @@ class RunReport:
             f"⏭ Skipped by choice: {self.skipped_by_choice}",
             f"❌ Failed / unmatched: {self.unmatched}",
         ]
+        if self.oauth_switches:
+            lines.append(
+                f"🔁 YouTube quota: switched OAuth account {self.oauth_switches} time(s) "
+                f"({self.oauth_accounts} accounts configured) — the run continued"
+            )
         if self.version_duplicates:
             lines.append(
                 f"🧬 Another version of a song already added: {self.version_duplicates} "
@@ -389,6 +396,7 @@ class SyncEngine:
                 max_inserts_per_day=config.youtube_max_inserts_per_day,
                 quota_state=self.state.quota,
                 region_code=config.youtube_region_code,
+                extra_oauth=secrets.youtube_extra_oauth,
             )
             self.matcher = Matcher(
                 self.youtube,
@@ -748,6 +756,8 @@ class SyncEngine:
         # Record method statistics for every method that was exercised.
         self.state.record_run()
         if cfg.youtube_enabled:
+            report.oauth_switches = int(getattr(self.youtube, "oauth_switches", 0) or 0)
+            report.oauth_accounts = int(getattr(self.youtube, "oauth_account_count", 1) or 1)
             report.searches_used = int(getattr(self.youtube, "searches_this_run", 0) or 0)
             report.free_searches = int(getattr(self.youtube, "free_searches_this_run", 0) or 0)
             report.free_pages = int(getattr(self.youtube, "free_pages_this_run", 0) or 0)
