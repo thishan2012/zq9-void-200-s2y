@@ -22,6 +22,16 @@ log = logging.getLogger(__name__)
 
 _SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
 
+# Config fields that name a file: relative values are resolved against config.json.
+_PATH_FIELDS = (
+    "state_path",
+    "cache_path",
+    "overrides_path",
+    "source_cache_path",
+    "collection_path",
+    "manual_queue_path",
+)
+
 
 def parse_spotify_playlist_id(value: str) -> str:
     """Accept anything the Spotify apps actually copy.
@@ -178,6 +188,16 @@ class Config:
         for key, value in data.items():
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
+        # Relative data paths belong next to the config file, not to whatever
+        # directory the command was run from (a --config elsewhere used to write
+        # the cache/state into the current directory instead).
+        base = path.parent.resolve()
+        if path.exists():
+            for attr in _PATH_FIELDS:
+                current = getattr(cfg, attr, "")
+                if not isinstance(current, str) or not current or Path(current).is_absolute():
+                    continue
+                setattr(cfg, attr, str(base / current))
 
         # Environment / secret overrides.
         env_sources = os.environ.get("SPOTIFY_SOURCE_PLAYLISTS", "")

@@ -447,6 +447,40 @@ Four causes, checked in this order by the code now:
 4. **The value is not an `sp_dc`.** Run `phonksync cookie-fix --show` and paste
    only the `sp_dc` value it prints.
 
+## Resetting the state DB (it is the bot's memory)
+
+`python -m phonksync reset` shows what is stored and what each part costs to
+lose. Nothing changes without `--yes`, and every reset writes a backup next to
+the state file (`data/sync-state.json.bak-<date>`).
+
+| scope | forgets | why you would |
+|---|---|---|
+| `parked` | the Spotify write backlog (`manual` + `pending`) | start the backlog over |
+| `quota` | today's YouTube counters | a used-up day, now | 
+| `skipped` | songs you skipped by hand | give them another chance |
+| `unmatched` | songs with no confident match | retry them now |
+| `candidates` | near-miss candidates kept for review | clear the noise |
+| `stats` | method statistics + run counters | clean numbers |
+| `diagnostics` | the last recorded write problem | after fixing it |
+| `synced` | **every processed track** | full re-match (slow) |
+| `all` | everything above | a completely fresh start |
+
+```bash
+python -m phonksync reset                    # show the inventory
+python -m phonksync reset parked             # dry run: "Nothing was changed"
+python -m phonksync reset parked --yes       # clears it, keeps a backup
+python -m phonksync reset quota stats --yes
+python -m phonksync reset all --yes          # fresh start
+```
+
+In GitHub: **Actions → Phonk Sync → Run workflow → `reset` = `parked`** (or any
+scope). The reset runs before the sync, appears in the summary, and the pre-reset
+copy is committed to the repo.
+
+Resetting `synced` is safe in one important way: the target playlist is read
+first, so tracks already in it are **counted, not added again**. It is slow
+because every source track is matched again — bound it with `max_tracks`.
+
 ## After a successful probe: do not double-add
 
 The probe adds **one real track** to the target playlist. The state file still

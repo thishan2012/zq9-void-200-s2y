@@ -45,6 +45,10 @@ on:
         description: "YouTube: max playlist adds this run (empty = use config.json, 40/day)"
         type: string
         default: ""
+      reset:
+        description: "Reset part of the state DB before the run (e.g. parked, quota, stats, all)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -70,6 +74,24 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Reset the state DB (optional)
+        if: ${{ inputs.reset != '' }}
+        env:
+          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
+          SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
+          YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
+          YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
+        run: |
+          {
+            echo "### 🗃 State reset: ${{ inputs.reset }}"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python -m phonksync reset ${{ inputs.reset }} --yes >> /tmp/reset.txt 2>&1 || true
+          cat /tmp/reset.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(🧹|💾|❌)' /tmp/reset.txt || true
 
       - name: Validate config and secrets
         env:
@@ -269,6 +291,8 @@ jobs:
           git config user.email "actions@github.com"
           if [ -f data/sync-state.json ]; then
             git add data/sync-state.json
+            # keep the pre-reset copy in the repo: it is the only way back
+            for f in data/sync-state.json.bak-*; do [ -f "$f" ] && git add "$f"; done
             [ -f data/manual-queue.txt ] && git add data/manual-queue.txt
             [ -f data/collection.json ] && git add data/collection.json
             [ -f data/source-cache.json ] && git add data/source-cache.json

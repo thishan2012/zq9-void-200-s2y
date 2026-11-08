@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from .errors import AuthError, ConfigError, PhonkSyncError
 from .settings import Config, Secrets, load_dotenv
@@ -940,6 +941,69 @@ def cmd_spotify_write_test(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_reset(args: argparse.Namespace) -> int:
+    """Clear chosen parts of the state file — with a backup and a dry run first."""
+    from .db import StateDB
+
+    cfg = Config.load(args.config)
+    scopes: list[str] = list(args.scopes or [])
+    db = StateDB(cfg.state_path)
+    print(f"🗃 State file: {cfg.state_path}")
+    for scope, explanation in StateDB.RESET_SCOPES.items():
+        if scope == "all":
+            continue
+        current = _state_scope_size(db, scope)
+        print(f"   {scope:<12} {current:>4} item(s)  — {explanation}")
+    if not scopes:
+        print("")
+        print("Nothing reset. Pick what to clear, e.g.:")
+        print("   python -m phonksync reset parked          # retry the write backlog")
+        print("   python -m phonksync reset quota stats     # forgive today's counters")
+        print("   python -m phonksync reset all --yes       # start completely fresh")
+        return 0
+    unknown = [scope for scope in scopes if scope not in StateDB.RESET_SCOPES]
+    if unknown:
+        print(f"❌ Unknown scope(s): {', '.join(unknown)}", file=sys.stderr)
+        print(f"   Choose from: {', '.join(StateDB.RESET_SCOPES)}", file=sys.stderr)
+        return 2
+    if not args.yes:
+        print("")
+        print(f"Would reset: {', '.join(scopes)}")
+        print("Nothing was changed. Add --yes to do it.")
+        return 0
+    backup = db.backup()
+    cleared = db.reset(scopes)
+    db.save()
+    print("")
+    for scope, count in cleared.items():
+        print(f"🧹 {scope:<12} cleared {count} item(s)")
+    print(f"💾 Backup kept at: {backup}")
+    if "synced" in scopes or "all" in scopes:
+        print(
+            "ℹ️ Every track is unknown to the next run now. It re-reads the source "
+            "playlists, matches again, and only adds what is really missing from the "
+            "target playlist — expect a slow run, and use `max_tracks` to bound it."
+        )
+    if "parked" in scopes or "all" in scopes:
+        print("ℹ️ The Spotify backlog is empty; nothing is waiting to be written.")
+    return 0
+
+
+def _state_scope_size(db: Any, scope: str) -> int:
+    def size(value: Any) -> int:
+        if isinstance(value, (dict, list)):
+            return len(value)
+        return 1 if value else 0
+
+    if scope == "parked":
+        return size(db.spotify.get("manual")) + size(db.spotify.get("pending"))
+    if scope == "quota":
+        return size(db.data.get("quota"))
+    if scope == "stats":
+        return size(db.data.get("stats"))
+    return size(db.data.get(scope))
+
+
 def cmd_cooldown(args: argparse.Namespace) -> int:
     """Show or clear the persisted Spotify cooldown."""
     from datetime import datetime, timezone
@@ -1229,6 +1293,19 @@ def main(argv: list[str] | None = None) -> int:
     p_manual.add_argument("--apply", action="store_true",
                           help="Add the parked tracks to the target playlist now")
     p_manual.set_defaults(func=cmd_manual)
+
+    p_reset = sub.add_parser(
+        "reset",
+        help="Clear chosen parts of the state file (backed up, dry run by default)",
+    )
+    p_reset.add_argument(
+        "scopes",
+        nargs="*",
+        help="synced, unmatched, skipped, candidates, parked, quota, stats, "
+             "diagnostics, all",
+    )
+    p_reset.add_argument("--yes", action="store_true", help="Actually do it")
+    p_reset.set_defaults(func=cmd_reset)
 
     p_write = sub.add_parser(
         "spotify-write-test",

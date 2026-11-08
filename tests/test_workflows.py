@@ -111,3 +111,18 @@ def test_the_spotify_write_probe_is_manual_only_and_publishes_its_answer():
     publish = next(v for k, v in steps.items() if "Commit the answer" in k)
     assert "diagnostics/spotify-write-probe-" in publish["run"]
     assert "git push" in publish["run"]
+
+
+def test_the_sync_workflow_can_reset_the_state_db():
+    """Actions → Run workflow → reset = parked|quota|all, with a backup kept."""
+    doc = _load("sync.yml")
+    inputs = doc[True]["workflow_dispatch"]["inputs"]
+    assert "reset" in inputs
+    steps = _steps(doc)
+    step = steps["Reset the state DB (optional)"]
+    assert "inputs.reset" in str(step.get("if", ""))
+    assert "phonksync reset" in step["run"]
+    assert "--yes" in step["run"]          # the workflow must not stop to ask
+    assert "GITHUB_STEP_SUMMARY" in step["run"]
+    commit = steps["Commit sync state"]["run"]
+    assert "sync-state.json.bak-" in commit, "the pre-reset copy was not committed"
