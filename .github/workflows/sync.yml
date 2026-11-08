@@ -257,6 +257,52 @@ jobs:
           YT_OAUTH_TOKEN_JSON: ${{ secrets.YT_OAUTH_TOKEN_JSON }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          # The actual sync needs the SAME spare credentials as validation.
+          YT_CLIENT_ID_2: ${{ secrets.YT_CLIENT_ID_2 }}
+          YOUTUBE_CLIENT_ID_2: ${{ secrets.YOUTUBE_CLIENT_ID_2 }}
+          YT_CLIENT_SECRET_2: ${{ secrets.YT_CLIENT_SECRET_2 }}
+          YOUTUBE_CLIENT_SECRET_2: ${{ secrets.YOUTUBE_CLIENT_SECRET_2 }}
+          YT_REFRESH_TOKEN_2: ${{ secrets.YT_REFRESH_TOKEN_2 }}
+          YOUTUBE_REFRESH_TOKEN_2: ${{ secrets.YOUTUBE_REFRESH_TOKEN_2 }}
+          YT_CLIENT_JSON_2: ${{ secrets.YT_CLIENT_JSON_2 }}
+          YOUTUBE_CLIENT_JSON_2: ${{ secrets.YOUTUBE_CLIENT_JSON_2 }}
+          YT_TOKEN_JSON_2: ${{ secrets.YT_TOKEN_JSON_2 }}
+          YOUTUBE_OAUTH_TOKEN_JSON_2: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON_2 }}
+          YT_OAUTH_TOKEN_JSON_2: ${{ secrets.YT_OAUTH_TOKEN_JSON_2 }}
+          YT_CLIENT_ID_3: ${{ secrets.YT_CLIENT_ID_3 }}
+          YOUTUBE_CLIENT_ID_3: ${{ secrets.YOUTUBE_CLIENT_ID_3 }}
+          YT_CLIENT_SECRET_3: ${{ secrets.YT_CLIENT_SECRET_3 }}
+          YOUTUBE_CLIENT_SECRET_3: ${{ secrets.YOUTUBE_CLIENT_SECRET_3 }}
+          YT_REFRESH_TOKEN_3: ${{ secrets.YT_REFRESH_TOKEN_3 }}
+          YOUTUBE_REFRESH_TOKEN_3: ${{ secrets.YOUTUBE_REFRESH_TOKEN_3 }}
+          YT_CLIENT_JSON_3: ${{ secrets.YT_CLIENT_JSON_3 }}
+          YOUTUBE_CLIENT_JSON_3: ${{ secrets.YOUTUBE_CLIENT_JSON_3 }}
+          YT_TOKEN_JSON_3: ${{ secrets.YT_TOKEN_JSON_3 }}
+          YOUTUBE_OAUTH_TOKEN_JSON_3: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON_3 }}
+          YT_OAUTH_TOKEN_JSON_3: ${{ secrets.YT_OAUTH_TOKEN_JSON_3 }}
+          YT_CLIENT_ID_4: ${{ secrets.YT_CLIENT_ID_4 }}
+          YOUTUBE_CLIENT_ID_4: ${{ secrets.YOUTUBE_CLIENT_ID_4 }}
+          YT_CLIENT_SECRET_4: ${{ secrets.YT_CLIENT_SECRET_4 }}
+          YOUTUBE_CLIENT_SECRET_4: ${{ secrets.YOUTUBE_CLIENT_SECRET_4 }}
+          YT_REFRESH_TOKEN_4: ${{ secrets.YT_REFRESH_TOKEN_4 }}
+          YOUTUBE_REFRESH_TOKEN_4: ${{ secrets.YOUTUBE_REFRESH_TOKEN_4 }}
+          YT_CLIENT_JSON_4: ${{ secrets.YT_CLIENT_JSON_4 }}
+          YOUTUBE_CLIENT_JSON_4: ${{ secrets.YOUTUBE_CLIENT_JSON_4 }}
+          YT_TOKEN_JSON_4: ${{ secrets.YT_TOKEN_JSON_4 }}
+          YOUTUBE_OAUTH_TOKEN_JSON_4: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON_4 }}
+          YT_OAUTH_TOKEN_JSON_4: ${{ secrets.YT_OAUTH_TOKEN_JSON_4 }}
+          YT_CLIENT_ID_5: ${{ secrets.YT_CLIENT_ID_5 }}
+          YOUTUBE_CLIENT_ID_5: ${{ secrets.YOUTUBE_CLIENT_ID_5 }}
+          YT_CLIENT_SECRET_5: ${{ secrets.YT_CLIENT_SECRET_5 }}
+          YOUTUBE_CLIENT_SECRET_5: ${{ secrets.YOUTUBE_CLIENT_SECRET_5 }}
+          YT_REFRESH_TOKEN_5: ${{ secrets.YT_REFRESH_TOKEN_5 }}
+          YOUTUBE_REFRESH_TOKEN_5: ${{ secrets.YOUTUBE_REFRESH_TOKEN_5 }}
+          YT_CLIENT_JSON_5: ${{ secrets.YT_CLIENT_JSON_5 }}
+          YOUTUBE_CLIENT_JSON_5: ${{ secrets.YOUTUBE_CLIENT_JSON_5 }}
+          YT_TOKEN_JSON_5: ${{ secrets.YT_TOKEN_JSON_5 }}
+          YOUTUBE_OAUTH_TOKEN_JSON_5: ${{ secrets.YOUTUBE_OAUTH_TOKEN_JSON_5 }}
+          YT_OAUTH_TOKEN_JSON_5: ${{ secrets.YT_OAUTH_TOKEN_JSON_5 }}
+          YOUTUBE_OAUTH_ACCOUNTS: ${{ secrets.YOUTUBE_OAUTH_ACCOUNTS }}
           SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
           SPOTIFY_COOKIE_3: ${{ secrets.SPOTIFY_COOKIE_3 }}
           SPOTIFY_COOKIE_4: ${{ secrets.SPOTIFY_COOKIE_4 }}

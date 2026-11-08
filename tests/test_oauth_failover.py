@@ -468,7 +468,7 @@ def test_a_good_spare_is_still_used_when_a_bad_one_sits_before_it():
 
 # --------------------- the check command must show the spare, in the browser
 
-def _run_check(monkeypatch, capsys, **env):
+def _run_check(monkeypatch, capsys, live=False, **env):
     import os
     from phonksync.__main__ import main
 
@@ -488,7 +488,7 @@ def _run_check(monkeypatch, capsys, **env):
     base.update(env)
     for key, value in base.items():
         monkeypatch.setenv(key, value)
-    main(["check"])
+    main(["check"] + (["--live"] if live else []))
     return capsys.readouterr().out
 
 
@@ -531,3 +531,174 @@ def test_the_credential_check_workflow_passes_the_spare_secrets():
     for name in ("YT_REFRESH_TOKEN_2", "YT_CLIENT_JSON_2",
                  "YOUTUBE_OAUTH_TOKEN_JSON_2", "YOUTUBE_OAUTH_ACCOUNTS"):
         assert name in passed, f"{name} never reaches the credential check"
+
+
+# -------------------- the user's actual secret names: audit, don't guess values
+
+def _oauth_env(monkeypatch, **values):
+    import os
+    for key in list(os.environ):
+        if key.startswith(("YT_", "YOUTUBE_")):
+            monkeypatch.delenv(key, raising=False)
+    base = {
+        "YT_REFRESH_TOKEN": "1//primary-test-token",
+        "YT_CLIENT_ID": "one.apps.googleusercontent.com",
+        "YT_CLIENT_SECRET": "primary-test-secret",
+    }
+    base.update(values)
+    for key, value in base.items():
+        monkeypatch.setenv(key, value)
+    return Secrets.from_env()
+
+
+def test_an_id_and_token_without_the_second_clients_secret_are_not_ready(monkeypatch):
+    secrets = _oauth_env(
+        monkeypatch, YT_CLIENT_ID_2="two.apps.googleusercontent.com",
+        YT_REFRESH_TOKEN_2="1//second-test-token",
+        YOUTUBE_OAUTH_TOKEN_JSON_2=json.dumps({"refresh_token": "1//embedded-test-token"}),
+    )
+    problems = secrets.token_problems()
+    assert any("account #2" in p and "YT_CLIENT_SECRET_2" in p for p in problems)
+    yt = YouTubeClient(refresh_token=secrets.youtube_refresh_token,
+                       extra_oauth=secrets.youtube_extra_oauth, free_search=False)
+    assert yt.oauth_usable_count == 1
+    assert yt._next_oauth_account() is None
+
+
+def test_a_secret_inside_the_json_means_no_extra_github_secret_is_needed(monkeypatch):
+    secrets = _oauth_env(
+        monkeypatch, YT_CLIENT_ID_2="two.apps.googleusercontent.com",
+        YT_REFRESH_TOKEN_2="1//second-test-token",
+        YOUTUBE_OAUTH_TOKEN_JSON_2=json.dumps(CLIENT_JSON),
+    )
+    assert secrets.token_problems() == []
+    yt = YouTubeClient(refresh_token=secrets.youtube_refresh_token,
+                       extra_oauth=secrets.youtube_extra_oauth, free_search=False)
+    assert yt.oauth_usable_count == 2
+    assert yt._oauth_creds[1]["client_secret"] == "s2"
+
+
+def test_the_json_can_supply_the_secret_next_to_a_separate_client_id(monkeypatch):
+    secrets = _oauth_env(
+        monkeypatch, YT_CLIENT_ID_2="two.apps.googleusercontent.com",
+        YT_REFRESH_TOKEN_2="1//second-test-token",
+        YOUTUBE_OAUTH_TOKEN_JSON_2=json.dumps({"client_secret": "s2"}),
+    )
+    assert secrets.token_problems() == []
+
+
+def test_check_does_not_call_a_spare_without_a_secret_usable(monkeypatch, capsys):
+    out = _run_check(
+        monkeypatch, capsys, YT_CLIENT_ID_2="two.apps.googleusercontent.com",
+        YT_REFRESH_TOKEN_2="1//second-test-token",
+        YOUTUBE_OAUTH_TOKEN_JSON_2=json.dumps({"refresh_token": "1//embedded-test-token"}),
+    )
+    assert "2 configured, 1 usable" in out
+    assert "YT_CLIENT_SECRET_2" in out
+    assert "Quota failover armed" not in out
+
+
+@pytest.mark.parametrize("filename,job,step_name", [
+    ("sync.yml", "sync", "Validate config and secrets"),
+    ("sync.yml", "sync", "Run sync"),
+    ("credential-check.yml", "check", "Live credential check (read-only)"),
+])
+def test_every_oauth_input_reaches_the_step_that_actually_needs_it(filename, job, step_name):
+    """The old tests unioned all steps: validation had the secrets, Run sync did not."""
+    import yaml
+    from pathlib import Path
+    doc = yaml.safe_load((Path(__file__).resolve().parents[1] /
+                          ".github/workflows" / filename).read_text(encoding="utf-8"))
+    step = next(s for s in doc["jobs"][job]["steps"] if s.get("name") == step_name)
+    env = step.get("env", {})
+    names = [f"{prefix}_{n}" for n in range(2, 6) for prefix in (
+        "YT_CLIENT_ID", "YOUTUBE_CLIENT_ID", "YT_CLIENT_SECRET", "YOUTUBE_CLIENT_SECRET",
+        "YT_REFRESH_TOKEN", "YOUTUBE_REFRESH_TOKEN", "YT_CLIENT_JSON", "YOUTUBE_CLIENT_JSON",
+        "YT_TOKEN_JSON", "YOUTUBE_OAUTH_TOKEN_JSON", "YT_OAUTH_TOKEN_JSON",
+    )] + ["YOUTUBE_OAUTH_ACCOUNTS"]
+    for name in names:
+        assert env.get(name) == "${{ secrets." + name + " }}", f"{step_name}: {name}"
+
+
+def test_credential_check_summary_includes_the_failover_line():
+    import yaml
+    from pathlib import Path
+    doc = yaml.safe_load((Path(__file__).resolve().parents[1] /
+                          ".github/workflows/credential-check.yml").read_text(encoding="utf-8"))
+    script = next(s for s in doc["jobs"]["check"]["steps"]
+                  if s.get("name") == "Live credential check (read-only)")["run"]
+    line = next(line for line in script.splitlines() if "check.log | redact" in line)
+    for codepoint in (0x2705, 0x274C, 0x26A0, 0x2139, 0x1F50E, 0x1F517, 0x1F645, 0x1F501):
+        assert chr(codepoint) in line
+
+
+def _live_check(monkeypatch, capsys, failures=()):
+    from phonksync.spotify import SpotifyClient
+    seen = []
+
+    def fake_user(self):
+        return "test-user"
+
+    def fake_refresh(self):
+        seen.append(self.client_id)
+        if self.client_id in failures:
+            raise AuthError("test refresh rejected")
+        self._access_token = "test-access-token"
+        return self._access_token
+
+    def fake_read(self, playlist_id):
+        if not self._access_token:
+            self._ensure_token()  # the real OAuth read refreshes before the GET
+        assert self._access_token == "test-access-token"
+        return set()
+
+    monkeypatch.setattr(SpotifyClient, "current_user_id", fake_user)
+    monkeypatch.setattr(YouTubeClient, "_ensure_token", fake_refresh)
+    monkeypatch.setattr(YouTubeClient, "playlist_video_ids", fake_read)
+    out = _run_check(
+        monkeypatch, capsys, live=True, YT_CLIENT_ID_2="two.apps.googleusercontent.com",
+        YT_CLIENT_SECRET_2="s2", YT_REFRESH_TOKEN_2="1//second-test-token",
+    )
+    return out, seen
+
+
+def test_live_credential_check_tests_the_spare_without_adding_videos(monkeypatch, capsys):
+    def no_writes(*args, **kwargs):
+        raise AssertionError("credential check must not insert videos")
+    monkeypatch.setattr(YouTubeClient, "add_to_playlist", no_writes)
+    out, seen = _live_check(monkeypatch, capsys)
+    assert seen == ["one.apps.googleusercontent.com", "two.apps.googleusercontent.com"]
+    assert "YouTube OAuth account #2: token refresh + target playlist read OK" in out
+
+
+def test_live_credential_check_reports_a_rejected_spare(monkeypatch, capsys):
+    out, seen = _live_check(monkeypatch, capsys, failures=("two.apps.googleusercontent.com",))
+    assert "YouTube OAuth account #2 live check: test refresh rejected" in out
+    assert "token refresh + target playlist read OK" not in out
+
+
+def test_a_failed_spare_check_is_not_overwritten_by_a_green_primary_check():
+    import yaml
+    from pathlib import Path
+    doc = yaml.safe_load((Path(__file__).resolve().parents[1] /
+                          ".github/workflows/credential-check.yml").read_text(encoding="utf-8"))
+    script = next(s for s in doc["jobs"]["check"]["steps"]
+                  if s.get("name") == "Live credential check (read-only)")["run"]
+    assert "code=0" in script
+    assert "python -m phonksync check --live > check.log 2>&1 || code=$?" in script
+    assert "python -m phonksync youtube-auth --check-token > refresh.log 2>&1 || code=$?" in script
+    assert 'exit "$code"' in script
+
+
+def test_a_broken_primary_does_not_hide_a_working_spare_in_the_live_check(monkeypatch, capsys):
+    out, seen = _live_check(monkeypatch, capsys, failures=("one.apps.googleusercontent.com",))
+    assert "YouTube OAuth account #1 live check: test refresh rejected" in out
+    assert "YouTube OAuth account #2: token refresh + target playlist read OK" in out
+    assert "two.apps.googleusercontent.com" in seen
+
+
+@pytest.mark.parametrize("raw", ['[{"client_id":"x"}]', '{"installed": [1]}'])
+def test_a_wrong_json_shape_is_reported_without_a_traceback(monkeypatch, raw):
+    secrets = _oauth_env(monkeypatch, YOUTUBE_OAUTH_TOKEN_JSON_2=raw)
+    problems = secrets.token_problems()
+    assert any("account #2" in p and "JSON" in p for p in problems)

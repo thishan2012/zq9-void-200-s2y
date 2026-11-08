@@ -278,7 +278,7 @@ class YouTubeClient:
         self.refresh_token = refresh_token.strip()
         self._oauth_error = ""
 
-        primary = self._oauth_bundle(
+        primary = self.oauth_bundle(
             client_json=client_json, client_id=client_id,
             client_secret=client_secret, refresh_token=refresh_token,
             token_json=token_json,
@@ -289,7 +289,7 @@ class YouTubeClient:
         for extra in extra_oauth or []:
             if not isinstance(extra, dict):
                 continue
-            bundle = self._oauth_bundle(
+            bundle = self.oauth_bundle(
                 client_json=str(extra.get("client_json", "") or ""),
                 client_id=str(extra.get("client_id", "") or ""),
                 client_secret=str(extra.get("client_secret", "") or ""),
@@ -299,18 +299,18 @@ class YouTubeClient:
             if bundle.get("refresh_token") or bundle.get("client_id"):
                 self._oauth_creds.append(bundle)
         self.oauth_account_count = len(self._oauth_creds)
-        # A spare that cannot possibly write must never be handed the run: a
-        # refresh token without its own OAuth client fails at the handover and
-        # would take the working account 1 down with it. Keep the index (so the
-        # persisted per-account counters stay aligned) but never select it.
+        # A spare that cannot possibly write must never be handed the run.
+        # The secret can be a separate env value OR inside the account's JSON;
+        # oauth_bundle() has already merged those shapes. An ID without its
+        # secret is NOT ready. Keep the index for stable per-account counters.
         self._oauth_unusable: set[int] = {
             i for i, cred in enumerate(self._oauth_creds)
-            if i and not (cred.get("refresh_token") and cred.get("client_id"))
+            if i and not self.oauth_bundle_complete(cred)
         }
         for i in sorted(self._oauth_unusable):
             log.warning(
                 "YouTube OAuth account #%d is incomplete (needs its own client "
-                "id/secret next to the refresh token) — it will not be used",
+                "id AND secret next to the refresh token) — it will not be used",
                 i + 1,
             )
         # Only a USABLE spare lifts the local cap: with none, the old
@@ -401,7 +401,17 @@ class YouTubeClient:
 
     # ------------------------------------------------- OAuth account failover
     @staticmethod
-    def _oauth_bundle(
+    def oauth_bundle_complete(cred: dict[str, str]) -> bool:
+        """Structural readiness, not proof of validity: no network or values logged.
+
+        A custom Google Cloud OAuth client needs all three parts. The secret
+        may come from JSON instead of a separately named GitHub secret.
+        """
+        return all(str(cred.get(key, "") or "").strip()
+                   for key in ("client_id", "client_secret", "refresh_token"))
+
+    @staticmethod
+    def oauth_bundle(
         *, client_json: str = "", client_id: str = "", client_secret: str = "",
         refresh_token: str = "", token_json: str = "",
     ) -> dict[str, str]:
@@ -417,7 +427,14 @@ class YouTubeClient:
                 blob = json.loads(raw_json)
             except json.JSONDecodeError as exc:
                 raise AuthError(f"YouTube OAuth JSON is not valid JSON: {exc}") from exc
+            if not isinstance(blob, dict):
+                raise AuthError(
+                    "YouTube OAuth JSON must be one account object; for a list "
+                    "of accounts use YOUTUBE_OAUTH_ACCOUNTS"
+                )
         section = blob.get("installed") or blob.get("web") or blob
+        if not isinstance(section, dict):
+            raise AuthError("YouTube OAuth JSON: installed/web must be an object")
         cid = section.get("client_id", "") or (client_id or "").strip()
         secret = section.get("client_secret", "") or (client_secret or "").strip()
         explicit_id = (client_id or "").strip()
