@@ -19,44 +19,44 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 4,
-        "units": 204
+        "inserts": 1,
+        "units": 51
       }
     },
-    "date": "2026-11-08",
-    "inserts": 4,
+    "date": "2026-11-09",
+    "inserts": 1,
     "keys": {
-      "0": 2
+      "0": 1
     },
     "searches": 0,
-    "units_used": 206
+    "units_used": 52
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-09T02:19:38+00:00"
+    "manual_cleared_at": "2026-11-09T13:04:40+00:00"
   },
   "stats": {
     "methods": {
       "DETAIL": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "LOOSE": {
-        "tried": 2,
+        "tried": 3,
         "won": 1
       },
       "REVERSED": {
-        "tried": 1,
-        "won": 1
+        "tried": 2,
+        "won": 2
       },
       "STRICT": {
-        "tried": 4,
+        "tried": 5,
         "won": 2
       }
     },
-    "runs": 4,
-    "total_added": 4
+    "runs": 5,
+    "total_added": 5
   },
   "synced": {
     "0fBEsqcT3oMfhEGtJxEZxK": {
@@ -87,6 +87,21 @@
       "spotify_id": "4SOpgVtAoZGiSULa9eU74e",
       "youtube_added": true,
       "youtube_video_id": "Y2Z9gg1gcJ0"
+    },
+    "5tvKAzf93j1Lz54Lq2cxu7": {
+      "added_at": "2026-11-09T13:04:40+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE"
+      ],
+      "family": "vision ii::udiennx",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "VISION II - Slowed",
+      "spotify_added": true,
+      "spotify_id": "5tvKAzf93j1Lz54Lq2cxu7",
+      "youtube_added": true,
+      "youtube_video_id": "jB8mGXuYTSg"
     },
     "5zeZGRzOBKAoxVO6LwX9Dq": {
       "added_at": "2026-11-08T17:00:18+00:00",
@@ -120,7 +135,7 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-09T02:19:38+00:00",
+  "updated_at": "2026-11-09T13:04:40+00:00",
   "version": 1,
   "version_duplicates": {}
 }
