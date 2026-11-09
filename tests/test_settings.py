@@ -110,3 +110,99 @@ def test_a_track_or_share_link_is_refused_not_misread():
     with pytest.raises(ConfigError) as share:
         parse_spotify_playlist_id("https://spotify.link/AbCdEf123")
     assert "share" in str(share.value)
+
+
+# ------------------------- committed source-playlist file (no Secret needed)
+def test_source_playlists_come_from_a_committed_file(monkeypatch, tmp_path):
+    """The user's ask: links live in a repo text file, not a Secret."""
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "Scoure playlist.txt").write_text(
+        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc\n"
+        "https://open.spotify.com/playlist/37i9dQZF1DX0XUsuxWHRQd?si=def\n",
+        encoding="utf-8",
+    )
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == [
+        "37i9dQZF1DXcBWIGoYBM5M", "37i9dQZF1DX0XUsuxWHRQd",
+    ]
+    assert cfg.spotify_source_playlists_origin == "file: Scoure playlist.txt"
+
+
+def test_the_secret_still_overrides_the_committed_file(monkeypatch, tmp_path):
+    """A local/one-off env override wins; CI no longer injects it, so the file wins there."""
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "Scoure playlist.txt").write_text("37i9dQZF1DXcBWIGoYBM5M\n", encoding="utf-8")
+    monkeypatch.setenv("SPOTIFY_SOURCE_PLAYLISTS", "37i9dQZF1DX0XUsuxWHRQd")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == ["37i9dQZF1DX0XUsuxWHRQd"]
+    assert cfg.spotify_source_playlists_origin == "secret: SPOTIFY_SOURCE_PLAYLISTS"
+
+
+def test_source_file_ignores_comments_blanks_bom_and_mixes_separators(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    text = (
+        "# my phonk sources\n"
+        "\n"
+        "37i9dQZF1DXcBWIGoYBM5M, 37i9dQZF1DX0XUsuxWHRQd;\n"
+        "   # an indented comment line\n"
+        "spotify:playlist:37i9dQZF1DX4WYpdgoIcn6\n"
+    )
+    # utf-8-sig writes a BOM, like some Windows/phone editors do.
+    (tmp_path / "Scoure playlist.txt").write_text(text, encoding="utf-8-sig")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == [
+        "37i9dQZF1DXcBWIGoYBM5M", "37i9dQZF1DX0XUsuxWHRQd", "37i9dQZF1DX4WYpdgoIcn6",
+    ]
+
+
+def test_an_explicit_source_file_path_is_honoured(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text(
+        '{"spotify_source_playlists_file": "lists/my.txt"}', encoding="utf-8")
+    sub = tmp_path / "lists"
+    sub.mkdir()
+    (sub / "my.txt").write_text("37i9dQZF1DXcBWIGoYBM5M\n", encoding="utf-8")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == ["37i9dQZF1DXcBWIGoYBM5M"]
+    assert cfg.spotify_source_playlists_origin == "file: my.txt"
+
+
+def test_a_missing_explicit_source_file_is_a_loud_error(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text(
+        '{"spotify_source_playlists_file": "nope.txt"}', encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        Config.load(tmp_path / "config.json")
+    assert "nope.txt" in str(exc.value)
+
+
+def test_an_empty_source_file_falls_back_to_inline_config(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text(
+        '{"spotify_source_playlists": ["37i9dQZF1DXcBWIGoYBM5M"]}', encoding="utf-8")
+    (tmp_path / "Scoure playlist.txt").write_text("# nothing yet\n\n", encoding="utf-8")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == ["37i9dQZF1DXcBWIGoYBM5M"]
+    assert cfg.spotify_source_playlists_origin == "config.json"
+
+
+def test_source_file_autodetect_is_case_insensitive(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "SOURCE PLAYLIST.TXT").write_text("37i9dQZF1DXcBWIGoYBM5M\n", encoding="utf-8")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == ["37i9dQZF1DXcBWIGoYBM5M"]
+    assert cfg.spotify_source_playlists_origin.startswith("file:")
+
+
+def test_duplicate_links_in_the_file_are_deduplicated(monkeypatch, tmp_path):
+    monkeypatch.delenv("SPOTIFY_SOURCE_PLAYLISTS", raising=False)
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "Scoure playlist.txt").write_text(
+        "37i9dQZF1DXcBWIGoYBM5M\n"
+        "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=x\n",
+        encoding="utf-8")
+    cfg = Config.load(tmp_path / "config.json")
+    assert cfg.spotify_source_playlists == ["37i9dQZF1DXcBWIGoYBM5M"]

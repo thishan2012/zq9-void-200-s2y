@@ -24,13 +24,27 @@ Step-by-step setup for the Phonk Playlist Syncer. Follow the pages in order:
 2. **Spotify target:** create a playlist **on the account whose cookie you will copy** (e.g. "Phonk Sync"). The syncer adds the exact Spotify tracks here.
 3. **YouTube target (optional):** only needed if you enable YouTube sync. Create a playlist on the YouTube channel you authorize.
 
-Playlist IDs can go into `config.json` (public values) **or** into secrets (recommended if you don't want playlist IDs in a public repo):
+**Source playlists — the easy way (no secret):** put the links in the committed
+**`Scoure playlist.txt`** file at the repo root, one per line (comma/semicolon
+separated links and whole-line `#` comments also work). The syncer auto-detects it
+next to `config.json`, so you change sources just by editing that file on GitHub —
+no terminal, no secret. Public playlist links carry nothing sensitive, so committing
+them is fine. A run logs `Read N source playlist(s) from Scoure playlist.txt`, and
+`check` prints `📄 sources from: file: Scoure playlist.txt`.
 
-- `SPOTIFY_SOURCE_PLAYLISTS` — comma- or newline-separated IDs/URLs
+Playlist IDs may also go into `config.json` (public values) **or** secrets:
+
+- `SPOTIFY_SOURCE_PLAYLISTS` — comma/newline-separated IDs/URLs. **Optional** now:
+  only needed if you are *not* using the `Scoure playlist.txt` file. When set it
+  overrides the file (a local/one-off override); the workflow no longer injects it,
+  so scheduled runs use the file.
 - `SPOTIFY_TARGET_PLAYLIST` — one ID/URL
 - `YOUTUBE_TARGET_PLAYLIST` — one ID/URL (`PL...`), only if YouTube sync is enabled
 
-Secrets override `config.json`.
+Source precedence (first non-empty wins): `SPOTIFY_SOURCE_PLAYLISTS` env →
+`Scoure playlist.txt` (or `spotify_source_playlists_file` in `config.json` for a
+custom path) → inline `spotify_source_playlists` in `config.json`. The target
+playlist must not also be a source. Other secrets override `config.json`.
 
 ## 3. Create the credentials
 

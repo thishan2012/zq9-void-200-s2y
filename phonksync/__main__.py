@@ -56,7 +56,7 @@ def _is_rate_limit_text(text: str) -> bool:
 _SECRET_NOTES: list[tuple[str, str, str]] = [
     ("SPOTIFY_COOKIE", "Spotify login (sp_dc) — reads the playlists", "required"),
     ("SPOTIFY_COOKIE_2", "spare Spotify account, used only after a 429", "optional"),
-    ("SPOTIFY_SOURCE_PLAYLISTS", "source playlist id(s)", "required"),
+    ("SPOTIFY_SOURCE_PLAYLISTS", "source id(s) — optional; the committed 'Scoure playlist.txt' is used when present", "optional"),
     ("SPOTIFY_TARGET_PLAYLIST", "where tracks are added", "required"),
     ("TELEGRAM_BOT_TOKEN", "the one end-of-run message", "required"),
     ("TELEGRAM_CHAT_ID", "which chat gets it", "required"),
@@ -115,7 +115,7 @@ def _audit_secrets(secrets, cfg) -> None:
         name: _looks_unset(os.environ.get(name, ""))
         for name in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN",
                      "SPOTIFY_COOKIE", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-                     "SPOTIFY_SOURCE_PLAYLISTS", "SPOTIFY_TARGET_PLAYLIST")
+                     "SPOTIFY_TARGET_PLAYLIST")
         if name in os.environ  # only a *present* secret can be present-but-empty
     }
     suspicious = {k: v for k, v in suspicious.items() if v}
@@ -200,6 +200,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"   🎯 target playlist: {cfg.spotify_target_playlist}")
         for index, source in enumerate(cfg.spotify_source_playlists, 1):
             print(f"   📥 source {index}: {source}")
+        if cfg.spotify_source_playlists_origin:
+            print(f"   📄 sources from: {cfg.spotify_source_playlists_origin}")
         if not cfg.youtube_enabled:
             print("ℹ️  YouTube sync disabled — Spotify-only mode")
         else:

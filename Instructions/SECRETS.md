@@ -10,7 +10,7 @@ Nothing secret is ever committed to the repo. This page shows exactly how to obt
 | Secret | Required | What it is |
 |---|---|---|
 | `SPOTIFY_COOKIE` | ✅ | Full `Cookie` header from a logged-in open.spotify.com request |
-| `SPOTIFY_SOURCE_PLAYLISTS` | ✅ | Comma/newline-separated source playlist IDs or URLs |
+| `SPOTIFY_SOURCE_PLAYLISTS` | optional | Source playlist IDs/URLs. **Not needed** if you use the committed `Scoure playlist.txt` file (auto-detected). When set, it overrides the file |
 | `SPOTIFY_TARGET_PLAYLIST` | ✅ | Your Spotify target playlist ID or URL |
 | `SPOTIFY_COOKIE_2` / `_3` / `_4` | optional | Cookies of **other** Spotify accounts — the client rotates to them when one gets rate limited (see [SPOTIFY-LIMITS.md](SPOTIFY-LIMITS.md)) |
 | `TELEGRAM_BOT_TOKEN` | optional | Bot token from @BotFather (for logs) |
@@ -480,9 +480,15 @@ Per-account usage is in `data/sync-state.json` → `quota.accounts`
 
 ## 6b. Playlist secrets 🎵
 
+**Easiest for sources — no secret:** edit the committed **`Scoure playlist.txt`**
+file at the repo root (one playlist link per line; commas/semicolons and `#`
+comment lines are fine). It is auto-detected next to `config.json`, so scheduled
+runs read it directly. The `SPOTIFY_SOURCE_PLAYLISTS` secret below is optional and
+only used as a local/one-off override (the workflow does not inject it).
+
 | Secret | Example value |
 |---|---|
-| `SPOTIFY_SOURCE_PLAYLISTS` | `37i9dQZF1DXcBWIGoYBM5M, 37i9dQZF1DX0XUsuxWHRQd, https://open.spotify.com/playlist/...` |
+| `SPOTIFY_SOURCE_PLAYLISTS` (optional) | `37i9dQZF1DXcBWIGoYBM5M, 37i9dQZF1DX0XUsuxWHRQd, https://open.spotify.com/playlist/...` |
 | `SPOTIFY_TARGET_PLAYLIST` | `https://open.spotify.com/playlist/...` (a playlist **you own**) |
 | `YOUTUBE_TARGET_PLAYLIST` | `PLxxxxxxxxxxxxxxxx` (only if YouTube sync is enabled) |
 
