@@ -68,7 +68,7 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 4. Run the sync manually: **Actions → Phonk Sync → Run workflow**.
    - First run: tick `dry_run` to preview matches without writing anything. Dry runs read only the first 200 source tracks (`dry_run_track_limit` in `config.json`).
    - Then run it live. Live syncs read the full source playlists.
-5. Automatic scheduled runs are **enabled**: 4 runs/day, every 6 hours at **02:15, 08:15, 14:15 and 20:15 UTC** (plain UTC cron — no `timezone:` key, the most reliable form). 08:15 UTC lands just after YouTube's Pacific-midnight quota reset. Scheduled runs process 100 tracks each. Manual runs are still available from **Actions → Phonk Sync → Run workflow**. In Sri Lanka time (UTC+5:30) that is 01:45, 07:45, 13:45, 19:45.
+5. Native GitHub cron is configured for **02:15, 08:15, 14:15 and 20:15 UTC** (Sri Lanka: 07:45, 13:45, 19:45, 01:45), up to 100 new tracks per automatic run. **This repository has observed no native `schedule` runs**, and GitHub can delay or drop cron events. For the external-timer backup, follow **[AUTO-RUN.md](AUTO-RUN.md)** once in your browser: it triggers the same workflow at those four Sri Lanka times without daily clicks. Ordinary manual runs remain available from **Actions → Phonk Sync → Run workflow**.
 
 Each live run commits `data/sync-state.json` back to the repo — that is the database that prevents duplicate adds.
 

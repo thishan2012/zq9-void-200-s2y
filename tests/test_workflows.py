@@ -232,29 +232,27 @@ def test_a_successful_sync_summary_does_not_ask_what_went_wrong():
 
 
 def test_the_sync_schedule_is_four_paced_runs_per_day():
-    """Auto runs: every 6h in plain UTC (no timezone key), 100 tracks/run.
-
-    A timezone-keyed schedule silently never fired here; plain UTC cron is the
-    robust form. 08:15 UTC is just after YouTube's Pacific-midnight reset.
-    """
+    """Native cron is a fallback; both automatic paths use the same live cap."""
     doc = _load("sync.yml")
     schedules = doc[True]["schedule"]
     assert schedules == [{"cron": "15 2,8,14,20 * * *"}]
-    # No timezone key: it must not creep back in and re-break the trigger.
     assert all("timezone" not in entry for entry in schedules)
+    auto = "(github.event_name == 'schedule' || inputs.trigger_source == 'cron')"
     env = _steps(doc)["Run sync"]["env"]
     assert env["MAX_TRACKS_PER_RUN"] == (
-        "${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}"
+        "${{ " + auto + " && '100' || inputs.max_tracks }}"
     )
     assert env["DRY_RUN"] == (
-        "${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}"
+        "${{ " + auto + " && 'false' || inputs.dry_run }}"
     )
     steps = _steps(doc)
     assert "github.event_name == 'workflow_dispatch'" in str(steps["Reset the state DB (optional)"]["if"])
     assert "github.event_name == 'workflow_dispatch'" in str(steps["Fill source cache"]["if"])
     assert "github.event_name == 'schedule'" in str(steps["Commit sync state"]["if"])
+    assert "inputs.trigger_source == 'cron'" in str(steps["Commit sync state"]["if"])
     runtime = steps["Run time"]
     assert runtime["env"]["EFFECTIVE_MAX_TRACKS"] == env["MAX_TRACKS_PER_RUN"]
+    assert runtime["env"]["EFFECTIVE_DRY_RUN"] == env["DRY_RUN"]
     assert "EFFECTIVE_MAX_TRACKS" in runtime["run"]
 
 
@@ -264,3 +262,67 @@ def test_the_default_insert_target_is_195_per_oauth_account():
     assert cfg["youtube_max_inserts_per_day"] == 195
     from phonksync.settings import Config
     assert Config().youtube_max_inserts_per_day == 195
+
+
+def test_external_timer_is_an_explicit_dispatch_mode_with_a_manual_default():
+    doc = _load("sync.yml")
+    source = doc[True]["workflow_dispatch"]["inputs"]["trigger_source"]
+    assert source["type"] == "choice"
+    assert source["options"] == ["manual", "cron"]
+    assert source["default"] == "manual"
+    # The API body is all strings; no boolean coercion is needed for this input.
+    env = _steps(doc)["Run sync"]["env"]
+    assert "inputs.trigger_source == 'cron'" in env["DRY_RUN"]
+    assert "inputs.trigger_source == 'cron'" in env["MAX_TRACKS_PER_RUN"]
+    assert env["DRY_RUN"].endswith("|| inputs.dry_run }}")
+    assert env["MAX_TRACKS_PER_RUN"].endswith("|| inputs.max_tracks }}")
+
+
+def test_timer_runs_cannot_reset_state_or_turn_into_cache_only_runs():
+    steps = _steps(_load("sync.yml"))
+    for name in ("Reset the state DB (optional)", "Fill source cache"):
+        condition = steps[name]["if"]
+        assert "github.event_name == 'workflow_dispatch'" in condition
+        assert "inputs.trigger_source != 'cron'" in condition
+
+
+def test_timer_runs_are_identifiable_even_when_the_bot_says_manual():
+    runtime = _steps(_load("sync.yml"))["Run time"]
+    assert runtime["env"]["RUN_TRIGGER"] == (
+        "${{ github.event_name == 'schedule' && 'GitHub cron' || "
+        "inputs.trigger_source == 'cron' && 'external timer' || 'manual' }}"
+    )
+    assert 'echo "- trigger: **${RUN_TRIGGER}**"' in runtime["run"]
+    commit = _steps(_load("sync.yml"))["Commit sync state"]["if"]
+    assert "inputs.trigger_source == 'cron'" in commit
+
+
+def test_the_browser_timer_guide_matches_the_workflow_contract():
+    import json
+    import re
+
+    guide = (ROOT / "Instructions" / "AUTO-RUN.md").read_text(encoding="utf-8")
+    body = json.loads(re.search(r"```json\n(.*?)\n```", guide, re.S).group(1))
+    assert body == {"ref": "main", "inputs": {"trigger_source": "cron"}}
+    assert body["inputs"]["trigger_source"] in (
+        _load("sync.yml")[True]["workflow_dispatch"]["inputs"]["trigger_source"]["options"]
+    )
+    assert (
+        "https://api.github.com/repos/thishan2012/zq9-void-200-s2y/"
+        "actions/workflows/sync.yml/dispatches"
+    ) in guide
+    assert "Asia/Colombo" in guide
+    assert "`1`, `7`, `13`, `19`" in guide
+    assert "`45`" in guide
+    assert "Actions → Read and write" in guide
+    assert "Only select repositories" in guide
+    assert "PASTE_YOUR_TOKEN_HERE" in guide
+    # Instructions must never accidentally contain a real-looking GitHub PAT.
+    assert not re.search(r"(?:github_pat_|ghp_|gho_|ghs_)[A-Za-z0-9_]{20,}", guide)
+
+
+def test_a_timer_payload_cannot_accidentally_skip_the_sync_step():
+    steps = _steps(_load("sync.yml"))
+    assert "inputs.trigger_source == 'cron' || !inputs.fill_cache" in steps["Run sync"]["if"]
+    for name in ("Parked Spotify backlog", "Keep the run log"):
+        assert "inputs.trigger_source == 'cron' || !inputs.fill_cache" in steps[name]["if"]

@@ -14,7 +14,7 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
 **Reduce load if needed**
-- Automatic runs are enabled: 4 runs/day, every 6 hours at 02:15 / 08:15 / 14:15 / 20:15 **UTC** (plain UTC cron, no `timezone:` key), 100 tracks per scheduled run. To pause them, remove the `schedule:` trigger from `.github/workflows/sync.yml`.
+- Native cron is configured for 4 runs/day at 02:15 / 08:15 / 14:15 / 20:15 **UTC**, up to 100 new tracks per automatic run, but native events have not been observed here. The external timer backup is documented in **[AUTO-RUN.md](AUTO-RUN.md)**. To pause native attempts, remove `schedule:` from `sync.yml`; to pause the backup, disable its cron-job.org job.
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
@@ -26,16 +26,14 @@ What was checked and ruled out:
 - The workflow is **active** (not disabled by the 60-day inactivity rule). ✔
 - The cron is valid POSIX (5 fields, minute 15 to avoid the top-of-hour load window). ✔
 
-The fix that shipped:
-- **Plain UTC cron, no `timezone:` key.** GitHub added IANA `timezone:` support in March 2026, but a freshly-added timezone-keyed schedule silently never fired here (and real-world reports of the feature are mixed). `15 2,8,14,20 * * *` in UTC is the best-tested, most reliable form. Fixed UTC drifts ~1h across DST — harmless, because the code rolls the YouTube quota over on the Pacific *date* regardless of the run's wall-clock time.
-- **A fresh commit to `main` re-registers the schedule.** GitHub only (re)scans scheduled triggers on a push to the default branch; editing the workflow and merging forces that.
+What shipped, and what is still uncertain:
+- The native trigger is plain UTC cron `15 2,8,14,20 * * *`. Changing from a timezone-keyed cron and merging to `main` did **not** produce an observed schedule run here. That is not evidence that IANA timezones are invalid, and another cron edit is not a guaranteed fix.
+- GitHub documents that schedule events can be delayed or dropped under load. The exact server-side reason for this repository's missing events is not visible through the repository API.
+- The backup path is now implemented: an external timer calls the `workflow_dispatch` API with `trigger_source=cron`. It forces a live run capped at 100 new tracks and labels the run summary `trigger: external timer`.
 
-How to confirm it works (no terminal):
-1. **Actions → Phonk Sync → Run workflow** once (a manual run also nudges registration).
-2. Wait for the next window: **02:15 / 08:15 / 14:15 / 20:15 UTC** (Sri Lanka: 01:45 / 07:45 / 13:45 / 19:45). GitHub may start it a few minutes late under load.
-3. **Actions → filter Event = schedule** — a run there means it is fixed.
+**Set up the backup once in your browser: [AUTO-RUN.md](AUTO-RUN.md).** It needs a repo-only GitHub token with Actions write permission and a cron-job.org job; neither credential belongs in chat or this repository. After setup, use the timer's **Run now** button and check the new GitHub run summary. The API event remains `workflow_dispatch`, so the Telegram bot may still label it **Manual**; `trigger: external timer` distinguishes it. Native cron runs, if they ever arrive, use Event = `schedule`.
 
-If it still never fires after a full window on this active public repo, the fallback is an external scheduler (e.g. cron-job.org) hitting the `workflow_dispatch` API on time — ask and it can be wired up. The Telegram bot's own "Schedule: …" line is only that bot's display text, not GitHub's actual trigger.
+The Telegram bot's own "Schedule: …" line is only that bot's display text, not GitHub's actual trigger.
 
 ## Sources are not read from `Scoure playlist.txt`
 The committed **`Scoure playlist.txt`** file (repo root, next to `config.json`) is the easy, no-secret way to set source playlists. If a run does not use it:

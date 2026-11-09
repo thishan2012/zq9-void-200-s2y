@@ -45,7 +45,7 @@
 
 > 📬 **Log එක දැන් කෙටියි:** Telegram/Actions වල එන්නේ `✅ SYNC: SUCCESS` + playlist links + `Added | Skipped | Failed` වගේ පේළි 10-12යි. සම්පූර්ණ පරණ විස්තර ඕන නම් **Actions → Phonk Sync → Run workflow → `verbose_log` ✅** කරන්න (terminal ඕන නෑ).
 
-> Auto schedule එක දැන් **on**: දවසට 4 වතාවක්, පැය 6කට වරක් — **02:15, 08:15, 14:15, 20:15 UTC** (ලංකා වේලාවෙන් 01:45, 07:45, 13:45, 19:45). `timezone:` key එක අයින් කරලා plain UTC cron දැම්මේ ඒක තමයි වඩාත්ම විශ්වාසවන්ත ක්‍රමය (timezone එකෙන් schedule එක fire වුණේ නෑ). Scheduled run එකකට tracks 100යි. Manual run එකත් Actions වලින් කරන්න පුළුවන්.
+> ⏰ **Auto runs:** GitHub cron එක දවසට 4 වතාවකට සකසලා තියෙනවා, ඒත් මේ repo එකේ `schedule` run එකක් තාම නිරීක්ෂණය වෙලා නෑ. ඒ නිසා **cron-job.org backup timer support** එක හදලා තියෙනවා. Browser එකෙන් එක පාරක් token + timer setup කරන්න: **[Instructions/AUTO-RUN.md](Instructions/AUTO-RUN.md)**. ඊට පස්සේ ලංකා වේලාවෙන් **01:45 / 07:45 / 13:45 / 19:45** ට click නොකර run වෙයි; එක automatic run එකකට අලුත් songs උපරිම **100**යි. Bot එකේ `/runs` එකේ මේවා `Manual` පෙන්වුවත් Run summary එකේ **`trigger: external timer`** බලන්න.
 
 ## 🧪 Local (terminal තියෙනවා නම්)
 
