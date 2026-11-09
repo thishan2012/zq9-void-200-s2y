@@ -1,11 +1,15 @@
 name: Phonk Sync
 
-# Auto: 4 runs/day, every 6 hours, just after the YouTube quota reset
-# (midnight America/Los_Angeles). Manual runs remain available below.
+# Auto: 4 runs/day, every 6 hours, in plain UTC (no `timezone:` key).
+# Why UTC and not `timezone: America/Los_Angeles`? A newly added schedule with a
+# timezone key never fired here, and the timezone feature is still unreliable in
+# practice; plain UTC cron is the best-tested, most robust form. 08:15 UTC lands
+# just after YouTube's Pacific-midnight quota reset. Fixed UTC drifts ~1h across
+# DST, which is fine: the code rolls the quota over on the Pacific DATE regardless.
+# Minute 15 (not 0) avoids GitHub's top-of-hour high-load window.
 on:
   schedule:
-    - cron: "15 0,6,12,18 * * *"
-      timezone: "America/Los_Angeles"
+    - cron: "15 2,8,14,20 * * *"
   workflow_dispatch:
     inputs:
       dry_run:

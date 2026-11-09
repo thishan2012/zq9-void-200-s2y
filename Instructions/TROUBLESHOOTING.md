@@ -14,9 +14,28 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
 **Reduce load if needed**
-- Automatic runs are enabled: 4 runs/day, every 6 hours in `America/Los_Angeles`, 100 tracks per scheduled run. To pause them, remove the `schedule:` trigger from `.github/workflows/sync.yml`.
+- Automatic runs are enabled: 4 runs/day, every 6 hours at 02:15 / 08:15 / 14:15 / 20:15 **UTC** (plain UTC cron, no `timezone:` key), 100 tracks per scheduled run. To pause them, remove the `schedule:` trigger from `.github/workflows/sync.yml`.
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
+
+## Scheduled (automatic) runs are not firing — only manual runs appear
+Symptom: **Actions → Phonk Sync** shows only `workflow_dispatch` (manual) runs; filtering by **Event → schedule** shows nothing, even hours after the schedule was added.
+
+What was checked and ruled out:
+- The workflow is on the **default branch** (`main`) — schedules only fire from there. ✔
+- The workflow is **active** (not disabled by the 60-day inactivity rule). ✔
+- The cron is valid POSIX (5 fields, minute 15 to avoid the top-of-hour load window). ✔
+
+The fix that shipped:
+- **Plain UTC cron, no `timezone:` key.** GitHub added IANA `timezone:` support in March 2026, but a freshly-added timezone-keyed schedule silently never fired here (and real-world reports of the feature are mixed). `15 2,8,14,20 * * *` in UTC is the best-tested, most reliable form. Fixed UTC drifts ~1h across DST — harmless, because the code rolls the YouTube quota over on the Pacific *date* regardless of the run's wall-clock time.
+- **A fresh commit to `main` re-registers the schedule.** GitHub only (re)scans scheduled triggers on a push to the default branch; editing the workflow and merging forces that.
+
+How to confirm it works (no terminal):
+1. **Actions → Phonk Sync → Run workflow** once (a manual run also nudges registration).
+2. Wait for the next window: **02:15 / 08:15 / 14:15 / 20:15 UTC** (Sri Lanka: 01:45 / 07:45 / 13:45 / 19:45). GitHub may start it a few minutes late under load.
+3. **Actions → filter Event = schedule** — a run there means it is fixed.
+
+If it still never fires after a full window on this active public repo, the fallback is an external scheduler (e.g. cron-job.org) hitting the `workflow_dispatch` API on time — ask and it can be wired up. The Telegram bot's own "Schedule: …" line is only that bot's display text, not GitHub's actual trigger.
 
 ## `check` fails: "spotify_target_playlist is not configured"
 You have not told the syncer which Spotify playlist to add songs into.
