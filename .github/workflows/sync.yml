@@ -2,8 +2,9 @@ name: Phonk Sync
 
 # Native GitHub cron is retained as a fallback, but this repository has observed
 # no schedule events. GitHub can delay or drop scheduled runs; changing cron
-# syntax is not a guarantee. The backup is an external timer calling the
-# workflow_dispatch API with trigger_source=cron (Instructions/AUTO-RUN.md).
+# syntax is not a guarantee. sync-watchdog.yml is a GitHub-only backup that
+# dispatches trigger_source=cron; an external timer remains optional
+# (Instructions/GITHUB-AUTO-RUN.md and Instructions/AUTO-RUN.md).
 # Both automatic paths are live and capped at 100 new tracks per run.
 # Native times: 02:15/08:15/14:15/20:15 UTC = 07:45/13:45/19:45/01:45 Sri Lanka.
 # Quota rollover uses the Pacific date in code, independently of these times.
@@ -13,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       trigger_source:
-        description: "Keep manual for a normal run; the external timer sends cron (live, 100 new tracks)"
+        description: "Keep manual for a normal run; timers send cron (live, 100 new tracks)"
         type: choice
         options: [manual, cron]
         default: manual
@@ -337,7 +338,7 @@ jobs:
           SPOTIFY_WEB_TOKEN: ${{ secrets.SPOTIFY_WEB_TOKEN }}
           SPOTIFY_ENCRYPTED_TOKEN: ${{ secrets.SPOTIFY_ENCRYPTED_TOKEN }}
           DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && 'false' || inputs.dry_run }}
-          # Native cron and the external timer are paced: 100 new tracks/run.
+          # Native cron and timer dispatches are paced: 100 new tracks/run.
           # Ordinary manual runs keep the dispatch input (0 = unlimited).
           MAX_TRACKS_PER_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && '100' || inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
@@ -434,7 +435,7 @@ jobs:
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           EFFECTIVE_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && 'false' || inputs.dry_run }}
           EFFECTIVE_MAX_TRACKS: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && '100' || inputs.max_tracks }}
-          RUN_TRIGGER: ${{ github.event_name == 'schedule' && 'GitHub cron' || inputs.trigger_source == 'cron' && 'external timer' || 'manual' }}
+          RUN_TRIGGER: ${{ github.event_name == 'schedule' && 'GitHub cron' || inputs.trigger_source == 'cron' && 'timer dispatch' || 'manual' }}
         run: |
           {
             echo "### ⏱ Wall clock"

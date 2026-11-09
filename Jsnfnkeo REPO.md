@@ -45,7 +45,7 @@
 
 > 📬 **Log එක දැන් කෙටියි:** Telegram/Actions වල එන්නේ `✅ SYNC: SUCCESS` + playlist links + `Added | Skipped | Failed` වගේ පේළි 10-12යි. සම්පූර්ණ පරණ විස්තර ඕන නම් **Actions → Phonk Sync → Run workflow → `verbose_log` ✅** කරන්න (terminal ඕන නෑ).
 
-> ⏰ **Auto runs:** GitHub cron එක දවසට 4 වතාවකට සකසලා තියෙනවා, ඒත් මේ repo එකේ `schedule` run එකක් තාම නිරීක්ෂණය වෙලා නෑ. ඒ නිසා **cron-job.org backup timer support** එක හදලා තියෙනවා. Browser එකෙන් එක පාරක් token + timer setup කරන්න: **[Instructions/AUTO-RUN.md](Instructions/AUTO-RUN.md)**. ඊට පස්සේ ලංකා වේලාවෙන් **01:45 / 07:45 / 13:45 / 19:45** ට click නොකර run වෙයි; එක automatic run එකකට අලුත් songs උපරිම **100**යි. Bot එකේ `/runs` එකේ මේවා `Manual` පෙන්වුවත් Run summary එකේ **`trigger: external timer`** බලන්න.
+> ⏰ **Auto runs:** GitHub cron එක දවසට 4 වතාවකට සකසලා තියෙනවා, ඒත් මේ repo එකේ `schedule` run එකක් තාම නිරීක්ෂණය වෙලා නෑ. **GitHub-only watchdog** එකක් දැන් තියෙනවා: external account/PAT එකක් නැතුව missed sync run එකක් backup කරන්න උත්සාහ කරනවා. Setup: **[Instructions/GITHUB-AUTO-RUN.md](Instructions/GITHUB-AUTO-RUN.md)**. ඒත් watchdog එකත් GitHub scheduler එකම පාවිච්චි කරන නිසා නියම වේලාවට runs 4ක් guarantee කරන්නේ නෑ. Independent timer එකක් ඕනේ නම් optional **[cron-job.org guide](Instructions/AUTO-RUN.md)** බලන්න. එක automatic run එකකට අලුත් songs උපරිම **100**යි; timer dispatch run එකක summary එකේ **`trigger: timer dispatch`** බලන්න.
 
 ## 🧪 Local (terminal තියෙනවා නම්)
 

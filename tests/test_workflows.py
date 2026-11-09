@@ -290,7 +290,7 @@ def test_timer_runs_are_identifiable_even_when_the_bot_says_manual():
     runtime = _steps(_load("sync.yml"))["Run time"]
     assert runtime["env"]["RUN_TRIGGER"] == (
         "${{ github.event_name == 'schedule' && 'GitHub cron' || "
-        "inputs.trigger_source == 'cron' && 'external timer' || 'manual' }}"
+        "inputs.trigger_source == 'cron' && 'timer dispatch' || 'manual' }}"
     )
     assert 'echo "- trigger: **${RUN_TRIGGER}**"' in runtime["run"]
     commit = _steps(_load("sync.yml"))["Commit sync state"]["if"]
@@ -326,3 +326,81 @@ def test_a_timer_payload_cannot_accidentally_skip_the_sync_step():
     assert "inputs.trigger_source == 'cron' || !inputs.fill_cache" in steps["Run sync"]["if"]
     for name in ("Parked Spotify backlog", "Keep the run log"):
         assert "inputs.trigger_source == 'cron' || !inputs.fill_cache" in steps[name]["if"]
+
+
+def test_github_only_watchdog_checks_four_offpeak_slots_after_native_sync():
+    doc = _load("sync-watchdog.yml")
+    assert doc[True]["schedule"] == [{"cron": "45 2,8,14,20 * * *"}]
+    assert "workflow_dispatch" in doc[True]
+    assert set(doc[True]) == {"schedule", "workflow_dispatch"}
+    job = doc["jobs"]["watchdog"]
+    assert job["if"] == "${{ github.ref == 'refs/heads/main' }}"
+    assert job["timeout-minutes"] == 5
+    assert doc["concurrency"] == {
+        "group": "phonk-sync-watchdog", "cancel-in-progress": False
+    }
+
+
+def test_watchdog_needs_only_actions_write_and_no_pat_or_checkout():
+    doc = _load("sync-watchdog.yml")
+    assert doc["permissions"] == {"actions": "write"}
+    steps = _steps(doc, job="watchdog")
+    action = steps["Check for a recent sync and dispatch if missing"]
+    assert action["uses"] == "actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd"
+    assert "github-token" not in action.get("with", {})
+    raw = (ROOT / ".github" / "workflows" / "sync-watchdog.yml").read_text()
+    assert "secrets." not in raw
+    assert "actions/checkout" not in raw
+    assert "github.token" not in raw  # github-script's default is the built-in token
+
+
+def test_watchdog_dispatches_the_existing_live_capped_sync_contract():
+    script = _steps(_load("sync-watchdog.yml"), job="watchdog")[
+        "Check for a recent sync and dispatch if missing"
+    ]["with"]["script"]
+    assert "workflow_id: 'sync.yml'" in script
+    assert "ref: 'main'" in script
+    assert "inputs: { trigger_source: 'cron' }" in script
+    assert "inputs.trigger_source == 'cron'" in _steps(_load("sync.yml"))["Run sync"]["env"]["DRY_RUN"]
+    assert "'100'" in _steps(_load("sync.yml"))["Run sync"]["env"]["MAX_TRACKS_PER_RUN"]
+    assert "createWorkflowDispatch" in script
+    assert "reRunWorkflow" not in script
+
+
+def test_watchdog_suppresses_duplicate_and_retry_storm_dispatches():
+    script = _steps(_load("sync-watchdog.yml"), job="watchdog")[
+        "Check for a recent sync and dispatch if missing"
+    ]["with"]["script"]
+    assert "const lookbackMs = 3 * 60 * 60 * 1000;" in script
+    assert "branch: 'main'" in script
+    assert "per_page: 100" in script
+    assert "run.head_branch === 'main' && Date.parse(run.created_at) >= since" in script
+    assert "conclusion === 'success'" not in script
+    assert "if (recent)" in script
+    assert "skipped_recent_sync" in script
+    assert script.index("if (recent)") < script.index("createWorkflowDispatch")
+    assert "if (!manual)" in script
+
+
+def test_watchdog_publishes_dispatch_skip_or_failure_in_the_summary():
+    steps = _steps(_load("sync-watchdog.yml"), job="watchdog")
+    assert steps["Check for a recent sync and dispatch if missing"]["id"] == "dispatch"
+    summary = steps["Publish the watchdog result"]
+    assert summary["if"] == "${{ always() }}"
+    assert summary["env"]["RESULT"] == "${{ steps.dispatch.outputs.result || 'failed' }}"
+    assert "GITHUB_STEP_SUMMARY" in summary["run"]
+    assert "manual watchdog runs always dispatch a LIVE sync" in summary["run"]
+
+
+def test_github_only_guide_is_honest_about_the_shared_scheduler():
+    guide = (ROOT / "Instructions" / "GITHUB-AUTO-RUN.md").read_text(encoding="utf-8")
+    assert "100% guarantee" in guide
+    assert "watchdog cron එකත් නොඑන්න පුළුවන්" in guide
+    assert "GITHUB_TOKEN" in guide
+    assert "PAT එකක්" in guide
+    assert "actions: write" in guide
+    assert "Disable workflow" in guide
+    assert "trigger: timer dispatch" in guide
+    assert "`45 2,8,14,20 * * *`" in guide
+    assert "02:15 / 08:15 / 14:15 / 20:15" in guide
+    assert "live" in guide and "100" in guide
