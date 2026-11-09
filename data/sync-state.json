@@ -12,40 +12,67 @@
     "stats",
     "diagnostics"
   ],
+  "playlist_names": {
+    "youtube:PLI7mdzhfLD8U": "Botstar phonk playlist"
+  },
   "quota": {
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 3,
-        "units": 153
+        "inserts": 4,
+        "units": 204
       }
     },
     "date": "2026-11-08",
-    "inserts": 3,
-    "keys": {},
+    "inserts": 4,
+    "keys": {
+      "0": 2
+    },
     "searches": 0,
-    "units_used": 153
+    "units_used": 206
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-08T17:00:18+00:00"
+    "manual_cleared_at": "2026-11-09T02:19:38+00:00"
   },
   "stats": {
     "methods": {
+      "DETAIL": {
+        "tried": 1,
+        "won": 0
+      },
       "LOOSE": {
+        "tried": 2,
+        "won": 1
+      },
+      "REVERSED": {
         "tried": 1,
         "won": 1
       },
       "STRICT": {
-        "tried": 3,
+        "tried": 4,
         "won": 2
       }
     },
-    "runs": 3,
-    "total_added": 3
+    "runs": 4,
+    "total_added": 4
   },
   "synced": {
+    "0fBEsqcT3oMfhEGtJxEZxK": {
+      "added_at": "2026-11-09T02:19:38+00:00",
+      "artists": [
+        "UdieNnx"
+      ],
+      "family": "struct::udiennx",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "STRUCT - Tiktok Version",
+      "spotify_added": true,
+      "spotify_id": "0fBEsqcT3oMfhEGtJxEZxK",
+      "youtube_added": true,
+      "youtube_video_id": "LgMvaRwbEOE"
+    },
     "4SOpgVtAoZGiSULa9eU74e": {
       "added_at": "2026-11-08T15:41:20+00:00",
       "artists": [
@@ -93,7 +120,7 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-08T17:00:18+00:00",
+  "updated_at": "2026-11-09T02:19:38+00:00",
   "version": 1,
   "version_duplicates": {}
 }
