@@ -19,44 +19,44 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 1,
-        "units": 51
+        "inserts": 2,
+        "units": 102
       }
     },
     "date": "2026-11-09",
-    "inserts": 1,
+    "inserts": 2,
     "keys": {
-      "0": 1
+      "0": 2
     },
     "searches": 0,
-    "units_used": 52
+    "units_used": 104
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-09T13:04:40+00:00"
+    "manual_cleared_at": "2026-11-09T16:50:45+00:00"
   },
   "stats": {
     "methods": {
       "DETAIL": {
-        "tried": 2,
+        "tried": 3,
         "won": 0
       },
       "LOOSE": {
-        "tried": 3,
+        "tried": 4,
         "won": 1
       },
       "REVERSED": {
-        "tried": 2,
-        "won": 2
+        "tried": 3,
+        "won": 3
       },
       "STRICT": {
-        "tried": 5,
+        "tried": 6,
         "won": 2
       }
     },
-    "runs": 5,
-    "total_added": 5
+    "runs": 6,
+    "total_added": 6
   },
   "synced": {
     "0fBEsqcT3oMfhEGtJxEZxK": {
@@ -72,6 +72,21 @@
       "spotify_id": "0fBEsqcT3oMfhEGtJxEZxK",
       "youtube_added": true,
       "youtube_video_id": "LgMvaRwbEOE"
+    },
+    "2IQ19n16QqDOfIqHXSPffF": {
+      "added_at": "2026-11-09T16:50:45+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE"
+      ],
+      "family": "onyx::udiennx",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "ONYX - Slowed",
+      "spotify_added": true,
+      "spotify_id": "2IQ19n16QqDOfIqHXSPffF",
+      "youtube_added": true,
+      "youtube_video_id": "aE9pjoUrOoM"
     },
     "4SOpgVtAoZGiSULa9eU74e": {
       "added_at": "2026-11-08T15:41:20+00:00",
@@ -135,7 +150,7 @@
     }
   },
   "unmatched": {},
-  "updated_at": "2026-11-09T13:04:40+00:00",
+  "updated_at": "2026-11-09T16:50:45+00:00",
   "version": 1,
   "version_duplicates": {}
 }
