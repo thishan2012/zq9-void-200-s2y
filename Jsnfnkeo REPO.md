@@ -28,12 +28,20 @@
 
 1. Spotify target playlist එකක් හදන්න (ඔයාගේ account එකේ).
 2. GitHub Secrets දාන්න (Spotify **Premium / developer app ඕන නෑ** — cookie එකෙන් විතරයි):
-   `SPOTIFY_COOKIE`, `SPOTIFY_SOURCE_PLAYLISTS`, `SPOTIFY_TARGET_PLAYLIST`
+   `SPOTIFY_COOKIE`, `SPOTIFY_TARGET_PLAYLIST`
+   **Source playlists වලට secret එකක් ඕනේ නෑ** — repo එකේ **`Scoure playlist.txt`** file එකේ links දාන්න (එක පේළියකට එකක්). ඒක auto-detect වෙන නිසා file එක edit කරන එකෙන්ම sources වෙනස් වෙනවා (terminal ඕන නෑ). `SPOTIFY_SOURCE_PLAYLISTS` secret එක දැන් optional.
    Telegram ඕන නම්: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
    YouTube ඕන නම්: `YOUTUBE_ENABLED=true`, `YOUTUBE_API_KEY`, `YOUTUBE_TARGET_PLAYLIST`
    (playlist එකට video **දාන්න** නම් — API key එකෙන් බෑ. ලේසිම: `YT_COOKIE` (Google Console / OAuth / VPN කිසිවක් ඕන නෑ, `python -m phonksync youtube-auth --cookie-help` බලන්න). දිගුකාලීනව: `YT_REFRESH_TOKEN` + `YT_CLIENT_ID` + `YT_CLIENT_SECRET`)
 3. GitHub → **Actions → Phonk Sync → Run workflow** → `dry_run` ✅ කරලා preview බලන්න. ඊට පස්සේ live run කරන්න.
 4. Telegram බලන්න. ✅
+
+> 📄 **Source playlists = repo file එකක්:** `Scoure playlist.txt` කියන file එක repo root එකේ තියෙනවා. ඒකට Spotify playlist links දාන්න — එක පේළියකට එකක් (හෝ comma වලින් වෙන් කරලා). `#` වලින් පටන් ගන්න පේළි comments. උදා:
+> ```
+> https://open.spotify.com/playlist/26ADR9K06DZ826IsgTno1S
+> https://open.spotify.com/playlist/3D7ZF9P6P7UdF2JPMb9dAc
+> ```
+> GitHub එකේ file එක edit → commit කරාම ඊළඟ run එකෙන් අලුත් sources කියවෙනවා. Secret එකක් ඕනේ නෑ, links public වුණාට leak වෙන්න දෙයක් නෑ. `check` run එකේ `📄 sources from: file: Scoure playlist.txt` කියලා පේනවා නම් හරි.
 
 > 📬 **Log එක දැන් කෙටියි:** Telegram/Actions වල එන්නේ `✅ SYNC: SUCCESS` + playlist links + `Added | Skipped | Failed` වගේ පේළි 10-12යි. සම්පූර්ණ පරණ විස්තර ඕන නම් **Actions → Phonk Sync → Run workflow → `verbose_log` ✅** කරන්න (terminal ඕන නෑ).
 

@@ -31,6 +31,7 @@ _PATH_FIELDS = (
     "collection_path",
     "manual_queue_path",
     "version_queue_path",
+    "spotify_source_playlists_file",
 )
 
 
@@ -109,6 +110,62 @@ def _split_ids(raw: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\n,;]+", raw or "") if p.strip()]
 
 
+# Committed source-list files: the easiest way to set sources without a Secret.
+# The first name is the one created in this repo; the rest are forgiving aliases
+# (matched case-insensitively) so a corrected spelling or a plain-text export
+# still works. Public playlist links carry no secret, so committing them is fine.
+_SOURCE_FILE_CANDIDATES = (
+    "Scoure playlist.txt",
+    "Source playlist.txt",
+    "Source playlists.txt",
+    "source_playlists.txt",
+    "source-playlists.txt",
+    "sources.txt",
+)
+
+
+def _read_source_file(path: Path) -> list[str]:
+    """Playlist links/IDs from a text file: one per line, or comma/semicolon
+    separated. Blank lines and whole-line ``#`` comments are ignored, and a
+    UTF-8 BOM (from Windows/phone editors) is tolerated.
+    """
+    text = path.read_text(encoding="utf-8-sig")
+    kept = [
+        ln for ln in text.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    return _split_ids("\n".join(kept))
+
+
+def _discover_source_file(cfg: "Config", base: Path) -> Path | None:
+    """Find the committed source-list file next to ``config.json``.
+
+    An explicit ``spotify_source_playlists_file`` wins, and a missing one is a
+    loud error rather than a silent fallback. Otherwise a few common names are
+    tried next to the config file, case-insensitively.
+    """
+    explicit = (cfg.spotify_source_playlists_file or "").strip()
+    if explicit:
+        p = Path(explicit)
+        if not p.is_absolute():
+            p = base / p
+        if not p.exists():
+            raise ConfigError(
+                f"spotify_source_playlists_file points to {explicit!r}, but no such "
+                f"file exists (looked at {p}). Fix the path or clear the setting."
+            )
+        return p
+    try:
+        by_lower = {e.name.lower(): e for e in base.iterdir() if e.is_file()}
+    except OSError:
+        return None
+    for name in _SOURCE_FILE_CANDIDATES:
+        hit = by_lower.get(name.lower())
+        if hit is not None:
+            return hit
+    return None
+
+
 def _env_number(name: str, low: float, high: float) -> float | None:
     """Read a numeric env var, clamped; None when unset, empty or invalid.
 
@@ -130,6 +187,12 @@ def _env_number(name: str, low: float, high: float) -> float | None:
 @dataclass
 class Config:
     spotify_source_playlists: list[str] = field(default_factory=list)
+    # Optional committed text file of source playlist links (no Secret needed).
+    # Empty = auto-detect a common name next to config.json (e.g. the repo's
+    # "Scoure playlist.txt"). A relative value resolves against config.json.
+    spotify_source_playlists_file: str = ""
+    # Set by load(): where the source list actually came from (shown by `check`).
+    spotify_source_playlists_origin: str = ""
     spotify_target_playlist: str = ""
     youtube_enabled: bool = False  # YouTube sync is removed/disabled by default
     youtube_target_playlist: str = ""
@@ -210,10 +273,24 @@ class Config:
                     continue
                 setattr(cfg, attr, str(base / current))
 
-        # Environment / secret overrides.
+        # Source playlists, first non-empty wins:
+        #   1. SPOTIFY_SOURCE_PLAYLISTS env/secret — a local or one-off override.
+        #   2. a committed text file (explicit path or auto-detected name) — the
+        #      easy, no-Secret way; the workflow no longer injects the secret, so
+        #      this file is authoritative in CI.
+        #   3. the inline config.json list.
         env_sources = os.environ.get("SPOTIFY_SOURCE_PLAYLISTS", "")
+        source_file = _discover_source_file(cfg, base)
+        file_ids = _read_source_file(source_file) if source_file is not None else []
         if env_sources:
             cfg.spotify_source_playlists = _split_ids(env_sources)
+            cfg.spotify_source_playlists_origin = "secret: SPOTIFY_SOURCE_PLAYLISTS"
+        elif file_ids:
+            cfg.spotify_source_playlists = file_ids
+            cfg.spotify_source_playlists_origin = f"file: {source_file.name}"
+            log.info("Read %d source playlist(s) from %s", len(file_ids), source_file.name)
+        elif cfg.spotify_source_playlists:
+            cfg.spotify_source_playlists_origin = "config.json"
         if os.environ.get("SPOTIFY_TARGET_PLAYLIST"):
             cfg.spotify_target_playlist = os.environ["SPOTIFY_TARGET_PLAYLIST"]
         env_yt_enabled = os.environ.get("YOUTUBE_ENABLED", "").lower()
@@ -275,8 +352,10 @@ class Config:
     def validate(self, require_telegram: bool = False) -> None:
         if not self.spotify_source_playlists:
             raise ConfigError(
-                "No source Spotify playlists configured. Set spotify_source_playlists "
-                "in config.json or the SPOTIFY_SOURCE_PLAYLISTS secret."
+                "No source Spotify playlists configured. Add their links to the "
+                "committed 'Scoure playlist.txt' file (one per line), set "
+                "spotify_source_playlists in config.json, or the "
+                "SPOTIFY_SOURCE_PLAYLISTS secret."
             )
         if not self.spotify_target_playlist:
             raise ConfigError("spotify_target_playlist is not configured")

@@ -93,7 +93,6 @@ jobs:
           # never interpolate it into the script (shell injection), and let the
           # CLI accept "parked, quota" as well as "parked quota".
           RESET_SCOPES: ${{ inputs.reset }}
-          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
@@ -133,7 +132,6 @@ jobs:
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
-          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}
@@ -212,7 +210,6 @@ jobs:
           # not". Use the dispatch input, or a proxy secret you set on purpose.
           SPOTIFY_PROXY_URL: ${{ inputs.proxy_url || secrets.SPOTIFY_PROXY_URL || secrets.PROXY_URL }}
           SPOTIFY_PROXY_SECRET: ${{ secrets.SPOTIFY_PROXY_SECRET }}
-          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
         run: |
           python -m phonksync diag 2>&1 | tee diag.log
           {
@@ -228,7 +225,6 @@ jobs:
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
-          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
           YOUTUBE_FREE_SEARCH: ${{ vars.YOUTUBE_FREE_SEARCH || 'true' }}
           # Never take the proxy from a stale repository variable: a CORS proxy
@@ -248,10 +244,12 @@ jobs:
         id: sync
         if: ${{ !inputs.fill_cache }}
         env:
+          # Source playlists come from the committed "Scoure playlist.txt" file
+          # (auto-detected next to config.json), NOT a secret. Edit that file to
+          # change sources. SPOTIFY_SOURCE_PLAYLISTS is intentionally not injected.
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SPOTIFY_SOURCE_PLAYLISTS: ${{ secrets.SPOTIFY_SOURCE_PLAYLISTS }}
           SPOTIFY_TARGET_PLAYLIST: ${{ secrets.SPOTIFY_TARGET_PLAYLIST }}
           YOUTUBE_ENABLED: ${{ secrets.YOUTUBE_ENABLED }}
           YOUTUBE_TARGET_PLAYLIST: ${{ secrets.YOUTUBE_TARGET_PLAYLIST }}

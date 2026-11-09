@@ -37,6 +37,14 @@ How to confirm it works (no terminal):
 
 If it still never fires after a full window on this active public repo, the fallback is an external scheduler (e.g. cron-job.org) hitting the `workflow_dispatch` API on time — ask and it can be wired up. The Telegram bot's own "Schedule: …" line is only that bot's display text, not GitHub's actual trigger.
 
+## Sources are not read from `Scoure playlist.txt`
+The committed **`Scoure playlist.txt`** file (repo root, next to `config.json`) is the easy, no-secret way to set source playlists. If a run does not use it:
+- **Confirm it was read:** `Actions → Phonk Sync → Validate config and secrets` prints `📄 sources from: …`. `file: Scoure playlist.txt` means it worked; `secret: SPOTIFY_SOURCE_PLAYLISTS` means a secret is overriding it; `config.json` means neither the file nor a secret had any links.
+- **Name & place:** the file must sit next to `config.json` (repo root). Accepted names (case-insensitive): `Scoure playlist.txt`, `Source playlist.txt`, `Source playlists.txt`, `source_playlists.txt`, `source-playlists.txt`, `sources.txt`. For any other name/path, set `spotify_source_playlists_file` in `config.json`.
+- **A secret wins over the file:** `SPOTIFY_SOURCE_PLAYLISTS` (env/secret) overrides the file. The workflow no longer injects it, so this only happens if you set it on purpose. Delete that secret to let the file be authoritative.
+- **Format:** one playlist link/ID per line (commas/semicolons also work); blank lines and whole-line `#` comments are ignored. `spotify.link/…` short links are rejected — paste the `open.spotify.com/playlist/<id>` address.
+- **Empty file:** an empty (or comments-only) file falls back to the secret, then to `config.json`.
+
 ## `check` fails: "spotify_target_playlist is not configured"
 You have not told the syncer which Spotify playlist to add songs into.
 Fix: create a playlist you own on Spotify, copy its link, and add the GitHub secret `SPOTIFY_TARGET_PLAYLIST` (or set `spotify_target_playlist` in `config.json`). It must not also be one of the source playlists.
