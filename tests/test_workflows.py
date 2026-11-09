@@ -232,13 +232,16 @@ def test_a_successful_sync_summary_does_not_ask_what_went_wrong():
 
 
 def test_the_sync_schedule_is_four_paced_runs_per_day():
-    """Auto runs: every 6h just after YouTube's Pacific reset, 100 tracks/run."""
+    """Auto runs: every 6h in plain UTC (no timezone key), 100 tracks/run.
+
+    A timezone-keyed schedule silently never fired here; plain UTC cron is the
+    robust form. 08:15 UTC is just after YouTube's Pacific-midnight reset.
+    """
     doc = _load("sync.yml")
     schedules = doc[True]["schedule"]
-    assert schedules == [{
-        "cron": "15 0,6,12,18 * * *",
-        "timezone": "America/Los_Angeles",
-    }]
+    assert schedules == [{"cron": "15 2,8,14,20 * * *"}]
+    # No timezone key: it must not creep back in and re-break the trigger.
+    assert all("timezone" not in entry for entry in schedules)
     env = _steps(doc)["Run sync"]["env"]
     assert env["MAX_TRACKS_PER_RUN"] == (
         "${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}"
