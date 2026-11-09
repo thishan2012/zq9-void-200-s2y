@@ -1,4 +1,6 @@
-# ⏰ Click නොකර දවසට 4 පාරක් sync කරන්න — external timer setup
+# ⏰ Click නොකර දවසට 4 පාරක් sync කරන්න — optional external timer setup
+
+> **GitHub එකෙන්ම කරන්න ඕනේ නම්:** අලුත් PAT/external account එකක් නැති **[GitHub-only watchdog guide](GITHUB-AUTO-RUN.md)** බලන්න. ඒකත් GitHub scheduler එකම නිසා guarantee එකක් නෑ. පහත ක්‍රමය independent timer එකක් ඕනේ නම් විතරක් කරන්න.
 
 මේ repo එකේ GitHub cron එක තියෙනවා, ඒත් ඒකෙන් run එකක් ආවේ නැති අවස්ථා තියෙනවා. GitHub cron එක පරක්කු වෙන්න හෝ drop වෙන්න පුළුවන්. ඒ නිසා **cron-job.org → GitHub Run workflow API** කියන backup ක්‍රමය හදලා තියෙනවා. GitHub එකේ workflow එකමයි දුවන්නේ; playlist sync code එක වෙනස් වෙන්නේ නෑ.
 
@@ -81,7 +83,7 @@ https://api.github.com/repos/thishan2012/zq9-void-200-s2y/actions/workflows/sync
 
 `Authorization` value එකේ `PASTE_YOUR_TOKEN_HERE` වෙනුවට ඔයා copy කරපු GitHub token එක දාන්න. **`Bearer ` කෑල්ලයි space එකයි තියන්න.** Token එක URL එකට, request body එකට හෝ GitHub repository secret එකකට දාන්න ඕන නෑ.
 
-> cron-job.org කියන්නේ තුන්වන පාර්ශ්වයක free service එකක්. ඔයා ඒ service එක විශ්වාස කරනවා නම් විතරක් මේ ක්‍රමය පාවිච්චි කරන්න: Authorization header එක ඔවුන්ගේ job settings වල save වෙනවා. Token එක මේ repo එකට + Actions permission එකට විතරක් සීමා කරලා තියෙන්නේ ඒ risk එක අඩු කරන්න.
+> cron-job.org කියන්නේ තුන්වන පාර්ශ්වයක free service එකක්. ඔයා ඒ service එක විශ්වාස කරනවා නම් විතරක් මේ ක්‍රමය පාවිච්චි කරන්න: Authorization header එක ඔවුන්ගේ job settings වල save වෙනවා. ඔවුන්ගේ Terms §7 security-critical secrets URL/header/payload වල නොයවන්න කියනවා; job history එකේ headers/responses තියෙන්නත් පුළුවන්. Repo-only + Actions-write token එකෙන් risk එක අඩුයි, නැති වෙන්නේ නෑ. මේ risk එක ගන්නේ නැති GitHub-only path එක: [GITHUB-AUTO-RUN.md](GITHUB-AUTO-RUN.md). Terms: [cron-job.org/en/tos](https://cron-job.org/en/tos/).
 
 **Save / Create cronjob** ඔබන්න. Notifications තියෙනවා නම් **Notify on failure** on කරන්න.
 
@@ -90,10 +92,10 @@ https://api.github.com/repos/thishan2012/zq9-void-200-s2y/actions/workflows/sync
 cron-job.org job එකේ **Run now / Execute now** ඔබන්න. මේක **live sync run එකක්**; dry run එකක් නෙවෙයි.
 
 1. cron history එකේ HTTP **200 හෝ 204** බලන්න. ඒ කියන්නේ GitHub එක run request එක භාරගත්තා. 204 නම් response body හිස් වීම සාමාන්‍යයි. HTTP success එකෙන් කියවෙන්නේ dispatch එක භාරගත්තා කියලා විතරයි; sync සාර්ථකද කියලා GitHub/Telegram එකෙන් බලන්න.
-2. [GitHub → Actions → Phonk Sync](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml) විවෘත කරන්න. අලුත් run එක → **Run time** summary එකේ **`trigger: external timer`** තියෙනවා නම් backup path එක හරි.
+2. [GitHub → Actions → Phonk Sync](https://github.com/thishan2012/zq9-void-200-s2y/actions/workflows/sync.yml) විවෘත කරන්න. අලුත් run එක → **Run time** summary එකේ **`trigger: timer dispatch`** තියෙනවා නම් backup path එක හරි.
 3. Telegram message එකේ `Added | Skipped | Failed` බලන්න. අලුත් songs නැත්නම් `Added: 0` වෙන්න පුළුවන්.
 
-**වැදගත්:** මේ backup එක GitHubගේ `workflow_dispatch` API එක පාවිච්චි කරන නිසා Telegram bot එකේ `/runs` එක තවදුරටත් **Manual** කියලා පෙන්විය හැකියි. ඒකෙන් timer එක වැඩ නෑ කියලා අදහසක් නෑ. **Run time → trigger: external timer** සහ cron-job.org history එක බලන්න. Native GitHub cron run එකක් නම් Event එක `schedule`; external timer run එකක් නම් `workflow_dispatch`.
+**වැදගත්:** මේ backup එක GitHubගේ `workflow_dispatch` API එක පාවිච්චි කරන නිසා Telegram bot එකේ `/runs` එක තවදුරටත් **Manual** කියලා පෙන්විය හැකියි. ඒකෙන් timer එක වැඩ නෑ කියලා අදහසක් නෑ. **Run time → trigger: timer dispatch** සහ cron-job.org history එක බලන්න. Native GitHub cron run එකක් නම් Event එක `schedule`; external timer run එකක් නම් `workflow_dispatch`.
 
 ## වැරදුණොත්
 
@@ -110,6 +112,6 @@ Token එකක් leak වුණා කියලා හිතෙනවා න�
 
 ## Native GitHub cron එකත් තියෙනවා
 
-`15 2,8,14,20 * * *` cron එක fallback එකක් විදිහට තියෙනවා. GitHub ඒක කවදාහරි fire කළොත් external timer එකත් ඒ වේලාවටම fire වෙන්න පුළුවන්. `phonk-sync` concurrency group එක runs එකවර දුවන්න දෙන්නේ නෑ; synced state එක නිසා ඒම song එක දෙපාරක් add කරන්නේ නෑ. ඒ දෙවෙනි run එක අමතර no-op run එකක් වෙන්න පුළුවන්. External timer එක ස්ථිරව වැඩ කරනවා තහවුරු වුණාට පස්සේ native cron එක අයින් කරන්න පුළුවන්.
+`15 2,8,14,20 * * *` cron එකයි GitHub-only watchdog එකයි තියෙනවා. Watchdog එක enabled නම් external timer එකත් සමඟ අමතර check/dispatch එකක් වෙන්න පුළුවන්; recent-run check එක ගොඩක් අවස්ථා වළක්වනවා. External timer එක පාවිච්චි කරනවා නම් අනවශ්‍ය backup attempts නවත්වන්න Phonk Sync Watchdog එක Actions UI එකෙන් disable කරන්න. GitHub ඒක කවදාහරි fire කළොත් external timer එකත් ඒ වේලාවටම fire වෙන්න පුළුවන්. `phonk-sync` concurrency group එක runs එකවර දුවන්න දෙන්නේ නෑ; synced state එක නිසා ඒම song එක දෙපාරක් add කරන්නේ නෑ. ඒ දෙවෙනි run එක අමතර no-op run එකක් වෙන්න පුළුවන්. External timer එක ස්ථිරව වැඩ කරනවා තහවුරු වුණාට පස්සේ native cron එක අයින් කරන්න පුළුවන්.
 
 GitHub cron delay/drop behaviour පිළිබඳ official note: [2](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).

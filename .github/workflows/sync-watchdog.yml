@@ -1,0 +1,81 @@
+name: Phonk Sync Watchdog
+
+# GitHub-only backup for a missed native Phonk Sync cron run.
+# It runs 30 minutes after each native slot and dispatches sync.yml only when
+# no sync run was created on main in the previous 3 hours. A manual run of
+# this watchdog always dispatches, so the built-in-token path can be tested.
+# This still depends on GitHub's scheduler; it is not an independent clock.
+on:
+  schedule:
+    - cron: "45 2,8,14,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: phonk-sync-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watchdog:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check for a recent sync and dispatch if missing
+        id: dispatch
+        # actions/github-script v8 (Node 24), pinned after verifying the tag.
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const manual = context.eventName === 'workflow_dispatch';
+            const lookbackMs = 3 * 60 * 60 * 1000;
+            const since = Date.now() - lookbackMs;
+
+            if (!manual) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: 'sync.yml',
+                branch: 'main',
+                per_page: 100,
+              });
+              // Count failed/cancelled/dry runs too: this backs up a missing
+              // trigger, not a failed sync, and must not create retry storms.
+              const recent = data.workflow_runs.find((run) =>
+                run.head_branch === 'main' && Date.parse(run.created_at) >= since
+              );
+              if (recent) {
+                core.info(`Recent sync run found (${recent.id}, ${recent.status}/${recent.conclusion || 'pending'}); skipping.`);
+                core.setOutput('result', 'skipped_recent_sync');
+                return;
+              }
+            }
+
+            // workflow_dispatch is an explicit dispatch event; the built-in
+            // GITHUB_TOKEN may start it when the job has actions: write.
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: 'sync.yml',
+              ref: 'main',
+              inputs: { trigger_source: 'cron' },
+            });
+            core.setOutput('result', 'dispatched');
+            core.notice('Dispatched sync.yml on main with trigger_source=cron.');
+
+      - name: Publish the watchdog result
+        if: ${{ always() }}
+        env:
+          RESULT: ${{ steps.dispatch.outputs.result || 'failed' }}
+        run: |
+          {
+            echo "### ⏰ Phonk Sync Watchdog"
+            echo ""
+            echo "- result: **${RESULT}**"
+            echo "- target: \`sync.yml\` on \`main\` (\`trigger_source=cron\`)"
+            echo "- rule: scheduled checks skip when any sync run was created on main in the last 3 hours; manual watchdog runs always dispatch a LIVE sync"
+          } >> "$GITHUB_STEP_SUMMARY"

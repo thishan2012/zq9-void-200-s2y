@@ -14,7 +14,7 @@ The code itself is generic. Keep the *personal* parts out of the public repo:
 - The state DB (`data/sync-state.json`) contains song names; if that must stay private while the repo is public, store it in a **private gist** or a separate private repo instead of committing it. (Ask and this can be wired up.)
 
 **Reduce load if needed**
-- Native cron is configured for 4 runs/day at 02:15 / 08:15 / 14:15 / 20:15 **UTC**, up to 100 new tracks per automatic run, but native events have not been observed here. The external timer backup is documented in **[AUTO-RUN.md](AUTO-RUN.md)**. To pause native attempts, remove `schedule:` from `sync.yml`; to pause the backup, disable its cron-job.org job.
+- Native cron is configured for 4 runs/day at 02:15 / 08:15 / 14:15 / 20:15 **UTC**, up to 100 new tracks per automatic run, but native events have not been observed here. The GitHub-only watchdog is documented in **[GITHUB-AUTO-RUN.md](GITHUB-AUTO-RUN.md)**; an independent external timer remains optional in **[AUTO-RUN.md](AUTO-RUN.md)**. To pause all automatic attempts, disable both Phonk Sync and Phonk Sync Watchdog in Actions; if an external job was created, disable it too.
 - Lower `max_searches_per_run` or `dry_run_track_limit`.
 - After the initial backlog is synced, runs only handle newly added songs and are short.
 
@@ -29,9 +29,9 @@ What was checked and ruled out:
 What shipped, and what is still uncertain:
 - The native trigger is plain UTC cron `15 2,8,14,20 * * *`. Changing from a timezone-keyed cron and merging to `main` did **not** produce an observed schedule run here. That is not evidence that IANA timezones are invalid, and another cron edit is not a guaranteed fix.
 - GitHub documents that schedule events can be delayed or dropped under load. The exact server-side reason for this repository's missing events is not visible through the repository API.
-- The backup path is now implemented: an external timer calls the `workflow_dispatch` API with `trigger_source=cron`. It forces a live run capped at 100 new tracks and labels the run summary `trigger: external timer`.
+- Two backup paths exist: a GitHub-only watchdog using the built-in `GITHUB_TOKEN`, and an optional external timer. Both dispatch `trigger_source=cron`, force a live run capped at 100 new tracks, and label the sync summary `trigger: timer dispatch`. The watchdog shares GitHub’s scheduler and cannot guarantee recovery if that scheduler drops every event.
 
-**Set up the backup once in your browser: [AUTO-RUN.md](AUTO-RUN.md).** It needs a repo-only GitHub token with Actions write permission and a cron-job.org job; neither credential belongs in chat or this repository. After setup, use the timer's **Run now** button and check the new GitHub run summary. The API event remains `workflow_dispatch`, so the Telegram bot may still label it **Manual**; `trigger: external timer` distinguishes it. Native cron runs, if they ever arrive, use Event = `schedule`.
+**GitHub-only setup: [GITHUB-AUTO-RUN.md](GITHUB-AUTO-RUN.md).** Merge the watchdog to `main`, try Disable → Enable on the workflows, and use **Actions → Phonk Sync Watchdog → Run workflow** once to test dispatch. That manual watchdog test always starts a LIVE sync. A scheduled watchdog run is the evidence that GitHub’s timer fired; a manual dispatch test does not prove that. The optional independent timer setup is **[AUTO-RUN.md](AUTO-RUN.md)** and needs a repo-only PAT plus cron-job.org job; neither credential belongs in chat or this repository. Dispatch events remain `workflow_dispatch`, so Telegram may label them **Manual**; `trigger: timer dispatch` distinguishes them. Native cron runs use Event = `schedule`.
 
 The Telegram bot's own "Schedule: …" line is only that bot's display text, not GitHub's actual trigger.
 
