@@ -1,17 +1,22 @@
 name: Phonk Sync
 
-# Auto: 4 runs/day, every 6 hours, in plain UTC (no `timezone:` key).
-# Why UTC and not `timezone: America/Los_Angeles`? A newly added schedule with a
-# timezone key never fired here, and the timezone feature is still unreliable in
-# practice; plain UTC cron is the best-tested, most robust form. 08:15 UTC lands
-# just after YouTube's Pacific-midnight quota reset. Fixed UTC drifts ~1h across
-# DST, which is fine: the code rolls the quota over on the Pacific DATE regardless.
-# Minute 15 (not 0) avoids GitHub's top-of-hour high-load window.
+# Native GitHub cron is retained as a fallback, but this repository has observed
+# no schedule events. GitHub can delay or drop scheduled runs; changing cron
+# syntax is not a guarantee. The backup is an external timer calling the
+# workflow_dispatch API with trigger_source=cron (Instructions/AUTO-RUN.md).
+# Both automatic paths are live and capped at 100 new tracks per run.
+# Native times: 02:15/08:15/14:15/20:15 UTC = 07:45/13:45/19:45/01:45 Sri Lanka.
+# Quota rollover uses the Pacific date in code, independently of these times.
 on:
   schedule:
     - cron: "15 2,8,14,20 * * *"
   workflow_dispatch:
     inputs:
+      trigger_source:
+        description: "Keep manual for a normal run; the external timer sends cron (live, 100 new tracks)"
+        type: choice
+        options: [manual, cron]
+        default: manual
       dry_run:
         description: "Dry run: preview only (respects max_tracks), writes nothing"
         type: boolean
@@ -87,7 +92,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Reset the state DB (optional)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.reset != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.trigger_source != 'cron' && inputs.reset != '' }}
         env:
           # The input is text a human types: pass it through the environment,
           # never interpolate it into the script (shell injection), and let the
@@ -221,7 +226,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fill source cache
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.fill_cache }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.trigger_source != 'cron' && inputs.fill_cache }}
         env:
           SPOTIFY_COOKIE: ${{ secrets.SPOTIFY_COOKIE }}
           SPOTIFY_COOKIE_2: ${{ secrets.SPOTIFY_COOKIE_2 }}
@@ -242,7 +247,7 @@ jobs:
       #     this run do", readable on a phone without scrolling 2,000 lines.
       - name: Run sync
         id: sync
-        if: ${{ !inputs.fill_cache }}
+        if: ${{ inputs.trigger_source == 'cron' || !inputs.fill_cache }}
         env:
           # Source playlists come from the committed "Scoure playlist.txt" file
           # (auto-detected next to config.json), NOT a secret. Edit that file to
@@ -331,10 +336,10 @@ jobs:
           SPOTIFY_TOTP_CIPHER: ${{ secrets.SPOTIFY_TOTP_CIPHER }}
           SPOTIFY_WEB_TOKEN: ${{ secrets.SPOTIFY_WEB_TOKEN }}
           SPOTIFY_ENCRYPTED_TOKEN: ${{ secrets.SPOTIFY_ENCRYPTED_TOKEN }}
-          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
-          # Scheduled runs are paced: 100 tracks/run x 4 runs/day. Manual runs
-          # keep the dispatch input (0 = unlimited).
-          MAX_TRACKS_PER_RUN: ${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}
+          DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && 'false' || inputs.dry_run }}
+          # Native cron and the external timer are paced: 100 new tracks/run.
+          # Ordinary manual runs keep the dispatch input (0 = unlimited).
+          MAX_TRACKS_PER_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && '100' || inputs.max_tracks }}
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
           YOUTUBE_WRITES_ONLY: ${{ inputs.writes_only }}
@@ -384,7 +389,7 @@ jobs:
         # throttled run had to park, so it is never silently forgotten. It also
         # prints the write receipt (`sent → landed`), which is the only visible
         # trace of an accepted-but-absent write — so it must not be skipped.
-        if: ${{ always() && !inputs.fill_cache }}
+        if: ${{ always() && (inputs.trigger_source == 'cron' || !inputs.fill_cache) }}
         run: |
           {
             echo "### 📋 Spotify backlog"
@@ -411,7 +416,7 @@ jobs:
           done
 
       - name: Keep the run log
-        if: ${{ always() && !inputs.fill_cache }}
+        if: ${{ always() && (inputs.trigger_source == 'cron' || !inputs.fill_cache) }}
         uses: actions/upload-artifact@v4
         with:
           name: sync-log-${{ github.run_number }}
@@ -427,12 +432,14 @@ jobs:
           YOUTUBE_FREE_SEARCH_PAUSE: ${{ inputs.free_search_pause }}
           SEARCH_RESULTS_PER_QUERY: ${{ inputs.results_per_query }}
           SPOTIFY_BACKEND: ${{ inputs.backend }}
-          EFFECTIVE_DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
-          EFFECTIVE_MAX_TRACKS: ${{ github.event_name == 'schedule' && '100' || inputs.max_tracks }}
+          EFFECTIVE_DRY_RUN: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && 'false' || inputs.dry_run }}
+          EFFECTIVE_MAX_TRACKS: ${{ (github.event_name == 'schedule' || inputs.trigger_source == 'cron') && '100' || inputs.max_tracks }}
+          RUN_TRIGGER: ${{ github.event_name == 'schedule' && 'GitHub cron' || inputs.trigger_source == 'cron' && 'external timer' || 'manual' }}
         run: |
           {
             echo "### ⏱ Wall clock"
             echo ""
+            echo "- trigger: **${RUN_TRIGGER}**"
             echo "- started: $(date -u -d @$SYNC_STARTED '+%H:%M:%S') UTC"
             echo "- finished: $(date -u '+%H:%M:%S') UTC"
             echo "- took: $(( $(date -u +%s) - SYNC_STARTED ))s"
@@ -453,7 +460,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.dry_run != true) }}
+        if: ${{ always() && (github.event_name == 'schedule' || inputs.trigger_source == 'cron' || inputs.dry_run != true) }}
         run: |
           git config user.name "phonk-sync-bot"
           git config user.email "actions@github.com"
