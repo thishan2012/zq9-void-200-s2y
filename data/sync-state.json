@@ -116,22 +116,22 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 100,
-        "units": 5013
+        "inserts": 101,
+        "units": 5068
       }
     },
     "date": "2026-11-10",
-    "inserts": 100,
+    "inserts": 101,
     "keys": {
       "0": 428
     },
     "searches": 3,
-    "units_used": 5441
+    "units_used": 5496
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-10T22:14:31+00:00"
+    "manual_cleared_at": "2026-11-10T22:37:49+00:00"
   },
   "stats": {
     "methods": {
@@ -216,8 +216,8 @@
         "won": 0
       },
       "STRICT": {
-        "tried": 212,
-        "won": 32
+        "tried": 213,
+        "won": 33
       },
       "SUFFIX": {
         "tried": 19,
@@ -248,8 +248,8 @@
         "won": 0
       }
     },
-    "runs": 10,
-    "total_added": 208
+    "runs": 11,
+    "total_added": 209
   },
   "synced": {
     "06ZdagcN7jWwnFKSVkKcaH": {
@@ -1408,6 +1408,21 @@
       "spotify_id": "2h4amIvI8Qi2k7IFK3igKZ",
       "youtube_added": true,
       "youtube_video_id": "iP0M1epI5W8"
+    },
+    "2kxy9kAJvnTFrtWKl2kXIj": {
+      "added_at": "2026-11-10T22:37:49+00:00",
+      "artists": [
+        "DJ Javi26",
+        "SASORIIXPP"
+      ],
+      "family": "montagem merzyn::djjavi26",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM MERZYN - Slowed",
+      "spotify_added": true,
+      "spotify_id": "2kxy9kAJvnTFrtWKl2kXIj",
+      "youtube_added": true,
+      "youtube_video_id": "rd2r2mOZeos"
     },
     "2l7QXN42ZTsRUCih83ClRB": {
       "added_at": "2026-11-10T16:38:53+00:00",
@@ -3735,7 +3750,7 @@
       "tries": 1
     }
   },
-  "updated_at": "2026-11-10T22:14:42+00:00",
+  "updated_at": "2026-11-10T22:38:00+00:00",
   "version": 1,
   "version_duplicates": {
     "00Cp8KiC8Y6chEQN87jTxz": {
