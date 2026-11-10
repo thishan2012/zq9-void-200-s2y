@@ -102,22 +102,22 @@
     "accounts": {
       "0": {
         "exhausted": false,
-        "inserts": 99,
-        "units": 4953
+        "inserts": 100,
+        "units": 5008
       }
     },
     "date": "2026-11-10",
-    "inserts": 99,
+    "inserts": 100,
     "keys": {
-      "0": 417
+      "0": 418
     },
     "searches": 3,
-    "units_used": 5370
+    "units_used": 5426
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-10T16:46:50+00:00"
+    "manual_cleared_at": "2026-11-10T21:59:51+00:00"
   },
   "stats": {
     "methods": {
@@ -154,7 +154,7 @@
         "won": 0
       },
       "DETAIL": {
-        "tried": 175,
+        "tried": 176,
         "won": 0
       },
       "DUR+VER": {
@@ -178,12 +178,12 @@
         "won": 0
       },
       "LOOSE": {
-        "tried": 178,
+        "tried": 179,
         "won": 4
       },
       "REVERSED": {
-        "tried": 175,
-        "won": 145
+        "tried": 176,
+        "won": 146
       },
       "SHORT": {
         "tried": 4,
@@ -202,7 +202,7 @@
         "won": 0
       },
       "STRICT": {
-        "tried": 210,
+        "tried": 211,
         "won": 32
       },
       "SUFFIX": {
@@ -234,8 +234,8 @@
         "won": 0
       }
     },
-    "runs": 8,
-    "total_added": 206
+    "runs": 9,
+    "total_added": 207
   },
   "synced": {
     "06ZdagcN7jWwnFKSVkKcaH": {
@@ -875,6 +875,22 @@
       "spotify_id": "1W2bnvPTvvTPEmAzegyVr6",
       "youtube_added": true,
       "youtube_video_id": "9d6jwvvUQcw"
+    },
+    "1du8PsDeGAzhPGXwOeOAYM": {
+      "added_at": "2026-11-10T21:59:51+00:00",
+      "artists": [
+        "EnØch",
+        "CRVNER",
+        "PEDRINK9XL"
+      ],
+      "family": "montagem ambra::enoch",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM AMBRA",
+      "spotify_added": true,
+      "spotify_id": "1du8PsDeGAzhPGXwOeOAYM",
+      "youtube_added": true,
+      "youtube_video_id": "JqYcvtDsqsg"
     },
     "1ijCmRHVjQ1vgY0fPvHXIO": {
       "added_at": "2026-11-10T02:57:11+00:00",
@@ -3654,7 +3670,7 @@
       "tries": 1
     }
   },
-  "updated_at": "2026-11-10T16:47:02+00:00",
+  "updated_at": "2026-11-10T22:00:02+00:00",
   "version": 1,
   "version_duplicates": {
     "00Cp8KiC8Y6chEQN87jTxz": {
