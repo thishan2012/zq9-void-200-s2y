@@ -78,8 +78,13 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # A queued run may have been triggered before the previous run committed
+      # its state. Resolve the selected branch when this job starts, not at
+      # dispatch, so serialized runs read its latest committed DB and cache.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
