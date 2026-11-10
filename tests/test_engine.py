@@ -2134,3 +2134,17 @@ def test_fresh_cache_not_refreshed_after_snapshot_failure(monkeypatch, cfg):
     report = engine_mod.RunReport()
     assert [t.id for t in engine._collect_source_tracks(report)] == [track.id]
     assert report.cached_sources == 1
+
+
+def test_failed_youtube_search_is_not_saved_as_unmatched(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    yt = EngineYouTube()
+    def broken_search(*args, **kwargs):
+        raise RuntimeError("network unavailable")
+    yt.search = broken_search
+    eng = build_engine(monkeypatch, cfg, spotify, yt)
+    report = eng.run()
+    assert report.skipped == 1 and report.unmatched == 0
+    assert eng.state.unmatched_tries(track.id) == 0
+    assert not eng.state.get_synced(track.id)

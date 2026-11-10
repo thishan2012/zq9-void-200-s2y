@@ -1990,7 +1990,7 @@ class SyncEngine:
                 )
             if result is None:
                 # "unmatched" and "we ran out of search budget" are different:
-                # the first means the song is probably not on YouTube, the second
+                # the first means no candidate passed verification, the second
                 # means it was never really tried. Do not mark it unmatched —
                 # otherwise the retry policy defers it for days.
                 budget_hit = self._search_budget_exhausted()
@@ -2005,7 +2005,7 @@ class SyncEngine:
                     pass  # already summarised as "budget ran out"; not a failure
                 else:
                     report.failed_tracks.append(
-                        f"{escape(track.display())} — no YouTube match "
+                        f"{escape(track.display())} — no verified YouTube match "
                         f"({len(self.matcher.last_tried)} method(s) tried)"
                     )
                 self._remember_best_unmatched(track, report)
