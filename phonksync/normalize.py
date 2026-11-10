@@ -101,8 +101,24 @@ def extract_version(text: str) -> frozenset[str]:
     return frozenset(found)
 
 
+# Intensifiers belong to the version phrase, not the song title. Require
+# whitespace (not a title separator), so "ULTRA - Slowed" keeps its title.
+_INTENSIFIED_RATE_RE = re.compile(
+    r"\b(ultra|super|mega|hyper|extra|extremely|very|slightly|semi)\s+"
+    r"(slowed|sped[\s\-_]?up|speed[\s\-_]?up|faster)\b", re.I,
+)
+
+
+def version_intensities(text: str) -> frozenset[tuple[str, str]]:
+    """Preserve speed modifiers so Slowed is not mistaken for Ultra Slowed."""
+    return frozenset(
+        ("slowed" if m.group(2).lower() == "slowed" else "sped_up", m.group(1).lower())
+        for m in _INTENSIFIED_RATE_RE.finditer(text or "")
+    )
+
+
 def strip_version(text: str) -> str:
-    out = text or ""
+    out = _INTENSIFIED_RATE_RE.sub(" ", text or "")
     for _, pat in _VERSION_PATTERNS:
         out = pat.sub(" ", out)
     return out

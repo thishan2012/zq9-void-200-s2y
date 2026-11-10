@@ -71,6 +71,7 @@ class MatchContext:
     first_results: list[str] = field(default_factory=list)
     searched: set[str] = field(default_factory=set)
     searches_used: int = 0
+    search_errors: list[str] = field(default_factory=list)
     free_queries: list[str] = field(default_factory=list)
 
     def add(self, candidates: list[Candidate]) -> None:
@@ -107,6 +108,15 @@ class Matcher:
     # ------------------------------------------------------------- searching
 
     def _search(self, ctx: MatchContext, query: str) -> list[Candidate]:
+        try:
+            return self._search_impl(ctx, query)
+        except QuotaExceeded:
+            raise
+        except Exception as exc:
+            ctx.search_errors.append(str(exc) or type(exc).__name__)
+            raise
+
+    def _search_impl(self, ctx: MatchContext, query: str) -> list[Candidate]:
         query = " ".join(query.split())
         if not query or query in ctx.searched:
             return []
@@ -588,16 +598,19 @@ class Matcher:
         ]
 
     def _free_pass(self, ctx: MatchContext) -> MatchResult | None:
-        """Spend nothing first: the same pipeline over zero-quota results.
+        """Search and verify the first query with zero-quota page results.
 
-        YouTube's public search page costs no API units, so its results are put
-        in the pool before any metered search. A match here is exactly as
-        verified as any other (same verifiers), it just costs no quota.
+        Only pool-only checks run here: search-producing fallback methods run
+        later, so this pass never makes API searches or reports them as free.
         """
         free = getattr(self.yt, "free_search_ids", None)
         if free is None:
             return None
         t = ctx.track
+        # A user override must remain authoritative and may need an API lookup;
+        # let the normal pipeline handle it rather than calling it "free".
+        if self.overrides.lookup(t):
+            return None
         query = f"{t.primary_artist} {t.name}".strip()
         if not query:
             return None
@@ -611,9 +624,6 @@ class Matcher:
                 return None
             self.cache.put_query(key, ids)
             ctx.free_queries.append(query)
-        # The results are already in the pool: do not pay 100 units to fetch the
-        # same query again from the API when a method asks for it.
-        ctx.searched.add(query)
         found, missing = self.cache.get_videos(ids)
         free_videos = getattr(self.yt, "free_videos", None)
         if missing and free_videos is not None:
@@ -622,14 +632,26 @@ class Matcher:
             found = found + fetched
         if not found:
             return None
+        # The same free results are already in the pool; other queries remain
+        # eligible for the normal pipeline. Metadata fetch failure above must
+        # not suppress a later API-backed attempt.
+        ctx.searched.add(query)
         by_id = {c.video_id: c for c in found}
         ordered = [by_id[vid] for vid in ids if vid in by_id]
         ctx.add(ordered)
         if not ctx.first_results:
             ctx.first_results = list(ids)
-        for code, fn in self.pipeline():
+        # These methods inspect the pool only. Running the full pipeline here
+        # caused later methods to issue API searches while reporting free=True.
+        pool_checks = [
+            ("STRICT", lambda: self._pick_verified(ctx, 1.0, False)),
+            ("LOOSE", lambda: self._pick_verified(ctx, 0.85, False)),
+            ("LINKED", lambda: self.m_linked(ctx)),
+            ("ISRC", lambda: self.m_isrc(ctx)),
+        ]
+        for code, fn in pool_checks:
             try:
-                hit = fn(ctx)
+                hit = fn()
             except NotApplicable:
                 continue
             except QuotaExceeded:
@@ -637,8 +659,8 @@ class Matcher:
             except Exception as exc:  # a broken step must not kill the run
                 log.warning("Free method %s failed for %s: %s", code, ctx.track.id, exc)
                 hit = None
-            self.last_tried.append(code)
             if hit:
+                self.last_tried.append(code)
                 self.last_won = code
                 return MatchResult(
                     candidate=hit, method=code, tried=list(self.last_tried), free=True
@@ -668,4 +690,9 @@ class Matcher:
                 self.last_won = code
                 return MatchResult(candidate=hit, method=code, tried=list(self.last_tried))
         self.last_pool = ctx.candidates()
+        if ctx.search_errors:
+            # A transport/API failure is not proof that no matching video exists.
+            # Let the engine report a retryable error instead of deferring it as
+            # an unmatched song for seven days.
+            raise RuntimeError("YouTube search or metadata failed: " + ctx.search_errors[0][:160])
         return None
