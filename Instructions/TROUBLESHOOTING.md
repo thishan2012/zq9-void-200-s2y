@@ -843,12 +843,13 @@ Read the summary line the run prints now:
 ```
 
 * **`the player queue was refused`** → the queue endpoint (`me/player/queue`) is
-  Premium-only. A free account answers 403/404, the engine falls back to direct
-  playlist writes, and those are throttled harder. Set
-  `SPOTIFY_WRITE_MODE=direct`.
-* **`1 write(s), N request(s)`** → how much of the run's Web API budget was
-  already spent before the first write. Raise `SPOTIFY_MAX_REQUESTS_PER_RUN` or
-  lower `REQUEST_DELAY_SECONDS`, or read playlists from the web-player route.
+  Premium-only. The repository now uses direct writes by default, so free
+  accounts do not make this call. Local users can also set
+  `SPOTIFY_WRITE_MODE=direct`; queue mode is an explicit Premium-only option.
+* **`1 write(s), N request(s)`** → counts reported by the Spotify client. A
+  real Spotify 429 is an upstream limit; raising local budgets or making faster
+  requests cannot remove it and can make throttling worse. A cached source read
+  may be stale and miss recent source changes; its age is shown in the warning.
 * **Parked tracks are not lost.** They are flushed in **one batch at the start
   of the next run** (`♻️ Added N track(s) an earlier run had to park`) — before
   anything can throttle the run again — and they stay in

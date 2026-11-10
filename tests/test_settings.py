@@ -206,3 +206,14 @@ def test_duplicate_links_in_the_file_are_deduplicated(monkeypatch, tmp_path):
         encoding="utf-8")
     cfg = Config.load(tmp_path / "config.json")
     assert cfg.spotify_source_playlists == ["37i9dQZF1DXcBWIGoYBM5M"]
+
+
+def test_spotify_write_mode_defaults_direct_and_env_override(monkeypatch, tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"spotify_write_mode": "queue"}', encoding="utf-8")
+    assert Config().spotify_write_mode == "direct"
+    monkeypatch.setenv("SPOTIFY_WRITE_MODE", " direct ")
+    assert Config.load(path).spotify_write_mode == "direct"
+    monkeypatch.setenv("SPOTIFY_WRITE_MODE", "wrong")
+    with pytest.raises(ConfigError):
+        Config.load(path)

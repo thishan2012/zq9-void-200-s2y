@@ -20,7 +20,7 @@
   "dry_run": false,
   "require_youtube_match_for_spotify": false,
   "youtube_region_code": "US",
-  "spotify_write_mode": "queue",
+  "spotify_write_mode": "direct",
   "spotify_queue_flush_size": 40,
   "spotify_request_delay_seconds": 2,
   "spotify_max_requests_per_run": 40,

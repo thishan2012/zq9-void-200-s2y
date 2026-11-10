@@ -1906,7 +1906,7 @@ def test_the_short_message_is_a_clickable_receipt_not_a_wall_of_counters():
     assert "https://open.spotify.com/playlist/6YBLs3ihGXHCSAESWGRML4" in text
     assert "▶️ YouTube playlist — test" in text
     assert "https://www.youtube.com/playlist?list=PLZN2mokux__I" in text
-    assert "➕ Added: <b>1</b> | ⏭ Skipped: 2 | ✅ Failed: 0" in text
+    assert "➕ Added: <b>1</b> | ⏭ Skipped: 0 | ✅ Failed: 0" in text
     assert "today 3/195" in text
     # the noise stays out of the short message...
     for noise in ("Methods:", "Spotify backend:", "Cached playlist reads",
@@ -1998,3 +1998,89 @@ def test_verbose_summary_env_switch_sends_the_full_report(monkeypatch, cfg):
     eng.run()
     assert "Sync run finished" in eng.telegram.last_summary
     assert "SYNC: SUCCESS" not in eng.telegram.last_summary
+
+
+def test_known_tracks_and_versions_are_silent_and_do_not_search_again(monkeypatch, cfg):
+    from test_versions_and_parity import _two_version_tracks, _youtube_for
+
+    slowed, ultra = _two_version_tracks()
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [slowed, ultra]})
+    youtube = _youtube_for("MONTAGEM MANADO - Slowed", "vidMANADO01")
+    first = build_engine(monkeypatch, cfg, spotify, youtube)
+    first.run()
+    saved_version = dict(first.state.version_duplicate_entry(ultra.id))
+
+    second = build_engine(monkeypatch, cfg, spotify, youtube)
+    second.matcher.match = lambda track: (_ for _ in ()).throw(
+        AssertionError("known track must not be searched")
+    )
+    report = second.run()
+    assert report.added == 0
+    assert report.skipped_total() == 0
+    assert second.state.get_synced(slowed.id)["youtube_added"]
+    assert second.state.version_duplicate_entry(ultra.id) == saved_version
+    for text in (report.summary_text(), report.verbose_summary_text(),
+                 "\n".join(second.telegram.messages)):
+        assert "already synced" not in text.lower()
+        assert "other version" not in text.lower()
+        assert "ultra slowed" not in text.lower()
+
+
+def test_saved_youtube_match_retried_without_search(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]}, target_ids={track.id})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    eng.state.mark_synced(track, "vidSAVED001", "STRICT", True, False)
+    # Simulate a match still waiting beyond the initial pending-write batch.
+    eng._flush_pending_youtube = lambda report: None
+    eng.matcher.match = lambda track: (_ for _ in ()).throw(
+        AssertionError("saved match must not be searched again")
+    )
+    report = eng.run()
+    assert report.failed_total() == 0
+    assert youtube.inserted == ["vidSAVED001"]
+    assert eng.state.get_synced(track.id)["youtube_added"]
+    assert spotify.added == []
+
+
+def test_local_spotify_read_budget_is_not_reported_as_429(monkeypatch, cfg):
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    youtube = EngineYouTube()
+    eng = build_engine(monkeypatch, cfg, spotify, youtube)
+    eng._web_api_budget_left = lambda: False
+    eng._read_pathfinder = lambda *a, **kw: []
+    eng._read_public_playlist = lambda *a, **kw: []
+    report = eng.run()
+    assert not report.spotify_throttled
+    assert "429" not in report.summary_text()
+
+
+def test_direct_write_never_calls_premium_queue(monkeypatch, cfg):
+    track = make_track(id="track000000000000000001")
+    cfg.spotify_write_mode = "direct"
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: [track]})
+    spotify.queue_supported = True
+    spotify.queue_track = lambda uri: (_ for _ in ()).throw(
+        AssertionError("direct mode must not use the Premium queue")
+    )
+    youtube = EngineYouTube(
+        catalog={"vid00000001": make_candidate(
+            "vid00000001", "Nulteex - MONTAGEM MIAU", channel="Nulteex - Topic")},
+        search_map={"nulteex montagem miau": ["vid00000001"]},
+    )
+    report = build_engine(monkeypatch, cfg, spotify, youtube).run()
+    assert report.added == 1
+    assert spotify.added == [track.uri]
+    assert youtube.inserted == ["vid00000001"]
+
+
+def test_real_spotify_rate_limit_still_reported(monkeypatch, cfg):
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.playlist_track_ids = lambda _: (_ for _ in ()).throw(RateLimited(60, "429"))
+    eng = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    eng._read_pathfinder = lambda *a, **kw: []
+    eng._read_public_playlist = lambda *a, **kw: []
+    report = eng.run()
+    assert report.spotify_throttled
+    assert "429" in report.summary_text()
