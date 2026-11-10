@@ -404,3 +404,13 @@ def test_github_only_guide_is_honest_about_the_shared_scheduler():
     assert "`45 2,8,14,20 * * *`" in guide
     assert "02:15 / 08:15 / 14:15 / 20:15" in guide
     assert "live" in guide and "100" in guide
+
+
+def test_sync_serializes_runs_and_starts_main_with_latest_committed_state():
+    doc = _load("sync.yml")
+    assert doc["concurrency"] == {"group": "phonk-sync", "cancel-in-progress": False}
+    checkout = _steps(doc)["Checkout"]
+    assert checkout["with"]["ref"] == "${{ github.ref }}"
+    commit_script = _steps(doc)["Commit sync state"]["run"]
+    assert "git push" in commit_script
+    assert "--force" not in commit_script
