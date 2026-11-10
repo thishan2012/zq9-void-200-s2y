@@ -1,10 +1,10 @@
-# 4 track(s) skipped: another version of the same song was already added (2026-11-10T03:08:07+00:00).
+# 20 track(s) skipped: another version of the same song was already added (2026-11-10T16:47:02+00:00).
 # The FIRST version found wins. To reconsider them, run the workflow
 # with reset = versions (or reset = all to start completely over).
 
-SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - Nightcore
+SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - SLOWED
          kept instead: SOMBRA AZUL
-         https://open.spotify.com/track/6yT2DoctJWbWkQ0xAC73IF
+         https://open.spotify.com/track/0eQKjrc1h5a5czPhfgzcCq
 
 SKIPPED  ASTXR, MC ETERNA - TURAN 2
          kept instead: TURAN 2 - Slowed
@@ -14,7 +14,71 @@ SKIPPED  Dynamiqs., TSVKI - DOWNPOUR FUNK - Slowed
          kept instead: DOWNPOUR FUNK
          https://open.spotify.com/track/4TyrbzmvU0FMpdUOeV7L4k
 
-SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - SLOWED
+SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - Nightcore
          kept instead: SOMBRA AZUL
-         https://open.spotify.com/track/0eQKjrc1h5a5czPhfgzcCq
+         https://open.spotify.com/track/6yT2DoctJWbWkQ0xAC73IF
+
+SKIPPED  Dynamiqs., TSVKI - DOWNPOUR FUNK - Sped Up
+         kept instead: DOWNPOUR FUNK
+         https://open.spotify.com/track/26jBSXDX6E1vXUfA1XjR3X
+
+SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE
+         kept instead: FUNK MONOCLE - Super Slowed
+         https://open.spotify.com/track/7gSJvBqhQHk930oLcbrqod
+
+SKIPPED  cape, MXSTERIXD, Tonzão - MONTAGEM RITMADA - Super Slowed
+         kept instead: MONTAGEM RITMADA - Ultra Slowed
+         https://open.spotify.com/track/2qULNclT3J4EXVwh44O5EU
+
+SKIPPED  cape, MXSTERIXD, Tonzão - MONTAGEM RITMADA - Slowed
+         kept instead: MONTAGEM RITMADA - Ultra Slowed
+         https://open.spotify.com/track/3iDSf2Bfr4Rkf3RUJPDyLb
+
+SKIPPED  Atic - MONTAGEM CEINTA - Slowed
+         kept instead: MONTAGEM CEINTA - Super Slowed
+         https://open.spotify.com/track/0VGmHgIiuqjSklJuq407Pv
+
+SKIPPED  LXNGVX, Nakama - DEIXA CAIR - ULTRA SLOWED
+         kept instead: DEIXA CAIR
+         https://open.spotify.com/track/16y88pcoMOPqRmM6ZenskY
+
+SKIPPED  Avenxir, SUNJI - MONTAGEM GUERREIRO
+         kept instead: MONTAGEM GUERREIRO - Slowed
+         https://open.spotify.com/track/7pjRwFOevoURAlBRUtTLDd
+
+SKIPPED  DJ V12, SXID - FUNK ABNORMAL
+         kept instead: FUNK ABNORMAL - SLOWED
+         https://open.spotify.com/track/36Ii9D5SBajs7xbUEXVNbX
+
+SKIPPED  ICEDMANE, DYSMANE - FUNK SERENO - SLOWED
+         kept instead: FUNK SERENO
+         https://open.spotify.com/track/5Y5NUAnVqru8HUUx4Yrli0
+
+SKIPPED  SCHWVFTY - MONTAGEM THRONUS
+         kept instead: MONTAGEM THRONUS - Ultra Slowed
+         https://open.spotify.com/track/5tujvM6ewXLym0qYO44nLb
+
+SKIPPED  h6itam, Penkramin, SNYSTA - MONTAGEM VALKARO - Slowed
+         kept instead: MONTAGEM VALKARO
+         https://open.spotify.com/track/1HOfVRxlZSrRxwdU9khv6p
+
+SKIPPED  Dj Samir, DJ David MM - TAPA TOMA
+         kept instead: TAPA TOMA
+         https://open.spotify.com/track/3GvbQVBRYHMfUlNzoiAElD
+
+SKIPPED  DJ Javi26, SASORIIXPP, null - MONTAGEM SIGNAL - Super Slowed
+         kept instead: MONTAGEM SIGNAL
+         https://open.spotify.com/track/4OMJPxXeoxwyWTeYgqmADs
+
+SKIPPED  Irokz, Zericxxn, DJ Zarek - ROSA - Slowed
+         kept instead: ROSA
+         https://open.spotify.com/track/4Q2zn28Bo1I4ZvidsM0y21
+
+SKIPPED  DJ ALEX, MC LOCKED, Mc Delux - ESPECTRO - Slowed
+         kept instead: ESPECTRO
+         https://open.spotify.com/track/2gkzhha8GYFcAzkJ5s21oh
+
+SKIPPED  Dj Samir, Zericxxn, Nulteex - FUNK MANDALA - ULTRA SLOWED
+         kept instead: FUNK MANDALA
+         https://open.spotify.com/track/00Cp8KiC8Y6chEQN87jTxz
 
