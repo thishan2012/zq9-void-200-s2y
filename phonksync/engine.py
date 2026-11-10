@@ -131,8 +131,8 @@ class RunReport:
     youtube_daily_cap: int = 0
 
     def skipped_total(self) -> int:
-        """Everything deliberately not added (already there, other version, chosen)."""
-        return self.already_synced + self.skipped_by_choice + self.version_duplicates
+        """Only explicit user skips; known synced songs and versions are not work."""
+        return self.skipped_by_choice
 
     def failed_total(self) -> int:
         """Unmatched plus errored — the two ways a song did not make it."""
@@ -183,12 +183,8 @@ class RunReport:
             f"{'❌' if failed else '✅'} Failed: {failed}"
         )
 
-        # One line of context: what was looked at, and why most of it was skipped.
+        # Counts read from sources, not a report of the existing DB backlog.
         context = f"{self.unique_tracks} tracks · {self.sources_read} playlist(s)"
-        if self.already_synced:
-            context += f" · {self.already_synced} already synced"
-        if self.version_duplicates:
-            context += f" · {self.version_duplicates} other version(s)"
         if self.skipped_by_choice:
             context += f" · {self.skipped_by_choice} skipped by choice"
         lines.append(f"🎧 {context}")
@@ -226,8 +222,8 @@ class RunReport:
         if self.spotify_throttled:
             if self.web_player_writes:
                 lines.append(
-                    f"⚠️ Spotify rate limited (429) — added {self.web_player_writes} "
-                    "track(s) through the web player; run again to continue"
+                    f"⚠️ Spotify API rate limited (429); {self.web_player_writes} "
+                    "track(s) were added through the web player"
                 )
             elif not self.inserted and not self.added and not self.spotify_note_writes:
                 lines.append(
@@ -339,11 +335,6 @@ class RunReport:
                 f"🔁 YouTube OAuth: switched account {self.oauth_switches} time(s) "
                 f"({self.oauth_accounts} accounts configured; daily target or quota) — the run continued"
             )
-        if self.version_duplicates:
-            lines.append(
-                f"🧬 Another version of a song already added: {self.version_duplicates} "
-                "(kept the first one)"
-            )
         if self.deferred:
             lines.append(f"🕒 Deferred (retried later): {self.deferred}")
         if self.budget_skips:
@@ -351,8 +342,7 @@ class RunReport:
         if self.skipped:
             lines.append(f"⚠️ Errored: {self.skipped} (retried next run)")
         lines.append(
-            f"🎵 {self.sources_read} playlist(s), {self.unique_tracks} tracks read · "
-            f"{self.already_synced} were already synced"
+            f"🎵 {self.sources_read} playlist(s), {self.unique_tracks} tracks read"
         )
         if self.failed_tracks:
             lines.append(f"<b>Not added</b> ({len(self.failed_tracks)}):")
@@ -741,24 +731,24 @@ class SyncEngine:
         self._prework_started = time.time()
         try:
             tracks = self._collect_source_tracks(report)
-            try:
-                if not self._web_api_budget_left():
-                    raise RateLimited(message=self._web_api_note())
-                target_spotify_ids = self.spotify.playlist_track_ids(
-                    cfg.spotify_target_playlist
-                )
-            except RateLimited:
-                # Target playlist is usually ours/small; a 429 here must not
-                # kill the run. Try the public page, else trust our state file.
-                report.spotify_throttled = True
-                target_spotify_ids = set()
+            target_spotify_ids = None
+            if self._web_api_budget_left():
+                try:
+                    target_spotify_ids = self.spotify.playlist_track_ids(
+                        cfg.spotify_target_playlist
+                    )
+                except RateLimited:
+                    report.spotify_throttled = True  # Spotify reported throttling
+            if target_spotify_ids is None:
+                # Our own request budget is not a Spotify 429. Both cases use
+                # the same fallback, but only a real 429 gets a warning.
                 web_target = self._read_pathfinder(
                     cfg.spotify_target_playlist, report
                 ) or self._read_public_playlist(cfg.spotify_target_playlist, report, quiet=True)
                 if web_target:
                     target_spotify_ids = {t.id for t in web_target}
                 else:
-                    log.warning("Could not read the target playlist (429) — using state")
+                    log.warning("Could not read the target playlist — using state")
                     target_spotify_ids = {
                         k for k, v in self.state.data["synced"].items()
                         if v.get("spotify_added")
@@ -853,21 +843,15 @@ class SyncEngine:
             # Another version of a song we already added? Decide BEFORE any
             # search: it costs no YouTube quota and cannot reach either playlist.
             if cfg.dedupe_versions and not entry:
+                if self.state.is_version_duplicate(track.id):
+                    report.version_duplicates += 1
+                    continue
                 key = song_family(track.name, track.artists)
                 kept = families.get(key) if key else None
                 if kept and kept.get("spotify_id") != track.id:
                     report.version_duplicates += 1
                     if not cfg.dry_run:
                         self.state.mark_version_duplicate(track, kept)
-                    self._detail(
-                        report,
-                        f"🧬 Skipped <code>{escape(track.display())}</code> — "
-                        f"another version of <code>{escape(kept.get('name', ''))}</code> "
-                        "is already added",
-                    )
-                    continue
-                if self.state.is_version_duplicate(track.id):
-                    report.version_duplicates += 1
                     continue
 
             spotify_done = bool(entry.get("spotify_added")) or track.id in target_spotify_ids
@@ -878,7 +862,7 @@ class SyncEngine:
                 continue
 
             # Retry policy for previously unmatched tracks.
-            if not youtube_done and self._deferred(track):
+            if not youtube_done and not entry.get("youtube_video_id") and self._deferred(track):
                 report.deferred += 1
                 continue
 
@@ -1399,7 +1383,7 @@ class SyncEngine:
     def _add_spotify(self, track: Track, target_ids: set[str], report: RunReport) -> bool:
         """Add one track to the Spotify target, cheaply.
 
-        In ``queue`` mode (default) the track is parked in the player queue and
+        In optional ``queue`` mode the track is parked in the player queue and
         the queue is flushed into the playlist in batches: Spotify then
         de-duplicates server side, so a 200-track run costs ~5 calls instead of
         200. Any queue failure falls back to a normal add, so nothing is lost.
@@ -1975,7 +1959,9 @@ class SyncEngine:
         video_id = entry.get("youtube_video_id", "")
         method = entry.get("method", "")
 
-        if not youtube_done:
+        # A previously validated match is durable even if a YouTube write
+        # failed or was disabled. Retry that video without spending searches.
+        if not youtube_done and not video_id:
             started = time.time()
             result = self.matcher.match(track)
             elapsed = time.time() - started

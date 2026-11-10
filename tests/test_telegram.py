@@ -66,5 +66,6 @@ def test_summary_lists_added_tracks_once_and_never_the_backlog():
     assert "Added: <b>2</b>" in text
     assert "Alpha — ONE" not in text
     assert "Beta — TWO" not in text
-    assert "230 already synced" in text
+    assert "230 already synced" not in text
+    assert "Skipped: 0" in text
     assert "Would add" not in text

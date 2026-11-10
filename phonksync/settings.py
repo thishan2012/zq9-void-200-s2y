@@ -225,7 +225,7 @@ class Config:
     # YouTube budget stop cannot leave Spotify running ahead of it.
     spotify_youtube_parity: bool = True
     youtube_region_code: str = "US"
-    spotify_write_mode: str = "queue"  # queue | direct  (queue = far fewer calls)
+    spotify_write_mode: str = "direct"  # queue (Premium) | direct (free accounts)
     spotify_request_delay_seconds: float = 2.0  # gap between every Spotify API call
     # Cheap reads must not eat the whole run: after this many requests (counted
     # after reading a playlist) the remaining reads use the web-player route,
@@ -302,6 +302,10 @@ class Config:
             cfg.youtube_target_playlist = os.environ["YOUTUBE_TARGET_PLAYLIST"]
         if os.environ.get("DRY_RUN", "").lower() in {"1", "true", "yes"}:
             cfg.dry_run = True
+        if os.environ.get("SPOTIFY_WRITE_MODE", "").strip():
+            cfg.spotify_write_mode = os.environ["SPOTIFY_WRITE_MODE"].strip().lower()
+        if cfg.spotify_write_mode not in {"direct", "queue"}:
+            raise ConfigError("spotify_write_mode must be direct or queue")
         if os.environ.get("MAX_SEARCHES_PER_RUN"):
             cfg.max_searches_per_run = int(os.environ["MAX_SEARCHES_PER_RUN"])
         pause = _env_number("YOUTUBE_FREE_SEARCH_PAUSE", 0.0, 10.0)
