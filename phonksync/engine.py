@@ -994,10 +994,14 @@ class SyncEngine:
                 # the playlist has not changed (this is what keeps us under the
                 # Spotify rate limit on repeat runs).
                 snapshot_fn = getattr(self.spotify, "playlist_snapshot", None)
-                try:
-                    snapshot = snapshot_fn(playlist_id) if snapshot_fn else ""
-                except Exception:
-                    snapshot = ""
+                # Do not probe the Web API again once it is blocked or our
+                # request budget is exhausted. The player may still read.
+                if (snapshot_fn and self._web_api_budget_left()
+                        and getattr(self.spotify, "blocked_until", 0.0) <= time.time()):
+                    try:
+                        snapshot = snapshot_fn(playlist_id)
+                    except Exception:
+                        snapshot = ""
                 if cached["snapshot"] and snapshot == cached["snapshot"]:
                     tracks = cached["tracks"]
                     report.cached_sources += 1
@@ -1008,6 +1012,14 @@ class SyncEngine:
                     self.source_cache.allow_stale and bool(cached)
                 )
                 if not snapshot and usable and not self.source_cache.fresh(playlist_id):
+                    # A failed Web API snapshot does not mean the web-player
+                    # route is unavailable. Try it before replaying stale data;
+                    # a successful read refreshes the cache for the next run.
+                    live_tracks = self._read_pathfinder(playlist_id, report)
+                    if live_tracks:
+                        self._merge_tracks(seen, live_tracks, playlist_id, read_limit)
+                        report.sources_read += 1
+                        continue
                     age = self.source_cache.age_hours(playlist_id)
                     self.telegram.warn(
                         f"♻️ Spotify did not answer for <code>{playlist_id}</code> — replaying "

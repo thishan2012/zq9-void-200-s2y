@@ -2084,3 +2084,53 @@ def test_real_spotify_rate_limit_still_reported(monkeypatch, cfg):
     report = eng.run()
     assert report.spotify_throttled
     assert "429" in report.summary_text()
+
+
+def test_failed_snapshot_refreshes_stale_cache_via_player(monkeypatch, cfg):
+    old = make_track(id="old00000000000000000001", name="Old Song")
+    new = make_track(id="new00000000000000000001", name="New Song")
+    _cache_with(monkeypatch, cfg, [old], age_hours=44)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.playlist_snapshot = lambda pid: (_ for _ in ()).throw(RateLimited(30, "429"))
+    spotify._pathfinder_tracks = lambda pid: [old, new]
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    report = engine_mod.RunReport()
+    result = engine._collect_source_tracks(report)
+    assert [t.id for t in result] == [old.id, new.id]
+    assert report.stale_reads == 0
+    assert report.web_reads == 1
+    assert [t.id for t in engine.source_cache.get(cfg.spotify_source_playlists[0])["tracks"]] == [old.id, new.id]
+    assert engine.source_cache.fresh(cfg.spotify_source_playlists[0])
+    assert not any("replaying" in m for m in engine.telegram.messages)
+
+
+def test_failed_player_preserves_stale_cache_and_warns(monkeypatch, cfg):
+    old = make_track(id="old00000000000000000001")
+    _cache_with(monkeypatch, cfg, [old], age_hours=44)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.blocked_until = time.time() + 1800
+    spotify.playlist_snapshot = lambda pid: (_ for _ in ()).throw(
+        AssertionError("do not re-probe a blocked Spotify API")
+    )
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda pid, report: [])
+    report = engine_mod.RunReport()
+    result = engine._collect_source_tracks(report)
+    assert [t.id for t in result] == [old.id]
+    assert report.stale_reads == 1
+    assert not engine.source_cache.fresh(cfg.spotify_source_playlists[0])
+    assert any("replaying" in m for m in engine.telegram.messages)
+
+
+def test_fresh_cache_not_refreshed_after_snapshot_failure(monkeypatch, cfg):
+    track = make_track(id="old00000000000000000001")
+    _cache_with(monkeypatch, cfg, [track], age_hours=1)
+    spotify = FakeSpotify({cfg.spotify_source_playlists[0]: []})
+    spotify.playlist_snapshot = lambda pid: ""
+    engine = build_engine(monkeypatch, cfg, spotify, EngineYouTube())
+    monkeypatch.setattr(engine, "_read_pathfinder", lambda *a: (_ for _ in ()).throw(
+        AssertionError("fresh cached tracks should be reused")
+    ))
+    report = engine_mod.RunReport()
+    assert [t.id for t in engine._collect_source_tracks(report)] == [track.id]
+    assert report.cached_sources == 1
