@@ -1,2 +1,20 @@
-# ✅ No duplicate versions — every song appears once (2026-11-09T16:50:45+00:00).
-# This file is rewritten after every run.
+# 4 track(s) skipped: another version of the same song was already added (2026-11-10T03:08:07+00:00).
+# The FIRST version found wins. To reconsider them, run the workflow
+# with reset = versions (or reset = all to start completely over).
+
+SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - Nightcore
+         kept instead: SOMBRA AZUL
+         https://open.spotify.com/track/6yT2DoctJWbWkQ0xAC73IF
+
+SKIPPED  ASTXR, MC ETERNA - TURAN 2
+         kept instead: TURAN 2 - Slowed
+         https://open.spotify.com/track/4OXNLVyiB2eDb8ryVLxQNj
+
+SKIPPED  Dynamiqs., TSVKI - DOWNPOUR FUNK - Slowed
+         kept instead: DOWNPOUR FUNK
+         https://open.spotify.com/track/4TyrbzmvU0FMpdUOeV7L4k
+
+SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - SLOWED
+         kept instead: SOMBRA AZUL
+         https://open.spotify.com/track/0eQKjrc1h5a5czPhfgzcCq
+
