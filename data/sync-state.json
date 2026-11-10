@@ -81,6 +81,20 @@
       "spotify_id": "6k4xtGtcJwKYv91G2SZfIx",
       "title": "FUNK POSTO",
       "video_id": "zzjOv2Rcwpo"
+    },
+    "7fG2xg3uXbEa9u3yxWsxjx": {
+      "artists": [
+        "MC ETERNA",
+        "da highest"
+      ],
+      "channel": "Release - Topic",
+      "duration_s": 119,
+      "methods": 24,
+      "name": "BLESSED UP! - Ultra Slowed",
+      "seen_at": "2026-11-10T22:14:25+00:00",
+      "spotify_id": "7fG2xg3uXbEa9u3yxWsxjx",
+      "title": "BLESSED UP! (Ultra Slowed)",
+      "video_id": "2YdaNxbXqBw"
     }
   },
   "last_reset_at": "2026-11-08T15:11:23+00:00",
@@ -103,46 +117,46 @@
       "0": {
         "exhausted": false,
         "inserts": 100,
-        "units": 5008
+        "units": 5013
       }
     },
     "date": "2026-11-10",
     "inserts": 100,
     "keys": {
-      "0": 418
+      "0": 428
     },
     "searches": 3,
-    "units_used": 5426
+    "units_used": 5441
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-10T21:59:51+00:00"
+    "manual_cleared_at": "2026-11-10T22:14:31+00:00"
   },
   "stats": {
     "methods": {
       "ALBUM": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "ARTISTLESS": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       },
       "ARTISTS": {
-        "tried": 8,
+        "tried": 9,
         "won": 0
       },
       "BROKEN": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "CHANNEL": {
-        "tried": 30,
+        "tried": 31,
         "won": 11
       },
       "CLEANARTIST": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "COUNTRY": {
@@ -150,15 +164,15 @@
         "won": 1
       },
       "DESCTEXT": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "DETAIL": {
-        "tried": 176,
+        "tried": 177,
         "won": 0
       },
       "DUR+VER": {
-        "tried": 12,
+        "tried": 13,
         "won": 2
       },
       "DURATION": {
@@ -166,11 +180,11 @@
         "won": 1
       },
       "EXACT": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       },
       "FIELD": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       },
       "LINKED": {
@@ -178,11 +192,11 @@
         "won": 0
       },
       "LOOSE": {
-        "tried": 179,
+        "tried": 180,
         "won": 4
       },
       "REVERSED": {
-        "tried": 176,
+        "tried": 177,
         "won": 146
       },
       "SHORT": {
@@ -190,52 +204,52 @@
         "won": 0
       },
       "SINGLE": {
-        "tried": 22,
+        "tried": 23,
         "won": 0
       },
       "SLOWED": {
-        "tried": 5,
+        "tried": 6,
         "won": 0
       },
       "SONGTAG": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "STRICT": {
-        "tried": 211,
+        "tried": 212,
         "won": 32
       },
       "SUFFIX": {
-        "tried": 18,
+        "tried": 19,
         "won": 4
       },
       "TITLEONLY": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "TOPIC": {
-        "tried": 19,
+        "tried": 20,
         "won": 1
       },
       "TOPRESULT": {
-        "tried": 10,
+        "tried": 11,
         "won": 0
       },
       "UPLOADER": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       },
       "VARIANTS": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       },
       "WORDSET": {
-        "tried": 12,
+        "tried": 13,
         "won": 0
       }
     },
-    "runs": 9,
-    "total_added": 207
+    "runs": 10,
+    "total_added": 208
   },
   "synced": {
     "06ZdagcN7jWwnFKSVkKcaH": {
@@ -3219,6 +3233,21 @@
       "youtube_added": true,
       "youtube_video_id": "U8T_TwEGTWA"
     },
+    "7fG2xg3uXbEa9u3yxWsxjx": {
+      "added_at": "2026-11-10T22:14:31+00:00",
+      "artists": [
+        "MC ETERNA",
+        "da highest"
+      ],
+      "family": "blessed up!::mceterna",
+      "isrc": "",
+      "method": "",
+      "name": "BLESSED UP! - Ultra Slowed",
+      "spotify_added": true,
+      "spotify_id": "7fG2xg3uXbEa9u3yxWsxjx",
+      "youtube_added": false,
+      "youtube_video_id": ""
+    },
     "7flhGubJfpkM6YHmWAhGvv": {
       "added_at": "2026-11-10T16:33:54+00:00",
       "artists": [
@@ -3668,9 +3697,45 @@
         "TOPRESULT"
       ],
       "tries": 1
+    },
+    "7fG2xg3uXbEa9u3yxWsxjx": {
+      "artists": [
+        "MC ETERNA",
+        "da highest"
+      ],
+      "last_try": "2026-11-10T22:14:25+00:00",
+      "name": "BLESSED UP! - Ultra Slowed",
+      "spotify_id": "7fG2xg3uXbEa9u3yxWsxjx",
+      "tried_methods": [
+        "STRICT",
+        "LOOSE",
+        "DETAIL",
+        "REVERSED",
+        "SINGLE",
+        "CHANNEL",
+        "TOPIC",
+        "SUFFIX",
+        "ARTISTS",
+        "ARTISTLESS",
+        "EXACT",
+        "WORDSET",
+        "SLOWED",
+        "UPLOADER",
+        "FIELD",
+        "VARIANTS",
+        "DUR+VER",
+        "CLEANARTIST",
+        "TITLEONLY",
+        "SONGTAG",
+        "DESCTEXT",
+        "BROKEN",
+        "ALBUM",
+        "TOPRESULT"
+      ],
+      "tries": 1
     }
   },
-  "updated_at": "2026-11-10T22:00:02+00:00",
+  "updated_at": "2026-11-10T22:14:42+00:00",
   "version": 1,
   "version_duplicates": {
     "00Cp8KiC8Y6chEQN87jTxz": {
