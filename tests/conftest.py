@@ -57,8 +57,9 @@ def make_candidate(vid: str, title: str, channel: str = "Phonk Music", **kw) -> 
 
 
 @pytest.fixture(autouse=True)
-def _no_request_delay(monkeypatch):
+def _no_request_delay(monkeypatch, tmp_path):
     """Keep the suite fast: the real client waits REQUEST_DELAY_SECONDS (2s)."""
+    monkeypatch.setenv("SPOTIFY_QUOTA_FILE", str(tmp_path / "spotify-quota.json"))
     monkeypatch.setenv("REQUEST_DELAY_SECONDS", "0")
     monkeypatch.setenv("SPOTIFY_TOTP_REMOTE", "0")
 

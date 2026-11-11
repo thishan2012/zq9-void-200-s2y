@@ -1145,28 +1145,23 @@ def _state_scope_size(db: Any, scope: str) -> int:
 
 
 def cmd_cooldown(args: argparse.Namespace) -> int:
-    """Show or clear the persisted Spotify cooldown."""
+    """Show persisted server cooldowns; do not override an active 429."""
     from datetime import datetime, timezone
+    from .spotify_quota import SpotifyQuota
 
-    from .db import StateDB
-
-    cfg = Config.load(args.config)
-    db = StateDB(cfg.state_path)
-    until = db.spotify_cooldown_until()
+    guard = SpotifyQuota()
     now = time.time()
-    if args.clear:
-        db.clear_spotify_cooldown()
-        db.save()
-        print("✅ Spotify cooldown cleared — the next run will read playlists again.")
-        return 0
-    if until <= now:
+    active = [(scope, guard.until(scope)) for scope in ("web_api", "token")]
+    active = [(scope, until) for scope, until in active if until > now]
+    if args.clear and active:
+        print("❌ Spotify cooldown is active; wait until Retry-After expires.")
+        return 1
+    if not active:
         print("✅ No active Spotify cooldown.")
         return 0
-    left = int(until - now)
-    when = datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    print(f"⏳ Spotify cooldown: {left // 3600}h {(left % 3600) // 60}m left (until {when})")
-    print(f"   reason: {db.spotify.get('cooldown_reason', 'n/a')}")
-    print("   Live runs skip until then: `python -m phonksync cooldown --clear` to override.")
+    for scope, until in active:
+        when = datetime.fromtimestamp(until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        print(f"⏳ Spotify {scope} cooldown until {when}")
     return 0
 
 

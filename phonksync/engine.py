@@ -308,7 +308,7 @@ class RunReport:
             lines.extend(escape(e)[:200] for e in self.errors[:3])
         if self.cooldown_until:
             lines.append(
-                "ℹ️ Next run: "
+                "ℹ️ Spotify cooldown until: "
                 + datetime.fromtimestamp(self.cooldown_until, timezone.utc).strftime("%H:%M UTC")
             )
         return "\n".join(lines)
@@ -514,7 +514,7 @@ class RunReport:
             lines.extend(self.daily_details)
         if self.cooldown_until:
             lines.append(
-                "ℹ️ Next run: "
+                "ℹ️ Spotify cooldown until: "
                 + datetime.fromtimestamp(
                     self.cooldown_until, timezone.utc
                 ).strftime("%Y-%m-%d %H:%M UTC")
@@ -939,7 +939,7 @@ class SyncEngine:
             report.quota_reason = (
                 "Spotify asked to slow down until "
                 + datetime.fromtimestamp(blocked_until, timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                + " — this run only, nothing is stored"
+                + " — cooldown saved for later runs"
             )
             self.telegram.warn(escape(report.quota_reason))
 

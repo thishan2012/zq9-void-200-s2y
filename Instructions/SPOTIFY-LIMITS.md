@@ -18,19 +18,21 @@ That one number is the cheapest protection: 2 seconds between calls is slow enou
 to stay out of the window, and a 2,689-track playlist still finishes in a few
 minutes thanks to the caches below.
 
+```text
+429 → Retry-After > 10s or QUOTA_EXCEEDED → save cooldown → no further calls to that endpoint until expiry
+short burst → retry once → if still 429, save a conservative cooldown
 ```
-429 → backoff_seconds(Retry-After) → retry (up to 6x) → this run stops using the Web API
-(nothing is stored; the next run starts immediately on the web-player route), run exits 0
-```
-Every retry path uses `backoff_seconds()` (`phonksync/spotify.py`):
-`Retry-After` (seconds *or* HTTP-date) → exponential `2**attempt` → +jitter,
-capped. A 429 therefore **never fails the run**; it slows it down.
+The file `data/spotify-quota.json` stores separate Web API and token endpoint
+timestamps, not credentials. A Web API cooldown doesn't itself block web-player
+writes. A token cooldown can prevent fetching a new bearer token. The GitHub
+sync workflow commits the file even on dry runs; if its push fails, later runs
+will not see the update. No run is scheduled merely by a cooldown timestamp.
 
 ### The token endpoint is throttled too
 
 The *first* call of every run is the web-player token request, and Spotify
-rate-limits that too. It is now handled like any other 429: short windows are
-waited out, long ones park the run for 30 minutes, and a throttled token is
+rate-limits that too. Short windows are waited out once; long ones are saved
+until the server's Retry-After expires, and a throttled token is
 **never** reported as a broken cookie. The job also ends with exit code `0` when
 the only reason it stopped was a cooldown — a red ✗ in Actions meant "throttled",
 not "broken".
@@ -84,8 +86,7 @@ python -m phonksync proxy-test --playlist <public-playlist-id>
 * **Header mode** (`SPOTIFY_PROXY_SECRET` set): URL becomes
   `<proxy>/<absolute url>` and `x-proxy-secret` is sent, so the proxy can
   forward headers **including `Authorization` and `Cookie`** untouched.
-* The first `429` on a request **switches route** (proxy ⇄ direct) before any
-  waiting, because a different egress sometimes gets a different answer.
+* A `429` never triggers an egress or account switch to bypass the cooldown.
 * When the proxy fails (network error/5xx) the request falls back to direct —
   a broken proxy never breaks a run.
 * `Authorization`, `Cookie` and query params are preserved; the proxy must not
@@ -258,14 +259,14 @@ Prefer the old behaviour? `"spotify_write_mode": "direct"`.
 
 ```bash
 python -m phonksync cooldown          # is a Spotify cooldown active?
-python -m phonksync cooldown --clear  # override it
+python -m phonksync cooldown --clear  # refuses while a server cooldown is active
 python -m phonksync stats             # what has been synced so far
 ```
 
 ## If you get blocked anyway
 
 1. Read `Retry-After` — that is the real answer; the run already recorded it.
-2. Add a spare account cookie (`SPOTIFY_COOKIE_2`) to continue immediately.
+2. Wait until the saved cooldown expires; do not rotate accounts to bypass it.
 3. Small batches (`max_tracks=50`) plus the source cache mean the next run costs
    a handful of requests, not hundreds.
 
