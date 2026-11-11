@@ -894,3 +894,16 @@ wrong in plain words:
 | `no usable SAPISID — the SAPISID family is missing` | the header was clipped |
 | `no usable SAPISID — the value was there but empty or truncated` | present but empty |
 | `cookie ok (…, SAPISID-only (narrow …))` | auth works, but re-paste the whole header if writes 401 |
+
+## YouTube Shorts are blocked
+
+Before accepting a match or inserting a pending video, the sync checks the
+public YouTube Shorts URL. A Short is rejected and matching can continue to a
+regular video. This is a web request, not a YouTube Data API search or insert.
+A normal short-duration video is not rejected on duration alone.
+
+YouTube's Data API does not expose a dedicated Shorts flag; the URL response
+is a best-effort check and may change. If the check cannot determine the video
+type (for example a network failure, consent page or rate limit), the sync
+does **not** insert that video and reports a retryable error. The check does not
+remove Shorts already present in the target playlist.

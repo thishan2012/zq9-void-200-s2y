@@ -21,7 +21,8 @@ from typing import Any
 
 from .cache import SearchCache, SourceCache
 from .db import StateDB
-from .errors import AuthError, QuotaExceeded, RateLimited
+from .errors import (AuthError, QuotaExceeded, RateLimited, ShortVideoError,
+                     ShortsCheckUnavailable)
 from .matcher import Matcher
 from .models import Track
 from .normalize import song_family
@@ -860,6 +861,24 @@ class SyncEngine:
             if spotify_done and youtube_done:
                 report.already_synced += 1
                 continue
+
+            # A cached match may predate the Shorts guard (including entries
+            # beyond the initial pending batch). Recheck before reusing it.
+            video_id = entry.get("youtube_video_id", "")
+            check_short = getattr(self.youtube, "ensure_not_short", None)
+            if not youtube_done and video_id and check_short:
+                try:
+                    check_short(video_id)
+                except ShortVideoError:
+                    if not cfg.dry_run:
+                        entry["youtube_video_id"] = ""
+                        entry["method"] = ""
+                    else:
+                        entry = {**entry, "youtube_video_id": "", "method": ""}
+                except ShortsCheckUnavailable as exc:
+                    report.skipped += 1
+                    report.errors.append(f"{track.display()}: {exc}")
+                    continue
 
             # Retry policy for previously unmatched tracks.
             if not youtube_done and not entry.get("youtube_video_id") and self._deferred(track):
@@ -1900,6 +1919,7 @@ class SyncEngine:
         if not pending:
             return
         added = 0
+        changed = False
         for entry in pending[:50]:  # small batches: inserts cost 50 units each
             video_id = entry.get("youtube_video_id", "")
             if not video_id:
@@ -1909,8 +1929,21 @@ class SyncEngine:
                     yt.add_to_playlist(self.config.youtube_target_playlist, video_id)
                 entry["youtube_added"] = True
                 added += 1
+            except ShortVideoError:
+                # This legacy pending match was found before Shorts checks.
+                # Forget only the video match so the source can be searched
+                # again; never claim a YouTube insert or clear Spotify state.
+                entry["youtube_video_id"] = ""
+                entry["method"] = ""
+                changed = True
+                log.warning("Pending YouTube Short %s blocked; searching for a regular video", video_id)
+                continue
             except QuotaExceeded as exc:
                 report.quota_reason = str(exc)
+                break
+            except ShortsCheckUnavailable as exc:
+                report.youtube_write_problem = str(exc)
+                log.warning("Pending YouTube write deferred: %s", exc)
                 break
             except AuthError as exc:  # credential refused: stop once, not 50x
                 report.youtube_auth_failed = True
@@ -1924,9 +1957,10 @@ class SyncEngine:
             except Exception as exc:  # keep the rest for the next run
                 log.warning("Could not add pending %s: %s", video_id, exc)
                 break
+        if added or changed:
+            self.state.save()  # persist rejected legacy matches, too
         if added:
             report.pending_youtube_flushed = added
-            self.state.save()  # flush immediately: a crash must not double-add
             log.info("Added %d previously matched video(s) to the YouTube playlist", added)
 
     def _search_budget_exhausted(self) -> bool:

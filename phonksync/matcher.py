@@ -23,7 +23,7 @@ from typing import Callable
 
 from . import checks
 from .cache import SearchCache
-from .errors import NotApplicable, QuotaExceeded
+from .errors import NotApplicable, QuotaExceeded, ShortVideoError
 from .models import Candidate, MatchResult, Track
 from .normalize import (
     SEP_RE,
@@ -72,11 +72,12 @@ class MatchContext:
     searched: set[str] = field(default_factory=set)
     searches_used: int = 0
     search_errors: list[str] = field(default_factory=list)
+    rejected_shorts: set[str] = field(default_factory=set)
     free_queries: list[str] = field(default_factory=list)
 
     def add(self, candidates: list[Candidate]) -> None:
         for cand in candidates:
-            if cand.video_id not in self.pool:
+            if cand.video_id not in self.pool and cand.video_id not in self.rejected_shorts:
                 self.pool[cand.video_id] = cand
                 self.order.append(cand.video_id)
 
@@ -148,6 +149,23 @@ class Matcher:
         return ordered
 
     # ------------------------------------------------------------ verifying
+
+    def _allow_video(self, ctx: MatchContext, cand: Candidate) -> bool:
+        check = getattr(self.yt, "ensure_not_short", None)
+        if check is None:  # lightweight fake clients in offline tests
+            return True
+        try:
+            check(cand.video_id)
+            return True
+        except ShortVideoError:
+            log.info("Ignoring YouTube Short %s", cand.video_id)
+        # Unknown status is a retryable error, not evidence of a non-Short or
+        # a reason to spend many more searches during a network outage.
+        ctx.rejected_shorts.add(cand.video_id)
+        ctx.pool.pop(cand.video_id, None)
+        if cand.video_id in ctx.order:
+            ctx.order.remove(cand.video_id)
+        return False
 
     def _verify(
         self,
@@ -659,7 +677,7 @@ class Matcher:
             except Exception as exc:  # a broken step must not kill the run
                 log.warning("Free method %s failed for %s: %s", code, ctx.track.id, exc)
                 hit = None
-            if hit:
+            if hit and self._allow_video(ctx, hit):
                 self.last_tried.append(code)
                 self.last_won = code
                 return MatchResult(
@@ -686,7 +704,7 @@ class Matcher:
                 log.warning("Method %s failed for %s: %s", code, track.id, exc)
                 hit = None
             self.last_tried.append(code)
-            if hit:
+            if hit and self._allow_video(ctx, hit):
                 self.last_won = code
                 return MatchResult(candidate=hit, method=code, tried=list(self.last_tried))
         self.last_pool = ctx.candidates()

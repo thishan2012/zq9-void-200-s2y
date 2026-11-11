@@ -7,6 +7,12 @@ from phonksync.errors import AuthError, QuotaExceeded
 from phonksync.youtube import QuotaState, YouTubeClient, pacific_quota_date
 
 
+@pytest.fixture(autouse=True)
+def _skip_shorts_probe_for_existing_offline_tests(monkeypatch):
+    # These tests exercise API authentication/quota, not public-page detection.
+    monkeypatch.setattr(YouTubeClient, "ensure_not_short", lambda self, video_id: None)
+
+
 class FakeResponse:
     def __init__(self, status=200, payload=None, text=None):
         self.status_code = status
