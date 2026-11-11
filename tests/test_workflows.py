@@ -248,8 +248,9 @@ def test_the_sync_schedule_is_four_paced_runs_per_day():
     steps = _steps(doc)
     assert "github.event_name == 'workflow_dispatch'" in str(steps["Reset the state DB (optional)"]["if"])
     assert "github.event_name == 'workflow_dispatch'" in str(steps["Fill source cache"]["if"])
-    assert "github.event_name == 'schedule'" in str(steps["Commit sync state"]["if"])
-    assert "inputs.trigger_source == 'cron'" in str(steps["Commit sync state"]["if"])
+    assert "always()" in str(steps["Commit sync state"]["if"])
+    assert "github.event_name == 'schedule'" in steps["Commit sync state"]["env"]["SAVE_SYNC_STATE"]
+    assert "data/spotify-quota.json" in steps["Commit sync state"]["run"]
     runtime = steps["Run time"]
     assert runtime["env"]["EFFECTIVE_MAX_TRACKS"] == env["MAX_TRACKS_PER_RUN"]
     assert runtime["env"]["EFFECTIVE_DRY_RUN"] == env["DRY_RUN"]
@@ -293,7 +294,7 @@ def test_timer_runs_are_identifiable_even_when_the_bot_says_manual():
         "inputs.trigger_source == 'cron' && 'timer dispatch' || 'manual' }}"
     )
     assert 'echo "- trigger: **${RUN_TRIGGER}**"' in runtime["run"]
-    commit = _steps(_load("sync.yml"))["Commit sync state"]["if"]
+    commit = _steps(_load("sync.yml"))["Commit sync state"]["env"]["SAVE_SYNC_STATE"]
     assert "inputs.trigger_source == 'cron'" in commit
 
 

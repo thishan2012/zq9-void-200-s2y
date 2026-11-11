@@ -466,11 +466,15 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit sync state
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.trigger_source == 'cron' || inputs.dry_run != true) }}
+        if: ${{ always() }}
+        env:
+          SAVE_SYNC_STATE: ${{ github.event_name == 'schedule' || inputs.trigger_source == 'cron' || inputs.dry_run != true }}
         run: |
           git config user.name "phonk-sync-bot"
           git config user.email "actions@github.com"
-          if [ -f data/sync-state.json ]; then
+          # A real 429 must survive even a dry run or a failed sync/diagnostic.
+          [ -f data/spotify-quota.json ] && git add data/spotify-quota.json
+          if [ "$SAVE_SYNC_STATE" = "true" ] && [ -f data/sync-state.json ]; then
             git add data/sync-state.json
             # keep the pre-reset copy in the repo: it is the only way back
             for f in data/sync-state.json.bak-*; do [ -f "$f" ] && git add "$f"; done
@@ -479,12 +483,10 @@ jobs:
             [ -f data/collection.json ] && git add data/collection.json
             [ -f data/source-cache.json ] && git add data/source-cache.json
             [ -f data/yt-cache.json ] && git add data/yt-cache.json
-            if git diff --cached --quiet; then
-              echo "No state changes to commit."
-            else
-              git commit -m "chore: update sync state [skip ci]"
-              git push
-            fi
+          fi
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
           else
-            echo "No state file yet — nothing to commit."
+            git commit -m "chore: update sync state [skip ci]"
+            git push
           fi

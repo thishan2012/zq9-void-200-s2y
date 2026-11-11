@@ -353,7 +353,7 @@ def test_rate_limit_gives_up_with_helpful_message(monkeypatch):
         client.playlist_tracks("x", max_tracks=10)
     msg = str(exc.value)
     # a persistent 429 is a cooldown now, not a hard failure
-    assert "stopping early" in msg and "web-player route" in msg
+    assert "cooldown" in msg and "persisted" in msg
     assert client.blocked_until > 0
 
 
@@ -404,8 +404,8 @@ def test_partial_playlist_survives_rate_limit(monkeypatch):
 # ------------------------------------------------- cookie pool + queue mode
 
 
-def test_spare_cookies_rotate_on_long_block(monkeypatch):
-    """A long Retry-After on cookie #1 switches to cookie #2 instead of dying."""
+def test_spare_cookies_do_not_bypass_long_block(monkeypatch):
+    """A long Retry-After is honored rather than switching accounts."""
     import phonksync.spotify as sp
 
     class Resp:
@@ -441,10 +441,12 @@ def test_spare_cookies_rotate_on_long_block(monkeypatch):
     client._access_token = "t1"
     client._access_expiry = time.time() + 600
     monkeypatch.setattr(sp.SpotifyClient, "_ensure_token", lambda self: "token")
-    client.playlist_tracks("x", max_tracks=1)
+    with pytest.raises(RateLimited):
+        client.playlist_tracks("x", max_tracks=1)
     assert client.cookie_count == 2
-    assert client.cookie_switches == 1
-    assert client.blocked_until == 0.0
+    assert client.cookie_switches == 0
+    assert len(session.cookie_seen) == 1
+    assert client.blocked_until > time.time()
 
 
 def test_queue_track_then_save_batches_calls(monkeypatch):
@@ -790,7 +792,7 @@ def test_requests_go_through_the_proxy_when_configured(monkeypatch):
     assert client.proxy_used > 0 and client.direct_used == 0
 
 
-def test_429_switches_route_from_proxy_to_direct(monkeypatch):
+def test_429_does_not_switch_route_from_proxy_to_direct(monkeypatch):
     import phonksync.spotify as sp
 
     monkeypatch.setattr(sp.time, "sleep", lambda s: None)
@@ -811,10 +813,10 @@ def test_429_switches_route_from_proxy_to_direct(monkeypatch):
             return _ProxyResp(200, {"items": [], "next": None})
 
     client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=Session())
-    client.playlist_tracks("x", max_tracks=10)
-    assert len(seen) >= 2
-    assert "p.example" in seen[0] and seen[1].startswith("https://api.spotify.com/v1/")
-    assert client.proxy_used == 1 and client.direct_used >= 1
+    with pytest.raises(RateLimited):
+        client.playlist_tracks("x", max_tracks=10)
+    assert len(seen) == 2 and all("p.example" in url for url in seen)
+    assert client.proxy_used == 2 and client.direct_used == 0
 
 
 def test_token_request_sends_cookie_header_through_the_proxy(monkeypatch):
@@ -953,7 +955,7 @@ def test_token_429_forever_parks_the_run_instead_of_auth_error(monkeypatch):
     client = _token_client(monkeypatch, session)
     with pytest.raises(RateLimited) as info:
         client._ensure_token()
-    assert "throttling the token endpoint" in str(info.value)
+    assert "token endpoint" in str(info.value) and "429" in str(info.value)
     assert client.blocked_until > time.time() + 1700
 
 
@@ -1186,7 +1188,7 @@ def test_a_24h_block_is_not_retried_even_once(monkeypatch):
     assert session.calls == 1, "a multi-hour block must not be retried"
     assert sleeps == [], "nothing may be slept on a 24h block"
     assert client.blocked_until > 0
-    assert "Nothing was retried" in str(exc.value)
+    assert "persisted" in str(exc.value)
 
 
 def test_a_flapping_short_block_stops_after_two_knocks(monkeypatch):
@@ -1218,8 +1220,8 @@ def test_a_flapping_short_block_stops_after_two_knocks(monkeypatch):
     client = sp.SpotifyClient("sp_dc=" + "a" * 60, session=session)
     with pytest.raises(RateLimited):
         client.playlist_tracks("x", max_tracks=10)
-    assert session.calls == 2
-    assert sum(slept) <= 60  # one Retry-After (+jitter), not two minutes
+    assert session.calls == 1
+    assert not slept  # long Retry-After is persisted immediately
 
 
 # ------------------------------------------------ anonymous token / proxy route

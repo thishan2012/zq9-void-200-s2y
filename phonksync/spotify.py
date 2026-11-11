@@ -34,6 +34,7 @@ import requests
 
 from .errors import AuthError, NotFound, RateLimited
 from .models import Track
+from .spotify_quota import SpotifyQuota
 
 log = logging.getLogger(__name__)
 
@@ -51,9 +52,6 @@ _CLIENT_TOKEN_URL = "https://clienttoken.spotify.com/v1/clienttoken"
 _APP_VERSION = "1.3.8.461.g274622d4ef7d"
 _WEB_CLIENT_ID = os.environ.get("SPOTIFY_WEB_CLIENT_ID", "d8a5ed958d274c2e8ee717e6a4b0971d")
 _MAX_RETRIES = 6
-# A long Retry-After is an answer, not an obstacle: retrying into a 24h block
-# only burns minutes (4 retries = 117s wasted in one real run). Read it first.
-_LONG_BLOCK = 600.0
 _PAGE_SIZE = 50
 # Delay between every API request. 2s by default (REQUEST_DELAY_SECONDS env
 # overrides) — the single cheapest way to stay under the rolling window.
@@ -78,6 +76,24 @@ def _header_seconds(headers: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
 
+
+
+def _quota_wait(resp: Any) -> float:
+    """Long server cooldown or explicit quota reason; zero for short bursts."""
+    wait = _header_seconds(resp.headers)
+    if not wait:
+        try:
+            value = resp.headers.get("Retry-After", "")
+            if value:
+                wait = max(0.0, (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+        except (ValueError, TypeError, OverflowError):
+            pass
+    try:
+        error = resp.json().get("error") or {}
+        reason = error.get("reason") if isinstance(error, dict) else None
+    except (ValueError, AttributeError):
+        reason = None
+    return (wait or 3600.0) if reason == "QUOTA_EXCEEDED" or wait > 10 else 0.0
 
 def _human_duration(seconds: float) -> str:
     seconds = int(max(0, seconds))
@@ -985,7 +1001,8 @@ class SpotifyClient:
         self._queued: list[str] = []
         self.queue_saves = 0
         self.queue_supported = True
-        self.blocked_until = 0.0
+        self.quota_guard = SpotifyQuota()
+        self.blocked_until = self.quota_guard.until("web_api")
         # A Web API / token-endpoint 429 does NOT throttle the web player's own
         # endpoint (api-partner pathfinder). Only a refusal from that mutation
         # itself may close this door — otherwise a throttled Web API parks every
@@ -1064,6 +1081,7 @@ class SpotifyClient:
 
     def _token_request_once(self, use_proxy: bool) -> dict[str, Any]:
         """Ask Spotify for a web-player token, retrying the known variants."""
+        self.quota_guard.check("token")
         _refresh_totp_secrets(self.session)
         ver = _totp_version()
         server_time = _server_time(self.session)
@@ -1089,7 +1107,7 @@ class SpotifyClient:
         self.last_token_route = "proxy" if use_proxy else "direct"
         for url, params, label in attempts:
             resp = None
-            for _round in range(3):
+            for _round in range(2):
                 try:
                     resp = self._token_http(url, params, token_headers, use_proxy)
                 except requests.RequestException as exc:
@@ -1100,22 +1118,27 @@ class SpotifyClient:
                         use_proxy = False
                         continue
                     break
-                if resp.status_code == 429 and _round < 2:
+                if resp.status_code == 429:
+                    quota_wait = _quota_wait(resp)
+                    if quota_wait:
+                        self.blocked_until = self.quota_guard.block("token", quota_wait)
+                        raise RateLimited(quota_wait, "Spotify token endpoint cooldown (HTTP 429); persisted")
+                if resp.status_code == 429 and _round == 1:
+                    cooldown = _SHORT_BLOCK_COOLDOWN
+                    self.blocked_until = self.quota_guard.block("token", cooldown)
+                    raise RateLimited(cooldown, "Spotify token endpoint repeatedly returned HTTP 429; cooldown persisted")
+                if resp.status_code == 429 and _round == 0:
                     wait = _retry_after_seconds(resp.headers, _round)
                     raw_wait = _header_seconds(resp.headers) or 0.0
                     if max(wait, raw_wait) > _MAX_INLINE_WAIT:
                         wait = max(wait, raw_wait)
-                        self.blocked_until = time.time() + wait
+                        self.blocked_until = self.quota_guard.block("token", wait)
                         raise RateLimited(
                             wait,
                             f"Spotify is throttling the token endpoint for "
                             f"~{_human_duration(wait)}. Nothing was lost — the next run "
                             "resumes here, or add a spare cookie (SPOTIFY_COOKIE_2).",
                         )
-                    if use_proxy:
-                        use_proxy = False
-                        log.warning("Token endpoint 429 — retrying on a direct connection")
-                        continue
                     self._rate_limit_wait += wait
                     log.warning(
                         "Token endpoint rate limit (429) — waiting %.0fs before retry %d/2",
@@ -1148,7 +1171,7 @@ class SpotifyClient:
         self.last_token_errors = list(errors)
         if any("HTTP 429" in e for e in errors):
             cooldown = _SHORT_BLOCK_COOLDOWN
-            self.blocked_until = time.time() + cooldown
+            self.blocked_until = self.quota_guard.block("token", cooldown)
             raise RateLimited(
                 cooldown,
                 "Spotify is throttling the token endpoint (HTTP 429), so no API call can "
@@ -1597,22 +1620,6 @@ class SpotifyClient:
         ]
         return "\n".join(lines)
 
-    def _park_or_rotate(self, retry_after: float) -> None:
-        """A long Retry-After: use a spare account, or stop this run at once.
-
-        Retrying into a multi-hour block is pure loss (one real run waited 117s
-        for a 24h block). Nothing is slept, nothing is stored.
-        """
-        if self._cookie_index + 1 < len(self._cookie_pool):
-            return  # the caller retries with the next account's cookie
-        self.blocked_until = time.time() + retry_after
-        raise RateLimited(
-            retry_after,
-            f"Spotify blocked this account for ~{_human_duration(retry_after)} "
-            "(Retry-After). Nothing was retried: a block this long is an answer, so "
-            "this run continues on the web-player route (no Web API calls).",
-        )
-
     def _rotate_cookie(self) -> bool:
         """Switch to the next spare account's cookie. True if one was left."""
         if self._cookie_index + 1 >= len(self._cookie_pool):
@@ -1624,7 +1631,7 @@ class SpotifyClient:
         self.totp_failed = False
         self.cookie_switches += 1
         log.warning(
-            "Spotify cookie #%d got rate limited — switching to spare cookie #%d/%d",
+            "Spotify cookie #%d failed authentication — switching to spare cookie #%d/%d",
             self._cookie_index, self._cookie_index + 1, len(self._cookie_pool),
         )
         return True
@@ -1659,12 +1666,11 @@ class SpotifyClient:
         _retry_auth: bool = True,
         allow_404: bool = False,
     ) -> dict[str, Any]:
+        self.quota_guard.check("web_api")
         self._request_count += 1
         token = self._ensure_token()
         url = path if path.startswith("http") else f"{_API}/{path}"
-        # A proxy (clean IP) is preferred; on 429 we alternate proxy <-> direct
-        # because Spotify limits by IP *and* account, so a different egress can
-        # clear the block.
+        # A 429 applies regardless of proxy; do not switch routes to evade it.
         use_proxy = bool(self.proxy_url)
         for attempt in range(_MAX_RETRIES):
             try:
@@ -1707,42 +1713,17 @@ class SpotifyClient:
             if resp.status_code == 429:
                 self._rate_limited_this_run = True
                 retry_after = _retry_after_seconds(resp.headers, attempt)
-                raw_retry = _header_seconds(resp.headers)
                 self._pace_debt += 3.0
-                if raw_retry >= _LONG_BLOCK:
-                    # Do not sleep, do not retry: a multi-hour block is final.
-                    rotated = self._cookie_index + 1 < len(self._cookie_pool)
-                    self._park_or_rotate(raw_retry)
-                    if rotated:
-                        self._rotate_cookie()
-                        return self._request(
-                            method, path, params=params, json_body=json_body,
-                            _retry_auth=_retry_auth, allow_404=allow_404,
-                        )
-                if self.proxy_url and attempt == 0:
-                    # First 429: try the other egress before waiting.
-                    use_proxy = not use_proxy
-                    log.warning(
-                        "Spotify 429 — retrying through the %s route",
-                        "proxy" if use_proxy else "direct connection",
-                    )
-                    continue
-                if raw_retry and raw_retry > _MAX_INLINE_WAIT:
-                    # 2–10 minutes: too long to sleep through, too short to give
-                    # up on the account — try a spare cookie, else park the run.
-                    if self._cookie_index + 1 < len(self._cookie_pool):
-                        self._rotate_cookie()
-                        return self._request(
-                            method, path, params=params, json_body=json_body,
-                            _retry_auth=_retry_auth, allow_404=allow_404,
-                        )
-                    self._park_or_rotate(raw_retry)
+                quota_wait = _quota_wait(resp)
+                if quota_wait:
+                    self.blocked_until = self.quota_guard.block("web_api", quota_wait)
+                    raise RateLimited(quota_wait, "Spotify Web API cooldown (HTTP 429); persisted")
                 if attempt >= 1:
                     # Persistent 429 with short Retry-After values (Spotify
                     # re-arms the window on every knock): stop at the second
                     # answer instead of waiting ~2 minutes to learn it again.
                     cooldown = _SHORT_BLOCK_COOLDOWN
-                    self.blocked_until = time.time() + cooldown
+                    self.blocked_until = self.quota_guard.block("web_api", cooldown)
                     raise RateLimited(
                         cooldown,
                         f"Spotify kept answering 429 (Retry-After keeps flapping back "

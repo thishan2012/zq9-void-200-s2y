@@ -305,16 +305,14 @@ obstacle — the run stops spending Web API calls immediately instead of sleepin
 (one real run waited 45+13+45+14 = 117s for a 24-hour block). Short values that
 keep flapping back stop after the *second* answer.
 
-**No cooldown is ever stored, and no run skips itself.** A 429 only affects the
-run it happened in:
-
-```
-⚠️ Spotify asked to slow down until 2026-11-06 04:27 UTC — this run only, nothing is stored
-⏩ Spotify asked to slow down (25m left) — reading through the web-player route, no Web API calls this run
-```
-
-The second line is what a later run prints if it starts while the old window is
-still open: it runs anyway, it just avoids the Web API for that run.
+**Spotify cooldowns are persisted** in `data/spotify-quota.json`. A 429 with
+`Retry-After` greater than 10 seconds (or `QUOTA_EXCEEDED`) is saved immediately;
+short bursts get at most one retry. Later sync and diagnostic processes avoid
+the affected endpoint until the saved time expires. A Web API block does not
+by itself block the web-player route; a token block can prevent new web-player
+sessions. Existing cached source reads can be out of date. The cooldown time is
+not an automatic run schedule. Actions commits the cooldown even on dry runs;
+a failed state push or cancelled runner can prevent it from reaching GitHub.
 
 ## A run is slower than "2s per request" — where do the minutes go?
 
