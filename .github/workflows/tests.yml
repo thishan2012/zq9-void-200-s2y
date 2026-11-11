@@ -35,6 +35,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest pyflakes pyyaml
+      - name: Temporary public Shorts route check
+        if: ${{ matrix.python-version == '3.12' }}
+        run: |
+          python - <<'PYCODE'
+          from phonksync.youtube import YouTubeClient
+          from phonksync.errors import ShortVideoError
+          client = YouTubeClient(api_key='offline-dummy')
+          try:
+              client.ensure_not_short('hKwrn5-7FjQ')
+          except ShortVideoError:
+              print('Short confirmed')
+          else:
+              raise SystemExit('Known Short was not blocked')
+          client.ensure_not_short('dQw4w9WgXcQ')
+          print('Regular video confirmed')
+          PYCODE
       - name: Lint
         run: python -m pyflakes phonksync tests
       - name: Run the test suite

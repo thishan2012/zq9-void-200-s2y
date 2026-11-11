@@ -33,10 +33,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from typing import Any
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 
-from .errors import AuthError, NotFound, QuotaExceeded, RateLimited
+from .errors import (AuthError, NotFound, QuotaExceeded, RateLimited,
+                     ShortVideoError, ShortsCheckUnavailable)
 from .models import Candidate
 
 log = logging.getLogger(__name__)
@@ -1382,7 +1384,51 @@ class YouTubeClient:
                 log.warning("OAuth playlist read failed (%s) — retrying with API key", exc)
         return self._request("GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST)
 
+    def ensure_not_short(self, video_id: str) -> None:
+        """Fail closed using the public Shorts URL (not a Data API quota call).
+
+        YouTube's Data API has no isShort field. A Shorts URL generally serves
+        a Short directly, or redirects a normal video to its /watch URL. Other
+        responses (including consent, throttling and network errors) are unknown
+        and must not be treated as proof that a video is safe to add.
+        """
+        if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id or ""):
+            raise ShortsCheckUnavailable("Invalid video ID for Shorts check")
+        memo = getattr(self, "_shorts_memo", None)
+        if memo is None:
+            memo = self._shorts_memo = {}
+        if video_id not in memo:
+            status = None
+            url = f"https://www.youtube.com/shorts/{video_id}"
+            if not getattr(self, "_shorts_network_down", False):
+                try:
+                    response = self.web_session.head(
+                        url, headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"},
+                        timeout=6, allow_redirects=False,
+                    )
+                    if response.status_code == 200:
+                        status = True
+                    elif response.status_code in {301, 302, 303, 307, 308}:
+                        target = urlparse(urljoin(url, response.headers.get("Location", "")))
+                        if (target.scheme == "https" and target.hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}
+                                and target.path == "/watch"
+                                and parse_qs(target.query).get("v") == [video_id]):
+                            status = False
+                    elif response.status_code == 429 or response.status_code >= 500:
+                        self._shorts_network_down = True
+                except requests.RequestException as exc:
+                    log.warning("YouTube Shorts check unavailable: %s", exc)
+                    self._shorts_network_down = True
+            memo[video_id] = status
+        if memo[video_id] is True:
+            raise ShortVideoError(f"YouTube Short blocked: {video_id}")
+        if memo[video_id] is not False:
+            raise ShortsCheckUnavailable(f"Could not verify Shorts status: {video_id}")
+
     def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
+        if not self.can_write and not self._manual_access_token:
+            raise AuthError("YouTube playlist writes require OAuth or a supported cookie")
+        self.ensure_not_short(video_id)
         if not self.has_oauth and self.cookie and self._sapisid():
             # Cookie mode: the public Data API cannot write on a cookie, so use
             # the web player's own youtubei endpoint instead.

@@ -36,3 +36,11 @@ class NotApplicable(PhonkSyncError):
     Raised by methods that should be recorded as 'never tried' rather than
     'tried but did not win'.
     """
+
+
+class ShortVideoError(PhonkSyncError):
+    """A candidate is a YouTube Short, not an allowed playlist video."""
+
+
+class ShortsCheckUnavailable(PhonkSyncError):
+    """Could not safely determine whether a video is a YouTube Short."""
