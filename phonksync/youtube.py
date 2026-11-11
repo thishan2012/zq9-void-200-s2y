@@ -38,7 +38,8 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import requests
 
 from .errors import (AuthError, NotFound, QuotaExceeded, RateLimited,
-                     ShortVideoError, ShortsCheckUnavailable)
+                     ShortVideoError, ShortsCheckUnavailable, VideoTooShort,
+                     VideoDurationUnavailable)
 from .models import Candidate
 
 log = logging.getLogger(__name__)
@@ -85,6 +86,7 @@ COST_SEARCH = 100
 COST_VIDEOS = 1
 COST_PLAYLIST_LIST = 1
 COST_PLAYLIST_INSERT = 50
+MIN_VIDEO_DURATION_SECONDS = 60  # eligible duration must be strictly greater
 
 _ISO_DURATION = re.compile(
     r"^P(?:(?P<d>\d+)D)?T?(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+)S)?$"
@@ -1384,6 +1386,39 @@ class YouTubeClient:
                 log.warning("OAuth playlist read failed (%s) — retrying with API key", exc)
         return self._request("GET", "playlistItems", params=params, cost=COST_PLAYLIST_LIST)
 
+    def ensure_video_eligible(self, video_id: str, duration_s: int | None = None) -> None:
+        """Only videos strictly over 60s, and not classified as Shorts.
+
+        Matches normally supply their already-fetched duration. Legacy pending
+        IDs may not have it, so fetch metadata (free page first, API if needed).
+        Unknown duration is retryable, never accepted as a long video.
+        """
+        durations = getattr(self, "_eligible_durations", None)
+        if durations is None:
+            durations = self._eligible_durations = {}
+        if duration_s is not None and duration_s > 0:
+            durations[video_id] = duration_s
+        duration = durations.get(video_id, 0)
+        if not duration:
+            try:
+                candidates = self.free_videos([video_id])
+                candidate = next((c for c in candidates if c.video_id == video_id and c.duration_s > 0), None)
+                if candidate is None:
+                    candidates = self.videos([video_id])
+                    candidate = next((c for c in candidates if c.video_id == video_id and c.duration_s > 0), None)
+            except QuotaExceeded:
+                raise
+            except Exception as exc:
+                raise VideoDurationUnavailable(f"Could not read YouTube duration: {video_id}") from exc
+            if candidate:
+                duration = candidate.duration_s
+                durations[video_id] = duration
+        if not duration:
+            raise VideoDurationUnavailable(f"Could not read YouTube duration: {video_id}")
+        if duration <= MIN_VIDEO_DURATION_SECONDS:
+            raise VideoTooShort(f"Video is 60 seconds or shorter: {video_id}")
+        self.ensure_not_short(video_id)
+
     def ensure_not_short(self, video_id: str) -> None:
         """Fail closed using the public Shorts URL (not a Data API quota call).
 
@@ -1428,7 +1463,7 @@ class YouTubeClient:
     def add_to_playlist(self, playlist_id: str, video_id: str) -> None:
         if not self.can_write and not self._manual_access_token:
             raise AuthError("YouTube playlist writes require OAuth or a supported cookie")
-        self.ensure_not_short(video_id)
+        self.ensure_video_eligible(video_id)
         if not self.has_oauth and self.cookie and self._sapisid():
             # Cookie mode: the public Data API cannot write on a cookie, so use
             # the web player's own youtubei endpoint instead.

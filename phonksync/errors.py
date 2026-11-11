@@ -44,3 +44,11 @@ class ShortVideoError(PhonkSyncError):
 
 class ShortsCheckUnavailable(PhonkSyncError):
     """Could not safely determine whether a video is a YouTube Short."""
+
+
+class VideoTooShort(ShortVideoError):
+    """Video duration is at most the one-minute minimum."""
+
+
+class VideoDurationUnavailable(ShortsCheckUnavailable):
+    """A video's duration could not be determined safely."""

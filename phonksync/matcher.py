@@ -23,7 +23,8 @@ from typing import Callable
 
 from . import checks
 from .cache import SearchCache
-from .errors import NotApplicable, QuotaExceeded, ShortVideoError
+from .errors import (NotApplicable, QuotaExceeded, ShortVideoError, VideoTooShort,
+                     VideoDurationUnavailable)
 from .models import Candidate, MatchResult, Track
 from .normalize import (
     SEP_RE,
@@ -39,7 +40,7 @@ from .normalize import (
     tokens,
 )
 from .overrides import Overrides
-from .youtube import YouTubeClient
+from .youtube import MIN_VIDEO_DURATION_SECONDS, YouTubeClient
 
 log = logging.getLogger(__name__)
 
@@ -151,14 +152,23 @@ class Matcher:
     # ------------------------------------------------------------ verifying
 
     def _allow_video(self, ctx: MatchContext, cand: Candidate) -> bool:
-        check = getattr(self.yt, "ensure_not_short", None)
-        if check is None:  # lightweight fake clients in offline tests
-            return True
+        check = getattr(self.yt, "ensure_video_eligible", None)
         try:
-            check(cand.video_id)
+            if 0 < cand.duration_s <= MIN_VIDEO_DURATION_SECONDS:
+                raise VideoTooShort(f"Video is 60 seconds or shorter: {cand.video_id}")
+            if check is not None:
+                check(cand.video_id, cand.duration_s)
+            elif cand.duration_s <= 0:
+                raise VideoDurationUnavailable(f"Could not read YouTube duration: {cand.video_id}")
+            else:
+                # Minimal fake clients used in offline tests may only implement
+                # the original Shorts classifier.
+                old_check = getattr(self.yt, "ensure_not_short", None)
+                if old_check:
+                    old_check(cand.video_id)
             return True
         except ShortVideoError:
-            log.info("Ignoring YouTube Short %s", cand.video_id)
+            log.info("Ignoring too-short video or YouTube Short %s", cand.video_id)
         # Unknown status is a retryable error, not evidence of a non-Short or
         # a reason to spend many more searches during a network outage.
         ctx.rejected_shorts.add(cand.video_id)

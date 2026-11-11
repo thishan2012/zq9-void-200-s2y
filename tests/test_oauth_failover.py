@@ -17,6 +17,7 @@ from phonksync.youtube import COST_PLAYLIST_INSERT, QuotaState, YouTubeClient
 def _skip_shorts_probe_for_existing_offline_tests(monkeypatch):
     # These tests exercise API authentication/quota, not public-page detection.
     monkeypatch.setattr(YouTubeClient, "ensure_not_short", lambda self, video_id: None)
+    monkeypatch.setattr(YouTubeClient, "ensure_video_eligible", lambda self, video_id, duration_s=None: None)
 
 
 class Resp:
