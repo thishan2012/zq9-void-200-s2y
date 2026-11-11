@@ -27,7 +27,9 @@ class Web:
 
 def client_for(response):
     web = Web(response)
-    return YouTubeClient(web_session=web, access_token="token", refresh_token="fake"), web
+    client = YouTubeClient(web_session=web, access_token="token", refresh_token="fake")
+    client._eligible_durations = {"vid00000001": 120, "vid00000002": 120}
+    return client, web
 
 
 def test_confirmed_short_blocked_and_result_cached():

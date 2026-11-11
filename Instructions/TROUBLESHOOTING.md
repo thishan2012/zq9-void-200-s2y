@@ -899,11 +899,14 @@ wrong in plain words:
 
 Before accepting a match or inserting a pending video, the sync checks the
 public YouTube Shorts URL. A Short is rejected and matching can continue to a
-regular video. This is a web request, not a YouTube Data API search or insert.
-A normal short-duration video is not rejected on duration alone.
+regular video. This check is a web request, not a YouTube Data API search or
+insert. Separately, every candidate must be **more than 60 seconds** long:
+60 seconds or less is rejected, including ordinary videos. Unknown duration
+is not inserted; it is retried. Pending or manual IDs may need an extra video
+metadata lookup (free page first; the Data API fallback may cost quota).
 
 YouTube's Data API does not expose a dedicated Shorts flag; the URL response
 is a best-effort check and may change. If the check cannot determine the video
 type (for example a network failure, consent page or rate limit), the sync
 does **not** insert that video and reports a retryable error. The check does not
-remove Shorts already present in the target playlist.
+remove videos already present in the target playlist.

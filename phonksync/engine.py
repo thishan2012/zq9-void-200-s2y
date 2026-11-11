@@ -865,7 +865,8 @@ class SyncEngine:
             # A cached match may predate the Shorts guard (including entries
             # beyond the initial pending batch). Recheck before reusing it.
             video_id = entry.get("youtube_video_id", "")
-            check_short = getattr(self.youtube, "ensure_not_short", None)
+            check_short = (getattr(self.youtube, "ensure_video_eligible", None)
+                           or getattr(self.youtube, "ensure_not_short", None))
             if not youtube_done and video_id and check_short:
                 try:
                     check_short(video_id)
@@ -1930,13 +1931,13 @@ class SyncEngine:
                 entry["youtube_added"] = True
                 added += 1
             except ShortVideoError:
-                # This legacy pending match was found before Shorts checks.
+                # This legacy pending match predates the video eligibility checks.
                 # Forget only the video match so the source can be searched
                 # again; never claim a YouTube insert or clear Spotify state.
                 entry["youtube_video_id"] = ""
                 entry["method"] = ""
                 changed = True
-                log.warning("Pending YouTube Short %s blocked; searching for a regular video", video_id)
+                log.warning("Pending short video %s blocked; searching for an eligible video", video_id)
                 continue
             except QuotaExceeded as exc:
                 report.quota_reason = str(exc)
