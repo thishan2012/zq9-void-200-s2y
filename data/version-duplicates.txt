@@ -1,4 +1,4 @@
-# 20 track(s) skipped: another version of the same song was already added (2026-11-10T22:38:00+00:00).
+# 35 track(s) skipped: another version of the same song was already added (2026-11-11T00:58:10+00:00).
 # The FIRST version found wins. To reconsider them, run the workflow
 # with reset = versions (or reset = all to start completely over).
 
@@ -81,4 +81,64 @@ SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE
 SKIPPED  Avenxir, SUNJI - MONTAGEM GUERREIRO
          kept instead: MONTAGEM GUERREIRO - Slowed
          https://open.spotify.com/track/7pjRwFOevoURAlBRUtTLDd
+
+SKIPPED  Anitor, SXMY, YXII, DXRTH - FUNK ECLIPSE
+         kept instead: FUNK ECLIPSE
+         https://open.spotify.com/track/5uJedwiNqyTq1weRJhM0Up
+
+SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE - Ultra Slowed
+         kept instead: FUNK MONOCLE - Super Slowed
+         https://open.spotify.com/track/7AUlY6COXt9JQ22Sqpae0e
+
+SKIPPED  Dj Samir, MXXNAVRA, SIXTINAGER - SEM DEMORA - Slowed
+         kept instead: SEM DEMORA
+         https://open.spotify.com/track/1NKhUxMfZMfDYfPGaWenLk
+
+SKIPPED  MarJan, Mxnvra - MONTAGEM DAUNTLESS
+         kept instead: MONTAGEM DAUNTLESS - Slowed
+         https://open.spotify.com/track/6docnKc9Moo81GVDbwEoY6
+
+SKIPPED  ZAYLO - MONTAGEM URANIUM - Slowed
+         kept instead: MONTAGEM URANIUM
+         https://open.spotify.com/track/7N3H0T7EgeflYdKd68lvIV
+
+SKIPPED  Raiden, dexdmoon, XENO XID, TRXSHBXY, MC Ombrinho - FUNK TONTO - Slowed
+         kept instead: FUNK TONTO
+         https://open.spotify.com/track/0hKY32yRflPms7CAizMVdq
+
+SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM MONARCA
+         kept instead: MONTAGEM MONARCA - SLOWED
+         https://open.spotify.com/track/0YcaFeXp4w7VWHWfnGX2I0
+
+SKIPPED  KPHK, KREZUS - VOY A CRECER - SLOWED
+         kept instead: VOY A CRECER
+         https://open.spotify.com/track/5b7ayjbj5VFaLe0AffT0YU
+
+SKIPPED  ZMAJOR, -Prey, zxnc, Scythermane - MTG PRISM (Super Slowed)
+         kept instead: MTG PRISM
+         https://open.spotify.com/track/6e3kZI8rBJPIScJzCPfs7L
+
+SKIPPED  Dj Samir, Nulteex, John Bis.T, RXDXVIL - MONTAGEM ELDER - ULTRA SLOWED
+         kept instead: MONTAGEM ELDER - SLOWED
+         https://open.spotify.com/track/542GmJnZdihZ4AGNexXokX
+
+SKIPPED  Nakama, ΣP, Regyn, ZIMXN - JOGADA - Slowed
+         kept instead: JOGADA - Ultra Slowed
+         https://open.spotify.com/track/1uQAznQVhzTPDW3nDe5f7O
+
+SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM ALQUIMIA - SLOWED
+         kept instead: MONTAGEM ALQUIMIA
+         https://open.spotify.com/track/0vmFuEhyHR8SbOhDFq021Y
+
+SKIPPED  bxkq - LUZ ROJA - Slowed
+         kept instead: LUZ ROJA
+         https://open.spotify.com/track/4NH7KpFmBfE5yskuVRDqce
+
+SKIPPED  tienanh109, HDN, MC K3 - X-COOL!
+         kept instead: X-COOL! - Super Slowed
+         https://open.spotify.com/track/1RDOhl7dFC3md0RtNytDXD
+
+SKIPPED  LXNGVX, DJ FKU - MONTAGEM PESADELO - SLOWED
+         kept instead: MONTAGEM PESADELO
+         https://open.spotify.com/track/33CPs3ROkDHlTOZ3MFRFIr
 
