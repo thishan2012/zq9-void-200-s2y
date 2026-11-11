@@ -12,6 +12,19 @@
       "spotify_id": "0fBEsqcT3oMfhEGtJxEZxK",
       "title": "STRUCT - Super Slowed (Tiktok Version) - UdieNnx",
       "video_id": "bSF3LraB9HM"
+    },
+    "27727GzuI1l7RRhGR5LX3x": {
+      "artists": [
+        "Zericxxn"
+      ],
+      "channel": "MAFIA",
+      "duration_s": 328,
+      "methods": 22,
+      "name": "Raya",
+      "seen_at": "2026-11-11T21:34:55+00:00",
+      "spotify_id": "27727GzuI1l7RRhGR5LX3x",
+      "title": "Raya (Slowed)",
+      "video_id": "EzKubdskJUs"
     }
   },
   "last_reset_at": "2026-11-11T12:54:09+00:00",
@@ -33,119 +46,240 @@
   "quota": {
     "accounts": {
       "0": {
+        "exhausted": true,
+        "inserts": 99,
+        "units": 4953
+      },
+      "1": {
         "exhausted": false,
         "inserts": 1,
-        "units": 52
+        "units": 50
       }
     },
     "date": "2026-11-11",
-    "inserts": 1,
+    "inserts": 100,
     "keys": {
-      "0": 9
+      "0": 10
     },
     "searches": 0,
-    "units_used": 61
+    "units_used": 5013
   },
   "skipped": {},
   "spotify": {
     "manual": {},
-    "manual_cleared_at": "2026-11-11T13:09:15+00:00"
+    "manual_cleared_at": "2026-11-11T21:39:01+00:00"
   },
   "stats": {
     "methods": {
       "ALBUM": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "ARTISTLESS": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "BROKEN": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "CHANNEL": {
-        "tried": 1,
-        "won": 0
+        "tried": 4,
+        "won": 2
       },
       "CLEANARTIST": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "DESCTEXT": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "DETAIL": {
-        "tried": 1,
+        "tried": 10,
         "won": 0
       },
       "DUR+VER": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "EXACT": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "FIELD": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "LINKED": {
-        "tried": 1,
-        "won": 0
-      },
-      "LOOSE": {
-        "tried": 1,
-        "won": 0
-      },
-      "REVERSED": {
-        "tried": 1,
-        "won": 0
-      },
-      "SONGTAG": {
-        "tried": 1,
-        "won": 0
-      },
-      "STRICT": {
         "tried": 2,
         "won": 1
       },
-      "SUFFIX": {
+      "LOOSE": {
+        "tried": 13,
+        "won": 3
+      },
+      "REVERSED": {
+        "tried": 10,
+        "won": 6
+      },
+      "SHORT": {
         "tried": 1,
+        "won": 0
+      },
+      "SINGLE": {
+        "tried": 2,
+        "won": 0
+      },
+      "SONGTAG": {
+        "tried": 2,
+        "won": 0
+      },
+      "STRICT": {
+        "tried": 98,
+        "won": 88
+      },
+      "SUFFIX": {
+        "tried": 2,
         "won": 0
       },
       "TITLEONLY": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "TOPIC": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "TOPRESULT": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "UPLOADER": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "VARIANTS": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       },
       "WORDSET": {
-        "tried": 1,
+        "tried": 2,
         "won": 0
       }
     },
-    "runs": 2,
-    "total_added": 2
+    "runs": 3,
+    "total_added": 102
   },
   "synced": {
+    "06ZdagcN7jWwnFKSVkKcaH": {
+      "added_at": "2026-11-11T21:38:17+00:00",
+      "artists": [
+        "DJ FKU"
+      ],
+      "family": "montagem passada::djfku",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM PASSADA",
+      "spotify_added": true,
+      "spotify_id": "06ZdagcN7jWwnFKSVkKcaH",
+      "youtube_added": true,
+      "youtube_video_id": "ZIZW-a8FShA"
+    },
+    "0F8DI40REyS5nBUXBIbysf": {
+      "added_at": "2026-11-11T21:38:53+00:00",
+      "artists": [
+        "SUNJI"
+      ],
+      "family": "montagem folha::sunji",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM FOLHA",
+      "spotify_added": true,
+      "spotify_id": "0F8DI40REyS5nBUXBIbysf",
+      "youtube_added": true,
+      "youtube_video_id": "pP31tpfPneM"
+    },
+    "0N9hdNuEPnbR3sLdpc2fod": {
+      "added_at": "2026-11-11T21:37:04+00:00",
+      "artists": [
+        "Irokz",
+        "Zericxxn",
+        "DJ Zarek"
+      ],
+      "family": "rosa::irokz",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "ROSA",
+      "spotify_added": true,
+      "spotify_id": "0N9hdNuEPnbR3sLdpc2fod",
+      "youtube_added": true,
+      "youtube_video_id": "xb83MISx-60"
+    },
+    "0PK7Bo7txDYKBu8QBhhYkG": {
+      "added_at": "2026-11-11T21:37:48+00:00",
+      "artists": [
+        "CHAXZER",
+        "DJ FKU"
+      ],
+      "family": "invocado::chaxzer",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "INVOCADO",
+      "spotify_added": true,
+      "spotify_id": "0PK7Bo7txDYKBu8QBhhYkG",
+      "youtube_added": true,
+      "youtube_video_id": "Y3RQAJbC-Bc"
+    },
+    "0UCfR7PhvdMvRhUi8MkDg0": {
+      "added_at": "2026-11-11T21:37:22+00:00",
+      "artists": [
+        "DJ ALEX",
+        "MC LOCKED",
+        "Mc Delux"
+      ],
+      "family": "espectro::djalex",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "ESPECTRO",
+      "spotify_added": true,
+      "spotify_id": "0UCfR7PhvdMvRhUi8MkDg0",
+      "youtube_added": true,
+      "youtube_video_id": "uFALTnR2Grw"
+    },
+    "0Wms5IftbzNzmrAyXx4A33": {
+      "added_at": "2026-11-11T21:36:25+00:00",
+      "artists": [
+        "h6itam",
+        "n7san7os",
+        "Mc Menor Do Alvorada"
+      ],
+      "family": "montagem alquimia::h6itam",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM ALQUIMIA",
+      "spotify_added": true,
+      "spotify_id": "0Wms5IftbzNzmrAyXx4A33",
+      "youtube_added": true,
+      "youtube_video_id": "zHm8GFK0m-E"
+    },
+    "0XcFw2TAqgxTnFNjccur2B": {
+      "added_at": "2026-11-11T21:36:50+00:00",
+      "artists": [
+        "SVNDI",
+        "Forsaken",
+        "MDNBXRX",
+        "FEELMANE"
+      ],
+      "family": "montagem qasar::svndi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM QASAR",
+      "spotify_added": true,
+      "spotify_id": "0XcFw2TAqgxTnFNjccur2B",
+      "youtube_added": true,
+      "youtube_video_id": "wZsi9H5byaM"
+    },
     "0fBEsqcT3oMfhEGtJxEZxK": {
       "added_at": "2026-11-11T12:55:12+00:00",
       "artists": [
@@ -159,6 +293,1054 @@
       "spotify_id": "0fBEsqcT3oMfhEGtJxEZxK",
       "youtube_added": false,
       "youtube_video_id": ""
+    },
+    "0kSGISAUKvWvcHRZMYFNWc": {
+      "added_at": "2026-11-11T21:37:35+00:00",
+      "artists": [
+        "Dj Samir",
+        "Nulteex",
+        "Zericxxn"
+      ],
+      "family": "funk contra::djsamir",
+      "isrc": "",
+      "method": "CHANNEL",
+      "name": "FUNK CONTRA",
+      "spotify_added": true,
+      "spotify_id": "0kSGISAUKvWvcHRZMYFNWc",
+      "youtube_added": true,
+      "youtube_video_id": "Q5NUZO2MrRI"
+    },
+    "0n6CHv06cHLwMEtHeO1bgg": {
+      "added_at": "2026-11-11T21:26:37+00:00",
+      "artists": [
+        "nashi",
+        "MC Fluup"
+      ],
+      "family": "galactic::nashi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "GALACTIC",
+      "spotify_added": true,
+      "spotify_id": "0n6CHv06cHLwMEtHeO1bgg",
+      "youtube_added": true,
+      "youtube_video_id": "flz2MdskCcQ"
+    },
+    "0paFptRuPw7IOyyRS5TjAh": {
+      "added_at": "2026-11-11T21:35:48+00:00",
+      "artists": [
+        "Avenxir",
+        "SUNJI"
+      ],
+      "family": "montagem guerreiro::avenxir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM GUERREIRO - Slowed",
+      "spotify_added": true,
+      "spotify_id": "0paFptRuPw7IOyyRS5TjAh",
+      "youtube_added": true,
+      "youtube_video_id": "vJA3bHNjX0M"
+    },
+    "11hPrFyqyyHN960ty30mT7": {
+      "added_at": "2026-11-11T21:35:55+00:00",
+      "artists": [
+        "DJ Nexus8",
+        "DJ ADIMA",
+        "-Prey",
+        "MC K3"
+      ],
+      "family": "relax::djnexus8",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "RELAX",
+      "spotify_added": true,
+      "spotify_id": "11hPrFyqyyHN960ty30mT7",
+      "youtube_added": true,
+      "youtube_video_id": "ncF0MyJyCf4"
+    },
+    "12oJd0DLStSvZTzZdpOSbC": {
+      "added_at": "2026-11-11T21:26:58+00:00",
+      "artists": [
+        "nashi",
+        "DJ ACID",
+        "trxshrelvx",
+        "Phonk King"
+      ],
+      "family": "numa::nashi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "NUMA - Slowed",
+      "spotify_added": true,
+      "spotify_id": "12oJd0DLStSvZTzZdpOSbC",
+      "youtube_added": true,
+      "youtube_video_id": "vjJmtaQ26TY"
+    },
+    "16wrsGEJHF5Z4Qv0twcZgo": {
+      "added_at": "2026-11-11T21:38:24+00:00",
+      "artists": [
+        "ZAYLO"
+      ],
+      "family": "montagem uranium::zaylo",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM URANIUM",
+      "spotify_added": true,
+      "spotify_id": "16wrsGEJHF5Z4Qv0twcZgo",
+      "youtube_added": true,
+      "youtube_video_id": "LTOTy77Z4Hs"
+    },
+    "1NOm51Hjetzn9WmlWlTaCv": {
+      "added_at": "2026-11-11T21:30:38+00:00",
+      "artists": [
+        "GERXMVP"
+      ],
+      "family": "pegasus::gerxmvp",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Pegasus",
+      "spotify_added": true,
+      "spotify_id": "1NOm51Hjetzn9WmlWlTaCv",
+      "youtube_added": true,
+      "youtube_video_id": "7iFl-Pd_EDU"
+    },
+    "1O9cCXmNS6uGx73O0pQrNf": {
+      "added_at": "2026-11-11T21:35:39+00:00",
+      "artists": [
+        "Forsaken",
+        "Skxdboy"
+      ],
+      "family": "funk captain::forsaken",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK CAPTAIN",
+      "spotify_added": true,
+      "spotify_id": "1O9cCXmNS6uGx73O0pQrNf",
+      "youtube_added": true,
+      "youtube_video_id": "RtE1joKfhQI"
+    },
+    "1R96NBIdXeLeYHvstCJV1J": {
+      "added_at": "2026-11-11T21:28:37+00:00",
+      "artists": [
+        "NEOVERS",
+        "Kimaklon"
+      ],
+      "family": "paraiso::neovers",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "PARAISO",
+      "spotify_added": true,
+      "spotify_id": "1R96NBIdXeLeYHvstCJV1J",
+      "youtube_added": true,
+      "youtube_video_id": "l0HTa-peTZs"
+    },
+    "1RwglsXZwFZX1lTssArt3E": {
+      "added_at": "2026-11-11T21:32:11+00:00",
+      "artists": [
+        "CHAXZER",
+        "DJ FKU"
+      ],
+      "family": "montagem assombrada::chaxzer",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM ASSOMBRADA",
+      "spotify_added": true,
+      "spotify_id": "1RwglsXZwFZX1lTssArt3E",
+      "youtube_added": true,
+      "youtube_video_id": "Ms-77-Xse-8"
+    },
+    "1ijCmRHVjQ1vgY0fPvHXIO": {
+      "added_at": "2026-11-11T21:33:52+00:00",
+      "artists": [
+        "LXZVA",
+        "Hwungii",
+        "NITRXM",
+        "-Prey"
+      ],
+      "family": "montagem serelia zakku::lxzva",
+      "isrc": "",
+      "method": "LOOSE",
+      "name": "MONTAGEM SERELIA ZAKKU",
+      "spotify_added": true,
+      "spotify_id": "1ijCmRHVjQ1vgY0fPvHXIO",
+      "youtube_added": true,
+      "youtube_video_id": "FdEpAgp1Ujw"
+    },
+    "1kZvBIepQFlgUywAub2h56": {
+      "added_at": "2026-11-11T21:27:05+00:00",
+      "artists": [
+        "ASTXR",
+        "MC ETERNA"
+      ],
+      "family": "turan 2::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TURAN 2 - Slowed",
+      "spotify_added": true,
+      "spotify_id": "1kZvBIepQFlgUywAub2h56",
+      "youtube_added": true,
+      "youtube_video_id": "NE_0P-AN648"
+    },
+    "1n4WoR95X3ZbTwjSDZGKSv": {
+      "added_at": "2026-11-11T21:29:38+00:00",
+      "artists": [
+        "dnvn",
+        "PHNKR"
+      ],
+      "family": "instinct::dnvn",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Instinct",
+      "spotify_added": true,
+      "spotify_id": "1n4WoR95X3ZbTwjSDZGKSv",
+      "youtube_added": true,
+      "youtube_video_id": "i_mkHfW_pZg"
+    },
+    "1utDwZhZyH74xha6CqNNQi": {
+      "added_at": "2026-11-11T21:34:11+00:00",
+      "artists": [
+        "Dj Samir",
+        "Mxng0",
+        "Nulteex"
+      ],
+      "family": "montagem fujin::djsamir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM FUJIN",
+      "spotify_added": true,
+      "spotify_id": "1utDwZhZyH74xha6CqNNQi",
+      "youtube_added": true,
+      "youtube_video_id": "8CmjYl5iu0M"
+    },
+    "1vh2d7iwLLesvZyMeXPAq8": {
+      "added_at": "2026-11-11T21:34:18+00:00",
+      "artists": [
+        "Kyromane",
+        "Vlxnor"
+      ],
+      "family": "funk zena::kyromane",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK ZENA",
+      "spotify_added": true,
+      "spotify_id": "1vh2d7iwLLesvZyMeXPAq8",
+      "youtube_added": true,
+      "youtube_video_id": "1ieISLHwY6M"
+    },
+    "1wcMtytTE7sbIzt7wrRGF8": {
+      "added_at": "2026-11-11T21:29:29+00:00",
+      "artists": [
+        "ASTXR"
+      ],
+      "family": "favyala::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FAVYALA",
+      "spotify_added": true,
+      "spotify_id": "1wcMtytTE7sbIzt7wrRGF8",
+      "youtube_added": true,
+      "youtube_video_id": "nT0ZdKDgQRk"
+    },
+    "22rEOwmQhmI0UaHpVTyY6G": {
+      "added_at": "2026-11-11T21:33:11+00:00",
+      "artists": [
+        "refri"
+      ],
+      "family": "salseiro::refri",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "SALSEIRO",
+      "spotify_added": true,
+      "spotify_id": "22rEOwmQhmI0UaHpVTyY6G",
+      "youtube_added": true,
+      "youtube_video_id": "7p2q-GpVKe0"
+    },
+    "24tTZtEQi8n6ywRRRNxWCP": {
+      "added_at": "2026-11-11T21:36:57+00:00",
+      "artists": [
+        "cape",
+        "MXSTERIXD",
+        "Tonzão"
+      ],
+      "family": "montagem ritmada::cape",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM RITMADA - Ultra Slowed",
+      "spotify_added": true,
+      "spotify_id": "24tTZtEQi8n6ywRRRNxWCP",
+      "youtube_added": true,
+      "youtube_video_id": "ov9PHTUZiDY"
+    },
+    "26JJCSg0ybN2FTpKuT8EpD": {
+      "added_at": "2026-11-11T21:34:39+00:00",
+      "artists": [
+        "SCHWVFTY",
+        "SUNJI",
+        "underonii"
+      ],
+      "family": "funk do patrao::schwvfty",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK DO PATRÃO",
+      "spotify_added": true,
+      "spotify_id": "26JJCSg0ybN2FTpKuT8EpD",
+      "youtube_added": true,
+      "youtube_video_id": "bRroDVpQpBU"
+    },
+    "27727GzuI1l7RRhGR5LX3x": {
+      "added_at": "2026-11-11T21:35:00+00:00",
+      "artists": [
+        "Zericxxn"
+      ],
+      "family": "raya::zericxxn",
+      "isrc": "",
+      "method": "",
+      "name": "Raya",
+      "spotify_added": true,
+      "spotify_id": "27727GzuI1l7RRhGR5LX3x",
+      "youtube_added": false,
+      "youtube_video_id": ""
+    },
+    "2EN4qOoleCa4CTZnk5aYqt": {
+      "added_at": "2026-11-11T21:34:46+00:00",
+      "artists": [
+        "LXNGVX",
+        "Nakama"
+      ],
+      "family": "montagem jogar::lxngvx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM JOGAR",
+      "spotify_added": true,
+      "spotify_id": "2EN4qOoleCa4CTZnk5aYqt",
+      "youtube_added": true,
+      "youtube_video_id": "e0JsQN6iTEI"
+    },
+    "2IQ19n16QqDOfIqHXSPffF": {
+      "added_at": "2026-11-11T21:26:08+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE"
+      ],
+      "family": "onyx::udiennx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "ONYX - Slowed",
+      "spotify_added": true,
+      "spotify_id": "2IQ19n16QqDOfIqHXSPffF",
+      "youtube_added": true,
+      "youtube_video_id": "6TM1tnecVh4"
+    },
+    "2IbJU1PqLTdo4G75RVrupH": {
+      "added_at": "2026-11-11T21:34:53+00:00",
+      "artists": [
+        "ZETREX",
+        "CLASYXX",
+        "DJ Javi26"
+      ],
+      "family": "chuva lenta::zetrex",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "CHUVA LENTA",
+      "spotify_added": true,
+      "spotify_id": "2IbJU1PqLTdo4G75RVrupH",
+      "youtube_added": true,
+      "youtube_video_id": "_Jqrg9IFiN0"
+    },
+    "2RHqXwSQb7h5zntvWUGdMP": {
+      "added_at": "2026-11-11T21:31:41+00:00",
+      "artists": [
+        "SEKIMANE",
+        "shonci",
+        "Mc Gw"
+      ],
+      "family": "toma headshot::sekimane",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TOMA HEADSHOT",
+      "spotify_added": true,
+      "spotify_id": "2RHqXwSQb7h5zntvWUGdMP",
+      "youtube_added": true,
+      "youtube_video_id": "9SKZjoDFKug"
+    },
+    "2SplsSsN4a8jhnnvUxNdyK": {
+      "added_at": "2026-11-11T21:36:44+00:00",
+      "artists": [
+        "4WIZZ"
+      ],
+      "family": "pancada::4wizz",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "pancada",
+      "spotify_added": true,
+      "spotify_id": "2SplsSsN4a8jhnnvUxNdyK",
+      "youtube_added": true,
+      "youtube_video_id": "55AI09L_5dI"
+    },
+    "2WIGUC2hZqAzjU7S6xeV4A": {
+      "added_at": "2026-11-11T21:35:06+00:00",
+      "artists": [
+        "ZMAJOR",
+        "SEKIMANE"
+      ],
+      "family": "hypersonico::zmajor",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "HYPERSONICO",
+      "spotify_added": true,
+      "spotify_id": "2WIGUC2hZqAzjU7S6xeV4A",
+      "youtube_added": true,
+      "youtube_video_id": "JDRaVOnH_U8"
+    },
+    "2WKLydcVcxc6lGlxD2OGvN": {
+      "added_at": "2026-11-11T21:28:25+00:00",
+      "artists": [
+        "brxshi"
+      ],
+      "family": "oasis::brxshi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "oasis",
+      "spotify_added": true,
+      "spotify_id": "2WKLydcVcxc6lGlxD2OGvN",
+      "youtube_added": true,
+      "youtube_video_id": "BKnEeBWYnvc"
+    },
+    "2WOC880HHZcDB2YRgiPRuX": {
+      "added_at": "2026-11-11T21:37:57+00:00",
+      "artists": [
+        "Young Madz",
+        "MC Zudo Boladão"
+      ],
+      "family": "party funk::youngmadz",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Party Funk",
+      "spotify_added": true,
+      "spotify_id": "2WOC880HHZcDB2YRgiPRuX",
+      "youtube_added": true,
+      "youtube_video_id": "xqkGMZCYbrY"
+    },
+    "2h4amIvI8Qi2k7IFK3igKZ": {
+      "added_at": "2026-11-11T21:37:10+00:00",
+      "artists": [
+        "Paizo",
+        "DJ LXILL",
+        "DJ FallThox"
+      ],
+      "family": "montagem domer::paizo",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM DOMER - Super Slowed",
+      "spotify_added": true,
+      "spotify_id": "2h4amIvI8Qi2k7IFK3igKZ",
+      "youtube_added": true,
+      "youtube_video_id": "BjRyb3IXBYc"
+    },
+    "2rgM6tBYIvg3Ojbs2ttcCS": {
+      "added_at": "2026-11-11T21:32:58+00:00",
+      "artists": [
+        "GHUXKEYOROW",
+        "SUCCESSXR",
+        "Leoseven",
+        "DJ Dudah"
+      ],
+      "family": "dead night funk::ghuxkeyorow",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "DEAD NIGHT FUNK",
+      "spotify_added": true,
+      "spotify_id": "2rgM6tBYIvg3Ojbs2ttcCS",
+      "youtube_added": true,
+      "youtube_video_id": "UaeevIl9NkE"
+    },
+    "2t6QjMTsGWnGR6NMfeE7em": {
+      "added_at": "2026-11-11T21:33:05+00:00",
+      "artists": [
+        "FLAAT",
+        "refri"
+      ],
+      "family": "funk cara::flaat",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK CARA",
+      "spotify_added": true,
+      "spotify_id": "2t6QjMTsGWnGR6NMfeE7em",
+      "youtube_added": true,
+      "youtube_video_id": "L7BPxa0fL0k"
+    },
+    "32nRf4ZlAUvwvyhRQRgVdJ": {
+      "added_at": "2026-11-11T21:27:17+00:00",
+      "artists": [
+        "ASTXR",
+        "!NFNX",
+        "MC ETERNA"
+      ],
+      "family": "mirror::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MIRROR",
+      "spotify_added": true,
+      "spotify_id": "32nRf4ZlAUvwvyhRQRgVdJ",
+      "youtube_added": true,
+      "youtube_video_id": "t41L5lMMLrE"
+    },
+    "39YiN0mcZmnfHIs2QtGHk6": {
+      "added_at": "2026-11-11T21:32:50+00:00",
+      "artists": [
+        "KRAXVRD",
+        "VXPER"
+      ],
+      "family": "brega do sleeping city funk::kraxvrd",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Brega Do Sleeping City Funk",
+      "spotify_added": true,
+      "spotify_id": "39YiN0mcZmnfHIs2QtGHk6",
+      "youtube_added": true,
+      "youtube_video_id": "gXjlD8167Eg"
+    },
+    "3DYBudQU2xvQQSVqbKmgc2": {
+      "added_at": "2026-11-11T21:34:24+00:00",
+      "artists": [
+        "Rushex",
+        "MONTAGEM"
+      ],
+      "family": "karvenora::rushex",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "KARVENORA",
+      "spotify_added": true,
+      "spotify_id": "3DYBudQU2xvQQSVqbKmgc2",
+      "youtube_added": true,
+      "youtube_video_id": "7WW4CzpcMLU"
+    },
+    "3FaI7yOXyALUR4WduTzyrt": {
+      "added_at": "2026-11-11T21:36:02+00:00",
+      "artists": [
+        "Rushex",
+        "Avenxir",
+        "n0m1ko"
+      ],
+      "family": "montagem velouria::rushex",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM VELOURIA",
+      "spotify_added": true,
+      "spotify_id": "3FaI7yOXyALUR4WduTzyrt",
+      "youtube_added": true,
+      "youtube_video_id": "BCy749RCsr4"
+    },
+    "3NCiUUXWkBFxn8OsCh7Am9": {
+      "added_at": "2026-11-11T21:32:38+00:00",
+      "artists": [
+        "NEOVERS",
+        "SUNJI"
+      ],
+      "family": "montagem embora::neovers",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM EMBORA",
+      "spotify_added": true,
+      "spotify_id": "3NCiUUXWkBFxn8OsCh7Am9",
+      "youtube_added": true,
+      "youtube_video_id": "uDUdrFIAH5g"
+    },
+    "3UeEbbuuvbHuflRSmmMp9s": {
+      "added_at": "2026-11-11T21:28:49+00:00",
+      "artists": [
+        "ZHANTX",
+        "MC ETERNA"
+      ],
+      "family": "montagem shard::zhantx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM SHARD",
+      "spotify_added": true,
+      "spotify_id": "3UeEbbuuvbHuflRSmmMp9s",
+      "youtube_added": true,
+      "youtube_video_id": "63mj4Lw7my4"
+    },
+    "3aKRWoxp1juAKFJekQimWu": {
+      "added_at": "2026-11-11T21:29:56+00:00",
+      "artists": [
+        "SR2X"
+      ],
+      "family": "cryon::sr2x",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Cryon",
+      "spotify_added": true,
+      "spotify_id": "3aKRWoxp1juAKFJekQimWu",
+      "youtube_added": true,
+      "youtube_video_id": "ZxSgImC8IiQ"
+    },
+    "3cpqaWBJtW97yTvgI0Emc5": {
+      "added_at": "2026-11-11T21:30:11+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE"
+      ],
+      "family": "naive::udiennx",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "NAIVE",
+      "spotify_added": true,
+      "spotify_id": "3cpqaWBJtW97yTvgI0Emc5",
+      "youtube_added": true,
+      "youtube_video_id": "8b7-yTGh7cM"
+    },
+    "3e1cceUM52iYeiiWoJ3Kz3": {
+      "added_at": "2026-11-11T21:29:14+00:00",
+      "artists": [
+        "DJZRX",
+        "outergodly",
+        "MC Novin",
+        "motty"
+      ],
+      "family": "veki veki 4::djzrx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "VEKI VEKI 4",
+      "spotify_added": true,
+      "spotify_id": "3e1cceUM52iYeiiWoJ3Kz3",
+      "youtube_added": true,
+      "youtube_video_id": "x1kmv5bPtH4"
+    },
+    "3j0VEN0oksUQgQXI34LbFT": {
+      "added_at": "2026-11-11T21:35:19+00:00",
+      "artists": [
+        "Young Madz"
+      ],
+      "family": "i love you funk::youngmadz",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "I LOVE YOU FUNK",
+      "spotify_added": true,
+      "spotify_id": "3j0VEN0oksUQgQXI34LbFT",
+      "youtube_added": true,
+      "youtube_video_id": "fpTbKGOZ_Hc"
+    },
+    "3jEJF5Lf67b3MBuqofHDrk": {
+      "added_at": "2026-11-11T21:30:32+00:00",
+      "artists": [
+        "PHNKR",
+        "dnvn",
+        "Phonk King"
+      ],
+      "family": "quantum::phnkr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "QUANTUM",
+      "spotify_added": true,
+      "spotify_id": "3jEJF5Lf67b3MBuqofHDrk",
+      "youtube_added": true,
+      "youtube_video_id": "Qmm7UL6CHBk"
+    },
+    "3kRf9cmwxlLDGZvwYqm8ho": {
+      "added_at": "2026-11-11T21:33:32+00:00",
+      "artists": [
+        "Avenxir",
+        "Mxnvra",
+        "Gyunduan"
+      ],
+      "family": "funk chama::avenxir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK CHAMA",
+      "spotify_added": true,
+      "spotify_id": "3kRf9cmwxlLDGZvwYqm8ho",
+      "youtube_added": true,
+      "youtube_video_id": "z2GCMbSHRr8"
+    },
+    "3q6a5LxSqi9u9bCEyhXYEU": {
+      "added_at": "2026-11-11T21:28:44+00:00",
+      "artists": [
+        "NVRVYN",
+        "KIRXSHA"
+      ],
+      "family": "awe::nvrvyn",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "AWE - SLOWED",
+      "spotify_added": true,
+      "spotify_id": "3q6a5LxSqi9u9bCEyhXYEU",
+      "youtube_added": true,
+      "youtube_video_id": "uOzAGSmRa88"
+    },
+    "3qx7sb7p6JQiNtf6Da0lIk": {
+      "added_at": "2026-11-11T21:32:31+00:00",
+      "artists": [
+        "LXNGVX",
+        "DJ FKU"
+      ],
+      "family": "montagem pesadelo::lxngvx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM PESADELO",
+      "spotify_added": true,
+      "spotify_id": "3qx7sb7p6JQiNtf6Da0lIk",
+      "youtube_added": true,
+      "youtube_video_id": "ZX6-Raf0haQ"
+    },
+    "3rY9uccyIVFrBJg86Lbqio": {
+      "added_at": "2026-11-11T21:28:57+00:00",
+      "artists": [
+        "ASTXR"
+      ],
+      "family": "polisha::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "POLISHA",
+      "spotify_added": true,
+      "spotify_id": "3rY9uccyIVFrBJg86Lbqio",
+      "youtube_added": true,
+      "youtube_video_id": "uBdb3pevutM"
+    },
+    "3xKiwIV30I5j38UFfvEgQ5": {
+      "added_at": "2026-11-11T21:28:13+00:00",
+      "artists": [
+        "brxshi"
+      ],
+      "family": "hollow::brxshi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "hollow",
+      "spotify_added": true,
+      "spotify_id": "3xKiwIV30I5j38UFfvEgQ5",
+      "youtube_added": true,
+      "youtube_video_id": "KgB8T4o-xlU"
+    },
+    "40xfWsWFJAahLrGTeUmGZM": {
+      "added_at": "2026-11-11T21:26:15+00:00",
+      "artists": [
+        "ASTXR",
+        "DJ PORTU",
+        "0to8"
+      ],
+      "family": "montagem euphoria::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Montagem Euphoria - Slowed",
+      "spotify_added": true,
+      "spotify_id": "40xfWsWFJAahLrGTeUmGZM",
+      "youtube_added": true,
+      "youtube_video_id": "r_OcGU64TbQ"
+    },
+    "42LVPOontV4oKeKmcX6Ht6": {
+      "added_at": "2026-11-11T21:30:20+00:00",
+      "artists": [
+        "NTPV",
+        "Sei Lean",
+        "GodDamn",
+        "Phonk King"
+      ],
+      "family": "no reply::ntpv",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "NO REPLY",
+      "spotify_added": true,
+      "spotify_id": "42LVPOontV4oKeKmcX6Ht6",
+      "youtube_added": true,
+      "youtube_video_id": "3XkTml65VYs"
+    },
+    "4C25bndRjXlGfp1cgZu5tx": {
+      "added_at": "2026-11-11T21:33:18+00:00",
+      "artists": [
+        "DJ KVNXD",
+        "XENO XID"
+      ],
+      "family": "montagem mythical::djkvnxd",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MONTAGEM MYTHICAL - Slowed",
+      "spotify_added": true,
+      "spotify_id": "4C25bndRjXlGfp1cgZu5tx",
+      "youtube_added": true,
+      "youtube_video_id": "uk5CV0VGgXQ"
+    },
+    "4Huep9eFS1RfSGvBaVroXl": {
+      "added_at": "2026-11-11T21:31:08+00:00",
+      "artists": [
+        "MC ETERNA",
+        "ZVXNKI",
+        "VESUVY"
+      ],
+      "family": "hugeless::mceterna",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "HUGELESS - SLOWED",
+      "spotify_added": true,
+      "spotify_id": "4Huep9eFS1RfSGvBaVroXl",
+      "youtube_added": true,
+      "youtube_video_id": "kY04QwaRUBQ"
+    },
+    "4INoQendvrY9jxh5PvFUu0": {
+      "added_at": "2026-11-11T21:36:38+00:00",
+      "artists": [
+        "SEKIMANE",
+        "ZMAJOR",
+        "-Prey"
+      ],
+      "family": "baixo sonico::sekimane",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "BAIXO SONICO",
+      "spotify_added": true,
+      "spotify_id": "4INoQendvrY9jxh5PvFUu0",
+      "youtube_added": true,
+      "youtube_video_id": "kcjekWCQFkw"
+    },
+    "4VxHNd5MtxTACi7tAUBKkn": {
+      "added_at": "2026-11-11T21:28:02+00:00",
+      "artists": [
+        "KIRXSHA"
+      ],
+      "family": "celestial::kirxsha",
+      "isrc": "",
+      "method": "LOOSE",
+      "name": "CELESTIAL - Tiktok Version",
+      "spotify_added": true,
+      "spotify_id": "4VxHNd5MtxTACi7tAUBKkn",
+      "youtube_added": true,
+      "youtube_video_id": "p0a_sZCf46E"
+    },
+    "4bDKFsKGWEWkxWUDhDsvfC": {
+      "added_at": "2026-11-11T21:31:56+00:00",
+      "artists": [
+        "TSVKI",
+        "Dynamiqs."
+      ],
+      "family": "sombra azul::tsvki",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "SOMBRA AZUL",
+      "spotify_added": true,
+      "spotify_id": "4bDKFsKGWEWkxWUDhDsvfC",
+      "youtube_added": true,
+      "youtube_video_id": "FQQANRPMARc"
+    },
+    "4dw4J5rKq8KhC73fvku9hK": {
+      "added_at": "2026-11-11T21:33:45+00:00",
+      "artists": [
+        "Dj Samir",
+        "DJ David MM",
+        "LOLKYE"
+      ],
+      "family": "tapa toma::djsamir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TAPA TOMA",
+      "spotify_added": true,
+      "spotify_id": "4dw4J5rKq8KhC73fvku9hK",
+      "youtube_added": true,
+      "youtube_video_id": "mRM-ghvJT4c"
+    },
+    "4hNXiiXBu0fkToM4q0FgSg": {
+      "added_at": "2026-11-11T21:31:33+00:00",
+      "artists": [
+        "NXGHT!",
+        "Zericxxn"
+      ],
+      "family": "solta::nxght",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "SOLTA",
+      "spotify_added": true,
+      "spotify_id": "4hNXiiXBu0fkToM4q0FgSg",
+      "youtube_added": true,
+      "youtube_video_id": "cGqctA5dwAI"
+    },
+    "4pZVnEXTfRJwGs75b7JhQr": {
+      "added_at": "2026-11-11T21:33:26+00:00",
+      "artists": [
+        "Dynamiqs."
+      ],
+      "family": "montagem espada::dynamiqs",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM ESPADA",
+      "spotify_added": true,
+      "spotify_id": "4pZVnEXTfRJwGs75b7JhQr",
+      "youtube_added": true,
+      "youtube_video_id": "c31f9wzrj80"
+    },
+    "4zGGmWkS2A6A2WQ6S6v7Fm": {
+      "added_at": "2026-11-11T21:38:04+00:00",
+      "artists": [
+        "DJ FKU",
+        "Seek"
+      ],
+      "family": "montagem jogando::djfku",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM JOGANDO",
+      "spotify_added": true,
+      "spotify_id": "4zGGmWkS2A6A2WQ6S6v7Fm",
+      "youtube_added": true,
+      "youtube_video_id": "SW0QKLi9fQM"
+    },
+    "53MencRKmga6ymxKITh7AY": {
+      "added_at": "2026-11-11T21:31:15+00:00",
+      "artists": [
+        "brxshi"
+      ],
+      "family": "oasis ii::brxshi",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "oasis II - slowed",
+      "spotify_added": true,
+      "spotify_id": "53MencRKmga6ymxKITh7AY",
+      "youtube_added": true,
+      "youtube_video_id": "b55JWFEIo5Q"
+    },
+    "53UnH43M41Xc6yuiYfm8YI": {
+      "added_at": "2026-11-11T21:38:32+00:00",
+      "artists": [
+        "ASTXR",
+        "VESUVY",
+        "MC ETERNA"
+      ],
+      "family": "fartania::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FARTANIA",
+      "spotify_added": true,
+      "spotify_id": "53UnH43M41Xc6yuiYfm8YI",
+      "youtube_added": true,
+      "youtube_video_id": "jN0FZyN8PqI"
+    },
+    "5BvgAg2CSkUNbOoNjegNln": {
+      "added_at": "2026-11-11T21:38:45+00:00",
+      "artists": [
+        "LXNGVX"
+      ],
+      "family": "montagem aghanim::lxngvx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM AGHANIM",
+      "spotify_added": true,
+      "spotify_id": "5BvgAg2CSkUNbOoNjegNln",
+      "youtube_added": true,
+      "youtube_video_id": "L_YAAy3yzcE"
+    },
+    "5CZnPM3qoKzNtr2a9r0rSb": {
+      "added_at": "2026-11-11T21:36:31+00:00",
+      "artists": [
+        "Dj Samir",
+        "Zericxxn",
+        "Nulteex"
+      ],
+      "family": "funk mandala::djsamir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK MANDALA",
+      "spotify_added": true,
+      "spotify_id": "5CZnPM3qoKzNtr2a9r0rSb",
+      "youtube_added": true,
+      "youtube_video_id": "PDzb-faP4ug"
+    },
+    "5PP0098RAolJW1rPZVhU8A": {
+      "added_at": "2026-11-11T21:37:16+00:00",
+      "artists": [
+        "Rushex",
+        "Avenxir",
+        "MONTAGEM"
+      ],
+      "family": "montagem gloria::rushex",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM GLORIA",
+      "spotify_added": true,
+      "spotify_id": "5PP0098RAolJW1rPZVhU8A",
+      "youtube_added": true,
+      "youtube_video_id": "fevnuwBZplw"
+    },
+    "5Rg1wIHGjgD3jWUnHw5Zn1": {
+      "added_at": "2026-11-11T21:39:01+00:00",
+      "artists": [
+        "DJ LxN"
+      ],
+      "family": "montagem noite sombria::djlxn",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM NOITE SOMBRIA",
+      "spotify_added": true,
+      "spotify_id": "5Rg1wIHGjgD3jWUnHw5Zn1",
+      "youtube_added": true,
+      "youtube_video_id": "E6NqVX1kVZo"
+    },
+    "5UMlH5dtVl43h0k2aIdqwi": {
+      "added_at": "2026-11-11T21:37:28+00:00",
+      "artists": [
+        "ZAYLO",
+        "elude",
+        "IMARO"
+      ],
+      "family": "dark aura funk::zaylo",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "DARK AURA FUNK - Slowed",
+      "spotify_added": true,
+      "spotify_id": "5UMlH5dtVl43h0k2aIdqwi",
+      "youtube_added": true,
+      "youtube_video_id": "Fm5ByhUdnPA"
+    },
+    "5Z2wPSHaOg8YyGLqLMSd7N": {
+      "added_at": "2026-11-11T21:27:40+00:00",
+      "artists": [
+        "R. Bou"
+      ],
+      "family": "magnetizmo::rbou",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MAGNETIZMO - Slowed",
+      "spotify_added": true,
+      "spotify_id": "5Z2wPSHaOg8YyGLqLMSd7N",
+      "youtube_added": true,
+      "youtube_video_id": "AxinDfaW3GA"
+    },
+    "5ZfBq8qx5dgsoSQS5pA5uF": {
+      "added_at": "2026-11-11T21:38:39+00:00",
+      "artists": [
+        "Raiden",
+        "TRXSHBXY"
+      ],
+      "family": "funk monocle::raiden",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK MONOCLE - Super Slowed",
+      "spotify_added": true,
+      "spotify_id": "5ZfBq8qx5dgsoSQS5pA5uF",
+      "youtube_added": true,
+      "youtube_video_id": "pv4_G_I-sIw"
+    },
+    "5hvxR5lyizRIQO2jE0EJl2": {
+      "added_at": "2026-11-11T21:33:39+00:00",
+      "artists": [
+        "Nakama",
+        "n0luv"
+      ],
+      "family": "segunda a sexta::nakama",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "SEGUNDA A SEXTA",
+      "spotify_added": true,
+      "spotify_id": "5hvxR5lyizRIQO2jE0EJl2",
+      "youtube_added": true,
+      "youtube_video_id": "9NovLTRGif8"
+    },
+    "5mdDaWUQ5gYmL0FMdHAn7W": {
+      "added_at": "2026-11-11T21:27:49+00:00",
+      "artists": [
+        "GERXMVP"
+      ],
+      "family": "erebus::gerxmvp",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "EREBUS",
+      "spotify_added": true,
+      "spotify_id": "5mdDaWUQ5gYmL0FMdHAn7W",
+      "youtube_added": true,
+      "youtube_video_id": "J8gvQBMdDZQ"
     },
     "5tvKAzf93j1Lz54Lq2cxu7": {
       "added_at": "2026-11-11T13:09:15+00:00",
@@ -174,6 +1356,368 @@
       "spotify_id": "5tvKAzf93j1Lz54Lq2cxu7",
       "youtube_added": true,
       "youtube_video_id": "jB8mGXuYTSg"
+    },
+    "5ywTzUjFVhmR8mjXXfTqT2": {
+      "added_at": "2026-11-11T21:35:26+00:00",
+      "artists": [
+        "SUNJI",
+        "JXXR"
+      ],
+      "family": "alivio::sunji",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "ALÍVIO",
+      "spotify_added": true,
+      "spotify_id": "5ywTzUjFVhmR8mjXXfTqT2",
+      "youtube_added": true,
+      "youtube_video_id": "NjuLsEi_nmU"
+    },
+    "69YuAijXwzCTVCgmDbvaZU": {
+      "added_at": "2026-11-11T21:32:18+00:00",
+      "artists": [
+        "JXNDRO"
+      ],
+      "family": "funk cabulosa::jxndro",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK CABULOSA",
+      "spotify_added": true,
+      "spotify_id": "69YuAijXwzCTVCgmDbvaZU",
+      "youtube_added": true,
+      "youtube_video_id": "94J0WG7D9Hk"
+    },
+    "6ECeNEd9yRXWYrP2lDQfRa": {
+      "added_at": "2026-11-11T21:26:45+00:00",
+      "artists": [
+        "FanEOne",
+        "grass flower",
+        "GANG"
+      ],
+      "family": "triumph::faneone",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TRIUMPH - Slowed",
+      "spotify_added": true,
+      "spotify_id": "6ECeNEd9yRXWYrP2lDQfRa",
+      "youtube_added": true,
+      "youtube_video_id": "jtl8q8FE7r8"
+    },
+    "6JYZTjE9mQrTmRZuNkqpwj": {
+      "added_at": "2026-11-11T21:32:44+00:00",
+      "artists": [
+        "Zericxxn",
+        "vultury"
+      ],
+      "family": "malemo::zericxxn",
+      "isrc": "",
+      "method": "CHANNEL",
+      "name": "MALEMO - Slowed",
+      "spotify_added": true,
+      "spotify_id": "6JYZTjE9mQrTmRZuNkqpwj",
+      "youtube_added": true,
+      "youtube_video_id": "rtMyIrxh_6M"
+    },
+    "6JvrnP0x7juKNdtwZiCSJ6": {
+      "added_at": "2026-11-11T21:27:32+00:00",
+      "artists": [
+        "ASTXR",
+        "!NFNX"
+      ],
+      "family": "mirror iii::astxr",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "MIRROR III - Slowed",
+      "spotify_added": true,
+      "spotify_id": "6JvrnP0x7juKNdtwZiCSJ6",
+      "youtube_added": true,
+      "youtube_video_id": "zUUvZS8SMiw"
+    },
+    "6PimyTchKmTo2G0wxgryMT": {
+      "added_at": "2026-11-11T21:31:47+00:00",
+      "artists": [
+        "h6itam",
+        "Penkramin",
+        "SNYSTA"
+      ],
+      "family": "montagem valkaro::h6itam",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM VALKARO",
+      "spotify_added": true,
+      "spotify_id": "6PimyTchKmTo2G0wxgryMT",
+      "youtube_added": true,
+      "youtube_video_id": "6rM4r-T9Ges"
+    },
+    "6Vphhn89cX5AHjthLjiazb": {
+      "added_at": "2026-11-11T21:30:52+00:00",
+      "artists": [
+        "ASTXR",
+        "MC ETERNA"
+      ],
+      "family": "turan::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TURAN",
+      "spotify_added": true,
+      "spotify_id": "6Vphhn89cX5AHjthLjiazb",
+      "youtube_added": true,
+      "youtube_video_id": "B9eqOVLlFd0"
+    },
+    "6k4xtGtcJwKYv91G2SZfIx": {
+      "added_at": "2026-11-11T21:32:25+00:00",
+      "artists": [
+        "zxnny"
+      ],
+      "family": "funk posto::zxnny",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FUNK POSTO",
+      "spotify_added": true,
+      "spotify_id": "6k4xtGtcJwKYv91G2SZfIx",
+      "youtube_added": true,
+      "youtube_video_id": "zzjOv2Rcwpo"
+    },
+    "6pQ3YxM63YiFUJTHNBoc8Q": {
+      "added_at": "2026-11-11T21:35:32+00:00",
+      "artists": [
+        "prodkesm",
+        "TESSAI",
+        "DJ FKU"
+      ],
+      "family": "funk zanira::prodkesm",
+      "isrc": "",
+      "method": "LOOSE",
+      "name": "FUNK ZANIRA",
+      "spotify_added": true,
+      "spotify_id": "6pQ3YxM63YiFUJTHNBoc8Q",
+      "youtube_added": true,
+      "youtube_video_id": "xkqxGiIdkrQ"
+    },
+    "6wSPbH6HNnjbfGLQBa8QLy": {
+      "added_at": "2026-11-11T21:35:13+00:00",
+      "artists": [
+        "DJ FKU",
+        "LXNGVX"
+      ],
+      "family": "raspa trava::djfku",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "RASPA TRAVA",
+      "spotify_added": true,
+      "spotify_id": "6wSPbH6HNnjbfGLQBa8QLy",
+      "youtube_added": true,
+      "youtube_video_id": "3L_ZzseAQkA"
+    },
+    "6xZjmppXQnbOitaW3V684B": {
+      "added_at": "2026-11-11T21:36:11+00:00",
+      "artists": [
+        "Dj Samir",
+        "MXXNAVRA",
+        "SIXTINAGER"
+      ],
+      "family": "sem demora::djsamir",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "SEM DEMORA",
+      "spotify_added": true,
+      "spotify_id": "6xZjmppXQnbOitaW3V684B",
+      "youtube_added": true,
+      "youtube_video_id": "i5TXX-l_hOA"
+    },
+    "6xpqB40Qzad7IO4PSyWhQL": {
+      "added_at": "2026-11-11T21:37:41+00:00",
+      "artists": [
+        "Young Madz"
+      ],
+      "family": "super funk::youngmadz",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "Super Funk",
+      "spotify_added": true,
+      "spotify_id": "6xpqB40Qzad7IO4PSyWhQL",
+      "youtube_added": true,
+      "youtube_video_id": "fbzms99cCG8"
+    },
+    "71WKwBqfGwb8odrr7g1Ma2": {
+      "added_at": "2026-11-11T21:34:33+00:00",
+      "artists": [
+        "Rushex"
+      ],
+      "family": "trakella::rushex",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "TRAKELLA",
+      "spotify_added": true,
+      "spotify_id": "71WKwBqfGwb8odrr7g1Ma2",
+      "youtube_added": true,
+      "youtube_video_id": "rKEylXOFaIM"
+    },
+    "735MrbrltWSxyjusTy6umi": {
+      "added_at": "2026-11-11T21:36:19+00:00",
+      "artists": [
+        "Dynamiqs.",
+        "SLXCE"
+      ],
+      "family": "brega do castelo::dynamiqs",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "BREGA DO CASTELO",
+      "spotify_added": true,
+      "spotify_id": "735MrbrltWSxyjusTy6umi",
+      "youtube_added": true,
+      "youtube_video_id": "K1aBpESB51E"
+    },
+    "769AxPMOqVapHP7T9QB5cE": {
+      "added_at": "2026-11-11T21:38:10+00:00",
+      "artists": [
+        "CHAXZER",
+        "DJ FKU"
+      ],
+      "family": "dancar no salao::chaxzer",
+      "isrc": "",
+      "method": "REVERSED",
+      "name": "DANÇAR NO SALÃO",
+      "spotify_added": true,
+      "spotify_id": "769AxPMOqVapHP7T9QB5cE",
+      "youtube_added": true,
+      "youtube_video_id": "kECpLBIkEPs"
+    },
+    "79YKScNC99eFIW9DhRGhVx": {
+      "added_at": "2026-11-11T21:34:04+00:00",
+      "artists": [
+        "DJ Javi26",
+        "SASORIIXPP",
+        "null"
+      ],
+      "family": "montagem signal::djjavi26",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "MONTAGEM SIGNAL",
+      "spotify_added": true,
+      "spotify_id": "79YKScNC99eFIW9DhRGhVx",
+      "youtube_added": true,
+      "youtube_video_id": "6E6ArtHH3ks"
+    },
+    "7B4ah84D3y1KvVVhePynPm": {
+      "added_at": "2026-11-11T21:30:58+00:00",
+      "artists": [
+        "PHNKR",
+        "dnvn",
+        "Phonk King"
+      ],
+      "family": "luminous::phnkr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "LUMINOUS - Slowed",
+      "spotify_added": true,
+      "spotify_id": "7B4ah84D3y1KvVVhePynPm",
+      "youtube_added": true,
+      "youtube_video_id": "a9WGBSol0oM"
+    },
+    "7G1bcIfVemadI6dOStaHzh": {
+      "added_at": "2026-11-11T21:29:05+00:00",
+      "artists": [
+        "ewyx"
+      ],
+      "family": "darken::ewyx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "DARKEN",
+      "spotify_added": true,
+      "spotify_id": "7G1bcIfVemadI6dOStaHzh",
+      "youtube_added": true,
+      "youtube_video_id": "RHxK5ULBQsc"
+    },
+    "7fG2xg3uXbEa9u3yxWsxjx": {
+      "added_at": "2026-11-11T21:31:23+00:00",
+      "artists": [
+        "MC ETERNA",
+        "da highest"
+      ],
+      "family": "blessed up!::mceterna",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "BLESSED UP! - Ultra Slowed",
+      "spotify_added": true,
+      "spotify_id": "7fG2xg3uXbEa9u3yxWsxjx",
+      "youtube_added": true,
+      "youtube_video_id": "2YdaNxbXqBw"
+    },
+    "7fx9paDdMEk5xrF5yVWUfW": {
+      "added_at": "2026-11-11T21:30:03+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE",
+        "Duduzinho"
+      ],
+      "family": "vision::udiennx",
+      "isrc": "",
+      "method": "LINKED",
+      "name": "VISION - Slowed",
+      "spotify_added": true,
+      "spotify_id": "7fx9paDdMEk5xrF5yVWUfW",
+      "youtube_added": true,
+      "youtube_video_id": "JO1GL3xFSLM"
+    },
+    "7iQ5StKc6MpFzPrD7ryNun": {
+      "added_at": "2026-11-11T21:32:04+00:00",
+      "artists": [
+        "null",
+        "DJ AURAXÉ"
+      ],
+      "family": "frutiger funk::null",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "FRUTIGER FUNK",
+      "spotify_added": true,
+      "spotify_id": "7iQ5StKc6MpFzPrD7ryNun",
+      "youtube_added": true,
+      "youtube_video_id": "hV_Z9KD6JoA"
+    },
+    "7iVV1orcO3VVGSlGd2jwkS": {
+      "added_at": "2026-11-11T21:33:58+00:00",
+      "artists": [
+        "Dynamiqs.",
+        "TSVKI"
+      ],
+      "family": "downpour funk::dynamiqs",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "DOWNPOUR FUNK",
+      "spotify_added": true,
+      "spotify_id": "7iVV1orcO3VVGSlGd2jwkS",
+      "youtube_added": true,
+      "youtube_video_id": "dgMsCzRS-X8"
+    },
+    "7t4zXTmIhOcWZZQzJjpkGn": {
+      "added_at": "2026-11-11T21:26:27+00:00",
+      "artists": [
+        "UdieNnx",
+        "HXVSAGE"
+      ],
+      "family": "pure / utopia::udiennx",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "PURE / UTOPIA - Slowed",
+      "spotify_added": true,
+      "spotify_id": "7t4zXTmIhOcWZZQzJjpkGn",
+      "youtube_added": true,
+      "youtube_video_id": "EvnxCFeZCbI"
+    },
+    "7yRqwX1TwvoguVcrmAkTHX": {
+      "added_at": "2026-11-11T21:29:47+00:00",
+      "artists": [
+        "ASTXR",
+        "DeLoit"
+      ],
+      "family": "nomix::astxr",
+      "isrc": "",
+      "method": "STRICT",
+      "name": "NOMIX",
+      "spotify_added": true,
+      "spotify_id": "7yRqwX1TwvoguVcrmAkTHX",
+      "youtube_added": true,
+      "youtube_video_id": "s279drTFYt0"
     }
   },
   "unmatched": {
@@ -209,9 +1753,91 @@
         "TOPRESULT"
       ],
       "tries": 1
+    },
+    "27727GzuI1l7RRhGR5LX3x": {
+      "artists": [
+        "Zericxxn"
+      ],
+      "last_try": "2026-11-11T21:34:55+00:00",
+      "name": "Raya",
+      "spotify_id": "27727GzuI1l7RRhGR5LX3x",
+      "tried_methods": [
+        "STRICT",
+        "LOOSE",
+        "DETAIL",
+        "REVERSED",
+        "CHANNEL",
+        "TOPIC",
+        "SUFFIX",
+        "SHORT",
+        "ARTISTLESS",
+        "EXACT",
+        "WORDSET",
+        "UPLOADER",
+        "FIELD",
+        "VARIANTS",
+        "DUR+VER",
+        "CLEANARTIST",
+        "TITLEONLY",
+        "SONGTAG",
+        "DESCTEXT",
+        "BROKEN",
+        "ALBUM",
+        "TOPRESULT"
+      ],
+      "tries": 1
     }
   },
-  "updated_at": "2026-11-11T13:09:15+00:00",
+  "updated_at": "2026-11-11T21:39:06+00:00",
   "version": 1,
-  "version_duplicates": {}
+  "version_duplicates": {
+    "0eQKjrc1h5a5czPhfgzcCq": {
+      "artists": [
+        "TSVKI",
+        "Dynamiqs."
+      ],
+      "at": "2026-11-11T21:36:25+00:00",
+      "family": "sombra azul::tsvki",
+      "kept_name": "SOMBRA AZUL",
+      "kept_spotify_id": "4bDKFsKGWEWkxWUDhDsvfC",
+      "name": "SOMBRA AZUL - SLOWED",
+      "spotify_id": "0eQKjrc1h5a5czPhfgzcCq"
+    },
+    "4OXNLVyiB2eDb8ryVLxQNj": {
+      "artists": [
+        "ASTXR",
+        "MC ETERNA"
+      ],
+      "at": "2026-11-11T21:35:32+00:00",
+      "family": "turan 2::astxr",
+      "kept_name": "TURAN 2 - Slowed",
+      "kept_spotify_id": "1kZvBIepQFlgUywAub2h56",
+      "name": "TURAN 2",
+      "spotify_id": "4OXNLVyiB2eDb8ryVLxQNj"
+    },
+    "4TyrbzmvU0FMpdUOeV7L4k": {
+      "artists": [
+        "Dynamiqs.",
+        "TSVKI"
+      ],
+      "at": "2026-11-11T21:36:19+00:00",
+      "family": "downpour funk::dynamiqs",
+      "kept_name": "DOWNPOUR FUNK",
+      "kept_spotify_id": "7iVV1orcO3VVGSlGd2jwkS",
+      "name": "DOWNPOUR FUNK - Slowed",
+      "spotify_id": "4TyrbzmvU0FMpdUOeV7L4k"
+    },
+    "6yT2DoctJWbWkQ0xAC73IF": {
+      "artists": [
+        "TSVKI",
+        "Dynamiqs."
+      ],
+      "at": "2026-11-11T21:34:39+00:00",
+      "family": "sombra azul::tsvki",
+      "kept_name": "SOMBRA AZUL",
+      "kept_spotify_id": "4bDKFsKGWEWkxWUDhDsvfC",
+      "name": "SOMBRA AZUL - Nightcore",
+      "spotify_id": "6yT2DoctJWbWkQ0xAC73IF"
+    }
+  }
 }
