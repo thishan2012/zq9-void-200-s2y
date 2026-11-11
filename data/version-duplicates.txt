@@ -1,4 +1,4 @@
-# 35 track(s) skipped: another version of the same song was already added (2026-11-11T00:58:10+00:00).
+# 63 track(s) skipped: another version of the same song was already added (2026-11-11T09:40:52+00:00).
 # The FIRST version found wins. To reconsider them, run the workflow
 # with reset = versions (or reset = all to start completely over).
 
@@ -10,9 +10,21 @@ SKIPPED  Atic - MONTAGEM CEINTA - Slowed
          kept instead: MONTAGEM CEINTA - Super Slowed
          https://open.spotify.com/track/0VGmHgIiuqjSklJuq407Pv
 
+SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM MONARCA
+         kept instead: MONTAGEM MONARCA - SLOWED
+         https://open.spotify.com/track/0YcaFeXp4w7VWHWfnGX2I0
+
 SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - SLOWED
          kept instead: SOMBRA AZUL
          https://open.spotify.com/track/0eQKjrc1h5a5czPhfgzcCq
+
+SKIPPED  Raiden, dexdmoon, XENO XID, TRXSHBXY, MC Ombrinho - FUNK TONTO - Slowed
+         kept instead: FUNK TONTO
+         https://open.spotify.com/track/0hKY32yRflPms7CAizMVdq
+
+SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM ALQUIMIA - SLOWED
+         kept instead: MONTAGEM ALQUIMIA
+         https://open.spotify.com/track/0vmFuEhyHR8SbOhDFq021Y
 
 SKIPPED  LXNGVX, Nakama - DEIXA CAIR - ULTRA SLOWED
          kept instead: DEIXA CAIR
@@ -21,6 +33,18 @@ SKIPPED  LXNGVX, Nakama - DEIXA CAIR - ULTRA SLOWED
 SKIPPED  h6itam, Penkramin, SNYSTA - MONTAGEM VALKARO - Slowed
          kept instead: MONTAGEM VALKARO
          https://open.spotify.com/track/1HOfVRxlZSrRxwdU9khv6p
+
+SKIPPED  Dj Samir, MXXNAVRA, SIXTINAGER - SEM DEMORA - Slowed
+         kept instead: SEM DEMORA
+         https://open.spotify.com/track/1NKhUxMfZMfDYfPGaWenLk
+
+SKIPPED  tienanh109, HDN, MC K3 - X-COOL!
+         kept instead: X-COOL! - Super Slowed
+         https://open.spotify.com/track/1RDOhl7dFC3md0RtNytDXD
+
+SKIPPED  Nakama, ΣP, Regyn, ZIMXN - JOGADA - Slowed
+         kept instead: JOGADA - Ultra Slowed
+         https://open.spotify.com/track/1uQAznQVhzTPDW3nDe5f7O
 
 SKIPPED  Dynamiqs., TSVKI - DOWNPOUR FUNK - Sped Up
          kept instead: DOWNPOUR FUNK
@@ -34,6 +58,10 @@ SKIPPED  cape, MXSTERIXD, Tonzão - MONTAGEM RITMADA - Super Slowed
          kept instead: MONTAGEM RITMADA - Ultra Slowed
          https://open.spotify.com/track/2qULNclT3J4EXVwh44O5EU
 
+SKIPPED  LXNGVX, DJ FKU - MONTAGEM PESADELO - SLOWED
+         kept instead: MONTAGEM PESADELO
+         https://open.spotify.com/track/33CPs3ROkDHlTOZ3MFRFIr
+
 SKIPPED  DJ V12, SXID - FUNK ABNORMAL
          kept instead: FUNK ABNORMAL - SLOWED
          https://open.spotify.com/track/36Ii9D5SBajs7xbUEXVNbX
@@ -45,6 +73,10 @@ SKIPPED  Dj Samir, DJ David MM - TAPA TOMA
 SKIPPED  cape, MXSTERIXD, Tonzão - MONTAGEM RITMADA - Slowed
          kept instead: MONTAGEM RITMADA - Ultra Slowed
          https://open.spotify.com/track/3iDSf2Bfr4Rkf3RUJPDyLb
+
+SKIPPED  bxkq - LUZ ROJA - Slowed
+         kept instead: LUZ ROJA
+         https://open.spotify.com/track/4NH7KpFmBfE5yskuVRDqce
 
 SKIPPED  DJ Javi26, SASORIIXPP, null - MONTAGEM SIGNAL - Super Slowed
          kept instead: MONTAGEM SIGNAL
@@ -62,17 +94,45 @@ SKIPPED  Dynamiqs., TSVKI - DOWNPOUR FUNK - Slowed
          kept instead: DOWNPOUR FUNK
          https://open.spotify.com/track/4TyrbzmvU0FMpdUOeV7L4k
 
+SKIPPED  Dj Samir, Nulteex, John Bis.T, RXDXVIL - MONTAGEM ELDER - ULTRA SLOWED
+         kept instead: MONTAGEM ELDER - SLOWED
+         https://open.spotify.com/track/542GmJnZdihZ4AGNexXokX
+
 SKIPPED  ICEDMANE, DYSMANE - FUNK SERENO - SLOWED
          kept instead: FUNK SERENO
          https://open.spotify.com/track/5Y5NUAnVqru8HUUx4Yrli0
+
+SKIPPED  KPHK, KREZUS - VOY A CRECER - SLOWED
+         kept instead: VOY A CRECER
+         https://open.spotify.com/track/5b7ayjbj5VFaLe0AffT0YU
 
 SKIPPED  SCHWVFTY - MONTAGEM THRONUS
          kept instead: MONTAGEM THRONUS - Ultra Slowed
          https://open.spotify.com/track/5tujvM6ewXLym0qYO44nLb
 
+SKIPPED  Anitor, SXMY, YXII, DXRTH - FUNK ECLIPSE
+         kept instead: FUNK ECLIPSE
+         https://open.spotify.com/track/5uJedwiNqyTq1weRJhM0Up
+
+SKIPPED  MarJan, Mxnvra - MONTAGEM DAUNTLESS
+         kept instead: MONTAGEM DAUNTLESS - Slowed
+         https://open.spotify.com/track/6docnKc9Moo81GVDbwEoY6
+
+SKIPPED  ZMAJOR, -Prey, zxnc, Scythermane - MTG PRISM (Super Slowed)
+         kept instead: MTG PRISM
+         https://open.spotify.com/track/6e3kZI8rBJPIScJzCPfs7L
+
 SKIPPED  TSVKI, Dynamiqs. - SOMBRA AZUL - Nightcore
          kept instead: SOMBRA AZUL
          https://open.spotify.com/track/6yT2DoctJWbWkQ0xAC73IF
+
+SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE - Ultra Slowed
+         kept instead: FUNK MONOCLE - Super Slowed
+         https://open.spotify.com/track/7AUlY6COXt9JQ22Sqpae0e
+
+SKIPPED  ZAYLO - MONTAGEM URANIUM - Slowed
+         kept instead: MONTAGEM URANIUM
+         https://open.spotify.com/track/7N3H0T7EgeflYdKd68lvIV
 
 SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE
          kept instead: FUNK MONOCLE - Super Slowed
@@ -82,63 +142,115 @@ SKIPPED  Avenxir, SUNJI - MONTAGEM GUERREIRO
          kept instead: MONTAGEM GUERREIRO - Slowed
          https://open.spotify.com/track/7pjRwFOevoURAlBRUtTLDd
 
-SKIPPED  Anitor, SXMY, YXII, DXRTH - FUNK ECLIPSE
-         kept instead: FUNK ECLIPSE
-         https://open.spotify.com/track/5uJedwiNqyTq1weRJhM0Up
+SKIPPED  Zericxxn - Raya - Slowed
+         kept instead: Raya
+         https://open.spotify.com/track/0z85gew8SrMCbKobMWvSCL
 
-SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE - Ultra Slowed
+SKIPPED  sma$her, MC DA$ILVA - BAILA LENTO - Slowed
+         kept instead: BAILA LENTO
+         https://open.spotify.com/track/3KuHmU9goPEunlWd5mpdFr
+
+SKIPPED  Dj Samir, DJ David MM - TAPA TOMA
+         kept instead: TAPA TOMA
+         https://open.spotify.com/track/5aQKi6nrCrx1i109EYh8Lw
+
+SKIPPED  Dj Samir, Zericxxn, Nulteex - FUNK MANDALA - SLOWED
+         kept instead: FUNK MANDALA
+         https://open.spotify.com/track/0OO5AgEGrdYPovFSPLFBHm
+
+SKIPPED  ICEDMANE, DYSMANE - FUNK TAKA (SLOWED)
+         kept instead: FUNK TAKA
+         https://open.spotify.com/track/6DcuCPsLn0LjVZlXZ2LBpF
+
+SKIPPED  Raiden, TRXSHBXY - FUNK MONOCLE - Slowed
          kept instead: FUNK MONOCLE - Super Slowed
-         https://open.spotify.com/track/7AUlY6COXt9JQ22Sqpae0e
+         https://open.spotify.com/track/3uO8bWR7wFwFQNYv6Dxc3E
 
-SKIPPED  Dj Samir, MXXNAVRA, SIXTINAGER - SEM DEMORA - Slowed
-         kept instead: SEM DEMORA
-         https://open.spotify.com/track/1NKhUxMfZMfDYfPGaWenLk
+SKIPPED  DJ Asul - MEDUSA - Slowed
+         kept instead: MEDUSA
+         https://open.spotify.com/track/47tBHjoRaWJNX8ISIsF8Ew
 
-SKIPPED  MarJan, Mxnvra - MONTAGEM DAUNTLESS
-         kept instead: MONTAGEM DAUNTLESS - Slowed
-         https://open.spotify.com/track/6docnKc9Moo81GVDbwEoY6
+SKIPPED  bxkq, AVARU - VAI DESCENDO
+         kept instead: VAI DESCENDO - Slowed
+         https://open.spotify.com/track/6NMBltmiSxq2OcWhWyi3cc
 
-SKIPPED  ZAYLO - MONTAGEM URANIUM - Slowed
-         kept instead: MONTAGEM URANIUM
-         https://open.spotify.com/track/7N3H0T7EgeflYdKd68lvIV
+SKIPPED  ZMAJOR, Lurk - MUTILATOR (SLOWED)
+         kept instead: MUTILATOR (SUPER SLOWED)
+         https://open.spotify.com/track/0uYxQl1aLEhVBOEoMhF2tT
 
-SKIPPED  Raiden, dexdmoon, XENO XID, TRXSHBXY, MC Ombrinho - FUNK TONTO - Slowed
-         kept instead: FUNK TONTO
-         https://open.spotify.com/track/0hKY32yRflPms7CAizMVdq
+SKIPPED  LXZVA, Hwungii, NITRXM, -Prey - MONTAGEM SERELIA ZAKKU (Slowed)
+         kept instead: MONTAGEM SERELIA ZAKKU
+         https://open.spotify.com/track/78ZnHAHXCCZDkoCMXZ407s
 
-SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM MONARCA
-         kept instead: MONTAGEM MONARCA - SLOWED
-         https://open.spotify.com/track/0YcaFeXp4w7VWHWfnGX2I0
+SKIPPED  cape, MXSTERIXD, Tonzão - MONTAGEM RITMADA
+         kept instead: MONTAGEM RITMADA - Ultra Slowed
+         https://open.spotify.com/track/1RKQqPHZL9peNjXsM1zKUR
 
-SKIPPED  KPHK, KREZUS - VOY A CRECER - SLOWED
-         kept instead: VOY A CRECER
-         https://open.spotify.com/track/5b7ayjbj5VFaLe0AffT0YU
+SKIPPED  Pxter, SPORBLIX, Anitor - MONTAGEM SAVAGE - Slowed
+         kept instead: MONTAGEM SAVAGE - Super Slowed
+         https://open.spotify.com/track/11GQ4nEmvnEsw6E2e2rvaq
 
-SKIPPED  ZMAJOR, -Prey, zxnc, Scythermane - MTG PRISM (Super Slowed)
-         kept instead: MTG PRISM
-         https://open.spotify.com/track/6e3kZI8rBJPIScJzCPfs7L
+SKIPPED  Dj Samir, Mxng0, Nulteex - MONTAGEM FUJIN - SLOWED
+         kept instead: MONTAGEM FUJIN
+         https://open.spotify.com/track/3Hy4aqXZEfHlj1c9DHSBfY
 
-SKIPPED  Dj Samir, Nulteex, John Bis.T, RXDXVIL - MONTAGEM ELDER - ULTRA SLOWED
-         kept instead: MONTAGEM ELDER - SLOWED
-         https://open.spotify.com/track/542GmJnZdihZ4AGNexXokX
+SKIPPED  NISVANIS, JXXR - FUNK SHENANIGANS - Slowed
+         kept instead: FUNK SHENANIGANS
+         https://open.spotify.com/track/1eLyig3YihFf2Vqvyy5kbH
 
-SKIPPED  Nakama, ΣP, Regyn, ZIMXN - JOGADA - Slowed
-         kept instead: JOGADA - Ultra Slowed
-         https://open.spotify.com/track/1uQAznQVhzTPDW3nDe5f7O
+SKIPPED  lirvie, DJ eu4oria, DJ FZ DA ZN, Matra! - MONTAGEM FEARLESS - Ultra Slowed
+         kept instead: MONTAGEM FEARLESS
+         https://open.spotify.com/track/3dnSijuGDhhzzo0FFGptxX
 
-SKIPPED  h6itam, n7san7os, Mc Menor Do Alvorada - MONTAGEM ALQUIMIA - SLOWED
-         kept instead: MONTAGEM ALQUIMIA
-         https://open.spotify.com/track/0vmFuEhyHR8SbOhDFq021Y
+SKIPPED  NISVANIS, vilvi - MONTAGEM GAME - Slowed
+         kept instead: MONTAGEM GAME - Super Slowed
+         https://open.spotify.com/track/1utmrDNGDBroON9fq1yI19
 
-SKIPPED  bxkq - LUZ ROJA - Slowed
-         kept instead: LUZ ROJA
-         https://open.spotify.com/track/4NH7KpFmBfE5yskuVRDqce
+SKIPPED  SCHWVFTY - MONTAGEM APOLLO - Super Slowed
+         kept instead: MONTAGEM APOLLO - Slowed
+         https://open.spotify.com/track/63TCX78T6nyYXLi0ZGTNSE
 
-SKIPPED  tienanh109, HDN, MC K3 - X-COOL!
+SKIPPED  ThVinh, yatashi - VAI SEM PARAR - Super Slowed
+         kept instead: VAI SEM PARAR
+         https://open.spotify.com/track/6gV8hetjZSTwQjnRWs3NeV
+
+SKIPPED  LXNGVX - MONTAGEM AGHANIM - SLOWED
+         kept instead: MONTAGEM AGHANIM
+         https://open.spotify.com/track/5KtIhYMEfOVNY7VPNGVl48
+
+SKIPPED  DJ SXD, notdjfake - MTG DIABÓLICA - Slowed
+         kept instead: MTG DIABÓLICA
+         https://open.spotify.com/track/41VUZsSkeASHMCE5U3BFBw
+
+SKIPPED  cape, DJ ORBITAL - DEADLOCK - Slowed
+         kept instead: DEADLOCK
+         https://open.spotify.com/track/65N2g4YQWCxYfNAyqbzL2i
+
+SKIPPED  nightfxrce - SEM CONTROLE - Slowed
+         kept instead: SEM CONTROLE
+         https://open.spotify.com/track/74cfBO16aY8GVfy9EfeCgl
+
+SKIPPED  Dj Samir, ANMANE, Habazane, nulled. - LUNA VEM
+         kept instead: LUNA VEM - Slowed
+         https://open.spotify.com/track/4US0uzr5PYVZ0nltbPelfD
+
+SKIPPED  Hwungii, DJ VGK1 - VOCE NA MIRA - Slowed
+         kept instead: VOCE NA MIRA - Super Slowed
+         https://open.spotify.com/track/37CaSYZIi8GMTtkvfP2nut
+
+SKIPPED  Irokz, TESOROX, DJ Zarek - RAYELO - Slowed
+         kept instead: RAYELO
+         https://open.spotify.com/track/1YZRMrJED4cCo82Ao35LKg
+
+SKIPPED  tienanh109, HDN, MC K3 - X-COOL! - Slowed
          kept instead: X-COOL! - Super Slowed
-         https://open.spotify.com/track/1RDOhl7dFC3md0RtNytDXD
+         https://open.spotify.com/track/3Yju0AQsjm06w7Q53xt4Ht
 
-SKIPPED  LXNGVX, DJ FKU - MONTAGEM PESADELO - SLOWED
-         kept instead: MONTAGEM PESADELO
-         https://open.spotify.com/track/33CPs3ROkDHlTOZ3MFRFIr
+SKIPPED  -Prey, ZMAJOR - SUPERSÓNICO (Slowed)
+         kept instead: SUPERSÓNICO
+         https://open.spotify.com/track/1WEdTLnRBREuJGDfc2NL9Z
+
+SKIPPED  SCHWVFTY - MONTAGEM RINGO - Ultra Slowed
+         kept instead: MONTAGEM RINGO
+         https://open.spotify.com/track/0xTqTmhP9yREaOC2guE4VR
 
